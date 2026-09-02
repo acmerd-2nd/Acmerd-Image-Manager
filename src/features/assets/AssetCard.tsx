@@ -1,17 +1,40 @@
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { AssetCardRow } from '@/types/database'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
+import { getCoverUrls } from '@/features/assets/api'
 
 export function AssetCard({ asset }: { asset: AssetCardRow }) {
+  const [coverUrl, setCoverUrl] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    if (asset.cover_image_id) {
+      getCoverUrls([asset.cover_image_id]).then((map) => {
+        if (!cancelled) setCoverUrl(map.get(asset.cover_image_id!) ?? null)
+      })
+    }
+    return () => {
+      cancelled = true
+    }
+  }, [asset.cover_image_id])
+
   return (
     <Link to={`/asset/${asset.slug}`} className="group block">
       <Card className="overflow-hidden transition-shadow group-hover:shadow-md">
-        <div className="flex aspect-[4/3] items-center justify-center bg-muted">
-          {asset.cover_image_id ? (
-            <CoverPlaceholder note="cover in Phase 3" />
+        <div className="aspect-[4/3] bg-muted">
+          {coverUrl ? (
+            <img
+              src={coverUrl}
+              alt={asset.name}
+              loading="lazy"
+              className="h-full w-full object-cover"
+            />
           ) : (
-            <CoverPlaceholder />
+            <div className="flex h-full w-full items-center justify-center">
+              <span className="text-3xl">🖼️</span>
+            </div>
           )}
         </div>
         <CardContent className="p-4">
@@ -29,14 +52,5 @@ export function AssetCard({ asset }: { asset: AssetCardRow }) {
         </CardContent>
       </Card>
     </Link>
-  )
-}
-
-function CoverPlaceholder({ note }: { note?: string }) {
-  return (
-    <div className="flex h-full w-full flex-col items-center justify-center gap-1 text-center">
-      <span className="text-3xl">🖼️</span>
-      {note && <span className="text-[10px] text-muted-foreground">{note}</span>}
-    </div>
   )
 }

@@ -19,7 +19,6 @@ function Placeholder({ title }: { title: string }) {
 }
 
 export const AdminDashboardPage = () => <Placeholder title="Dashboard" />
-export const AdminAssetsPage = () => <Placeholder title="Assets" />
 export const AdminUsersPage = () => <Placeholder title="Users" />
 export const AdminTagsPage = () => <Placeholder title="Tags" />
 export const AdminStoragePage = () => <Placeholder title="Storage" />

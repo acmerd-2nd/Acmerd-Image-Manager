@@ -12,13 +12,15 @@ import { RegisterPage } from '@/routes/pages/RegisterPage'
 import { ForbiddenPage, NotFoundPage } from '@/routes/pages/ErrorPages'
 import {
   AdminDashboardPage,
-  AdminAssetsPage,
   AdminUsersPage,
   AdminTagsPage,
   AdminStoragePage,
   AdminAuditLogsPage,
   AdminSettingsPage,
 } from '@/routes/pages/admin/AdminPlaceholderPages'
+import { AdminAssetsPage } from '@/routes/pages/admin/AdminAssetsPage'
+import { AdminAssetNewPage } from '@/routes/pages/admin/AdminAssetNewPage'
+import { AdminAssetEditorPage } from '@/routes/pages/admin/AdminAssetEditorPage'
 
 export default function App() {
   return (
@@ -53,6 +55,8 @@ export default function App() {
               <Route index element={<AdminDashboardPage />} />
               <Route path="dashboard" element={<AdminDashboardPage />} />
               <Route path="assets" element={<AdminAssetsPage />} />
+              <Route path="assets/new" element={<AdminAssetNewPage />} />
+              <Route path="assets/:id" element={<AdminAssetEditorPage />} />
               <Route path="users" element={<AdminUsersPage />} />
               <Route path="tags" element={<AdminTagsPage />} />
               <Route path="storage" element={<AdminStoragePage />} />

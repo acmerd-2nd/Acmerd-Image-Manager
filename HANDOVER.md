@@ -1,7 +1,7 @@
 # 🔄 HANDOVER — ACMERD Image Manager 交接文档
 
-> **最后更新**: 2026-09-02（Phase 2 收工）
-> **当前状态**: Phase 0 ✅ · Phase 1 ✅ · **Phase 2 ✅（Gate G2 PASS）** · Phase 3 待开始
+> **最后更新**: 2026-09-02（Phase 3 收工）
+> **当前状态**: Phase 0 ✅ · Phase 1 ✅ · Phase 2 ✅ · **Phase 3 ✅（Gate G3 PASS）** · Phase 4 待开始
 > **新 Agent 从「第六节 · 下一步任务」直接接手即可**
 
 ---
@@ -91,6 +91,14 @@ anon  SELECT schema_migrations → permission denied ✓
 - **线上实测**：未登录 /admin → /login；USER /admin → /403；admin `?next=%2Fadmin` 登录直达后台；`?next=//evil.com` 被拒；错误密码提示正确；弱密码注册被拦截。
 - **Git**：commit `3e6ac7e` 已推 main。
 
+### Phase 3 — Asset Core ✅（Gate G3 PASS，2026-09-02，Owner 过 Design Gate 后实施）
+- **DB**：`0003_asset_integrity.sql`（无表结构变更）：① 状态化审计（asset.published/unpublished/archived/restored，Owner 批准 unpublished + archived 可恢复）；② Cover 同资产守卫（COVER_MISMATCH）；③ **Publish 服务端终守卫**（PUBLISH_BLOCKED：INSERT 直接 published 也拦）。三守卫冒烟+负样本全过。
+- **Worker**：`POST /api/admin/storage/delete`（Owner 裁决通道）：验证调用者 JWT 为 admin（/auth/v1/user + service role 查 user_roles）→ Service Role 按**精确对象路径**删。**坑**：Storage 的 `{prefixes}` 目录删除不递归子文件夹、list 有延迟缓存 —— 唯一可靠方式是前端从 images 表收集 `storage_path` 传精确路径；prefixes 须为 bucket 内相对路径（剥掉首段 `images/`）。
+- **前端**：Admin 资产列表/新建/编辑三页（上传直传 admin JWT；排序 V1 用上移/下移，拖拽留 Phase 9；语言删除仅限 0 图；Publish 前客户端预检+服务端终审）；用户端 HomePage/AssetDetailPage 接真数据（published_assets 视图 + published 链查询）；AssetCard 真封面。
+- **安全测试 25/25**：USER 对 assets/asset_languages/images 全只读（UPDATE/DELETE 用回读验证，非状态码）；Storage USER 上传/删除拒绝（RLS 拒绝被 Storage 包成 HTTP 400 + body statusCode 403）；Worker 端点 无凭据401/伪造JWT401/USER 403/恶意路径400/ADMIN 删除真删（权威复查）；Phase 2 不变量回归（自我提权 403 等）。
+- **线上 UI 实测**：新建→上传→Set Cover→Publish→游客浏览卡片+详情→Archive→游客不可见→Restore→Delete，审计链完整（created→uploaded→updated→published→archived→restored→deleted）。
+- **已知小坑**：① Supabase Storage list 有缓存延迟，删除验证必须用"精确 DELETE → 看 NoSuchKey(400)"；② supabase 的 PostgrestError 不是 Error 实例，throw 时要 `new Error(error.message)`，否则 UI 显示 [object Object]（已修）；③ CF wrangler deploy 的 routes 步偶发 10000 认证错误，重试即可，版本实际已生效。
+
 ---
 
 ## 五、待 Owner 配合 / 当前挂起事项
@@ -98,16 +106,19 @@ anon  SELECT schema_migrations → permission denied ✓
 | 事项 | 状态 | 说明 |
 | --- | --- | --- |
 | **邮箱验证开关** | ✅ 看起来已关闭 | Phase 2 线上实测：注册 `weaktest@example.com` 后**直接返回 session**（未出现"查收邮件"分支），说明 Confirm email 已被关闭。注册页的"待验证"分支代码保留，随时兼容重新开启 |
-| Worker Secret 注入 | ⏳ 未做 | Phase 5（下载流）需要：`set -a; source .env; set +a; npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY`（粘贴 .env 里的值）。Phase 2 未用到 Worker 业务接口，暂不需要 |
+| Worker Secret 注入 | ✅ 已注入 | Phase 3 已 `wrangler secret put SUPABASE_SERVICE_ROLE_KEY`（Storage 删除端点使用）；本地 `worker/.dev.vars` 同步更新 |
 
 ---
 
-## 六、下一步任务：Phase 3 — Asset Core（未开始）
+## 六、下一步任务：Phase 4 — Multi-language（未开始）
 
-按 `【分阶段】` 文档执行。**开工前先输出 Phase 开始报告**，完成后对照 Gate G3 验收。
+按 `【分阶段】` 文档执行。**开工前先输出 Phase 开始报告（Design Gate）**，完成后对照 Gate G4 验收。
+
+### Phase 4 概要
+多语言是 Asset 下的版本（不拆 Asset）：语言切换 UI、per-language 浏览体验；网盘下载与语言完全解耦（Phase 5 才做下载）。
 
 ### 后续 Phase 概要（详见分阶段文档，勿跳级）
-Phase 3 Asset Core（Admin 建 Asset/上传/排序/Cover/Publish，用户浏览）→ 4 多语言 → 5 下载三件套 → 6 搜索+Tag → 7 Admin 控制台 → 8 安全加固 → 9 UX/性能 → 10 发布。
+Phase 4 多语言 → 5 下载三件套 → 6 搜索+Tag → 7 Admin 控制台 → 8 安全加固 → 9 UX/性能 → 10 发布。
 
 ---
 
