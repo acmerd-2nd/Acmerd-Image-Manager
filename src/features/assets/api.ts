@@ -171,18 +171,6 @@ export async function getPublishedAssetBySlug(slug: string): Promise<PublishedAs
   return (data as PublishedAssetRow) ?? null
 }
 
-/** 用户端详情：某 published 资产的 published 语言及其图（RLS 双重过滤） */
-export async function listPublishedImages(assetId: string): Promise<ImageRow[]> {
-  const { data, error } = await supabase
-    .from('images')
-    .select('*, asset_languages!inner(asset_id, status)')
-    .eq('asset_languages.asset_id', assetId)
-    .eq('asset_languages.status', 'published')
-    .order('sort_order')
-  if (error) throw new Error(error.message)
-  return (data ?? []) as unknown as ImageRow[]
-}
-
 // ---------------- 封面公开 URL ----------------
 
 /** storage_path 形如 images/{asset}/{lang}/{file}，含 bucket 名；公开 URL 需去掉第一段 */
@@ -204,4 +192,32 @@ export async function getCoverUrls(imageIds: string[]): Promise<Map<string, stri
     map.set(row.id, toPublicUrl(row.storage_path))
   }
   return map
+}
+
+// ---------------- Phase 4：按语言浏览 ----------------
+
+/**
+ * 用户端详情：某 published 资产的 published 语言。
+ * RLS 双层过滤（asset.status='published' AND language.status='published'），
+ * 未发布语言不会出现在结果里 —— 这是安全边界，不是 UI 隐藏。
+ */
+export async function listPublishedLanguages(assetId: string): Promise<AssetLanguageRow[]> {
+  const { data, error } = await supabase
+    .from('asset_languages')
+    .select('*')
+    .eq('asset_id', assetId)
+    .eq('status', 'published')
+  if (error) throw new Error(error.message)
+  return (data ?? []) as AssetLanguageRow[]
+}
+
+/** 用户端详情：指定 published 语言下的图片（按 sort_order） */
+export async function listImagesByLanguage(languageId: string): Promise<ImageRow[]> {
+  const { data, error } = await supabase
+    .from('images')
+    .select('*')
+    .eq('asset_language_id', languageId)
+    .order('sort_order')
+  if (error) throw new Error(error.message)
+  return (data ?? []) as ImageRow[]
 }

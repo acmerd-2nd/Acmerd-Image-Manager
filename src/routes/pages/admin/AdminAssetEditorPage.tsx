@@ -30,6 +30,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/spinner'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
+import { cn } from '@/lib/utils'
 
 /**
  * Asset 编辑器（Phase 3 核心工作台）：
@@ -332,6 +333,36 @@ export function AdminAssetEditorPage() {
       {/* 语言面板 */}
       <section className="space-y-4">
         <h2 className="font-medium">语言版本</h2>
+
+        {/* 状态总览：固定产品顺序，一眼看清哪些语言对用户可见 */}
+        {languages.length > 0 && (
+          <div className="flex flex-wrap gap-2 text-xs">
+            {LANGUAGE_CODES.map((code) => {
+              const lang = languages.find((l) => l.language_code === code)
+              if (!lang) return null
+              const count = imagesOf(lang.id).length
+              const visible = lang.status === 'published' && asset.status === 'published' && count > 0
+              return (
+                <span
+                  key={code}
+                  className={cn(
+                    'inline-flex items-center gap-1 rounded-full border px-2 py-0.5',
+                    visible
+                      ? 'border-green-600/40 bg-green-600/10 text-green-700'
+                      : 'border-muted-foreground/30 text-muted-foreground',
+                  )}
+                  title={visible ? '用户端可见' : '用户端不可见'}
+                >
+                  <span className="font-medium">{LANGUAGE_LABELS[code]}</span>
+                  <span>· {count}图</span>
+                  <span>· {lang.status}</span>
+                  {visible && <span>✓</span>}
+                </span>
+              )
+            })}
+          </div>
+        )}
+
         {languages.map((lang) => {
           const imgs = imagesOf(lang.id).sort((a, b) => a.sort_order - b.sort_order)
           return (

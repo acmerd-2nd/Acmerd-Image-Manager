@@ -65,3 +65,16 @@ export function sanitizeInternalRedirect(raw: string | null | undefined): string
 
   return candidate
 }
+
+/**
+ * 语言代码白名单（Phase 4）——?lang 解析的唯一实现。
+ * 规则（Owner 指定）：仅接受小写 en/de/it/fr/es；大写或非法值一律视为无效（返回 null），
+ * 由调用方静默回退到默认 published 语言。
+ */
+const LANGUAGE_SET = new Set(['en', 'de', 'it', 'fr', 'es'])
+
+export function parseLanguageCode(raw: string | null | undefined): string | null {
+  if (typeof raw !== 'string' || raw.length === 0) return null
+  // 严格小写匹配：'EN' / 'En' / 'de-DE' / 'en ' 等一律无效
+  return LANGUAGE_SET.has(raw) ? raw : null
+}

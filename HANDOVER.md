@@ -1,7 +1,7 @@
 # 🔄 HANDOVER — ACMERD Image Manager 交接文档
 
-> **最后更新**: 2026-09-02（Phase 3 收工）
-> **当前状态**: Phase 0 ✅ · Phase 1 ✅ · Phase 2 ✅ · **Phase 3 ✅（Gate G3 PASS）** · Phase 4 待开始
+> **最后更新**: 2026-09-03（Phase 4 收工）
+> **当前状态**: Phase 0-3 ✅ · **Phase 4 ✅（Gate G4 PASS）** · Phase 5 待开始
 > **新 Agent 从「第六节 · 下一步任务」直接接手即可**
 
 ---
@@ -99,6 +99,17 @@ anon  SELECT schema_migrations → permission denied ✓
 - **线上 UI 实测**：新建→上传→Set Cover→Publish→游客浏览卡片+详情→Archive→游客不可见→Restore→Delete，审计链完整（created→uploaded→updated→published→archived→restored→deleted）。
 - **已知小坑**：① Supabase Storage list 有缓存延迟，删除验证必须用"精确 DELETE → 看 NoSuchKey(400)"；② supabase 的 PostgrestError 不是 Error 实例，throw 时要 `new Error(error.message)`，否则 UI 显示 [object Object]（已修）；③ CF wrangler deploy 的 routes 步偶发 10000 认证错误，重试即可，版本实际已生效。
 
+### Phase 4 — Multi-language ✅（Gate G4 PASS，2026-09-03，Owner 过 Design Gate 后实施）
+- **零 schema/RLS/Storage/Worker 变更**（按 Owner 约束）：语言状态模型、双层可见性、路径约定全部沿用 0001/0003 基线。纯前端阶段。
+- **数据层**：`api.ts` 新增 `listPublishedLanguages`（显式 `.eq('status','published')`，draft 语言对任何角色都不出现在 public 页）、`listImagesByLanguage`；移除死代码 `listPublishedImages`。
+- **校验**：`validators.ts` 新增 `parseLanguageCode`（?lang 唯一实现，**仅小写** en/de/it/fr/es；大写/非法一律 null → 调用方静默回退）。
+- **用户端 `/asset/:slug`**：语言 Tab（固定顺序 EN→DE→IT→FR→ES，只列 published）；默认 en 否则首个 published；`?lang` 命中 published 才用，否则回退；**replaceState 规范化 URL**（无效/draft/大写都改写为有效语言）；切换只换 Image Grid，不重载 Asset。
+- **Admin 编辑器**：新增语言状态总览条（每语言 图数·status·用户可见✓，固定顺序）。
+- **线上实测全过**：EN/DE/IT/ES published + FR draft 场景 → public 只 4 Tab（无 FR）；点 Deutsch 网格切蓝图 + URL ?lang=de；?lang=fr→静默回退 en；?lang=ES(大写)→判无效回退 en；?lang=es→持久选中西班牙语；刷新保持。
+- **安全回归**：游客 API 只见 4 published 语言 + 8 图，FR 语言行与图片均不可见（双层 RLS 铁证）；Phase 2/3 不变量未触碰（无 RLS/Worker/schema 改动）。
+- **坑复现**：Storage list 返回的 `name` 是 basename 非全路径 → 清理孤儿对象必须用完整相对路径 `{asset}/{lang}/{file}` 精确删（已踩并修正清理脚本）。
+- **Git**：Phase 4 commit 已推 main。
+
 ---
 
 ## 五、待 Owner 配合 / 当前挂起事项
@@ -110,15 +121,15 @@ anon  SELECT schema_migrations → permission denied ✓
 
 ---
 
-## 六、下一步任务：Phase 4 — Multi-language（未开始）
+## 六、下一步任务：Phase 5 — Download System（未开始）
 
-按 `【分阶段】` 文档执行。**开工前先输出 Phase 开始报告（Design Gate）**，完成后对照 Gate G4 验收。
+按 `【分阶段】` 文档执行。**开工前先输出 Phase 开始报告（Design Gate）**，完成后对照 Gate G5 验收。
 
-### Phase 4 概要
-多语言是 Asset 下的版本（不拆 Asset）：语言切换 UI、per-language 浏览体验；网盘下载与语言完全解耦（Phase 5 才做下载）。
+### Phase 5 概要（分三个子阶段 5A/5B/5C）
+5A 单图下载（View Image → Download，Guest 不允许下载）；5B 多选 ZIP 打包下载（Worker service role 流式 ZIP，绑定 assetLanguageId）；5C Package Download（网盘链接：按数量 0 隐藏 / 1 直跳 / 2 选择器，**与语言完全解耦**）。
 
 ### 后续 Phase 概要（详见分阶段文档，勿跳级）
-Phase 4 多语言 → 5 下载三件套 → 6 搜索+Tag → 7 Admin 控制台 → 8 安全加固 → 9 UX/性能 → 10 发布。
+Phase 5 下载三件套 → 6 搜索+Tag → 7 Admin 控制台 → 8 安全加固 → 9 UX/性能 → 10 发布。
 
 ---
 
