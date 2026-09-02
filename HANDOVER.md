@@ -1,7 +1,7 @@
 # 🔄 HANDOVER — ACMERD Image Manager 交接文档
 
-> **最后更新**: 2026-09-02
-> **当前状态**: Phase 0 ✅ · Phase 1 ✅（已上线）· **Phase 2 待开始**
+> **最后更新**: 2026-09-02（Phase 2 收工）
+> **当前状态**: Phase 0 ✅ · Phase 1 ✅ · **Phase 2 ✅（Gate G2 PASS）** · Phase 3 待开始
 > **新 Agent 从「第六节 · 下一步任务」直接接手即可**
 
 ---
@@ -82,40 +82,31 @@ anon  SELECT assets        → [] （RLS 过滤，非报错）
 anon  SELECT schema_migrations → permission denied ✓
 ```
 
+### Phase 2 — Authentication ✅（Gate G2 PASS，2026-09-02）
+- **登录页** `/login`：`signInWithPassword`；错误分桶（凭据错误/未验证+重发按钮/限速/其他）；`?next=` 白名单（反复解码后在最终形态校验，拒绝 `//`、`\`、`:`、控制字符及双重编码绕过）；已登录访问回跳。
+- **注册页** `/register`：共享校验器 `src/lib/validators.ts`（≥8 位且数字/大写/小写至少两类，唯一实现）；注册分支按 Supabase 返回值判定（有 session 直接进站 / 无 session 显示查收邮件）；**无前端兜底写入**，profiles/user_roles 全靠触发器。
+- **Profile 页**：display_name 编辑（RLS 限本人行），实测保存+刷新持久化。
+- **守卫竞态修复**：`roleLoading` 与 setSession 同批同步更新（否则登录后瞬间误判 403）；role 查询失败按安全方向兜底为 'user'。
+- **安全测试 15/15 通过**（PostgREST + 临时 USER JWT）：INSERT assets 403；UPDATE/DELETE published 资产数据未被改动（注意：PostgREST 对 RLS USING 过滤后 0 行命中返回 204，必须回读验证数据不变）；user_roles 自我提权/新增行 403（permission denied）；SELECT 仅见 published；user_roles 仅见本人行。触发器三表联动验证通过。临时用户与测试数据全部清理。
+- **线上实测**：未登录 /admin → /login；USER /admin → /403；admin `?next=%2Fadmin` 登录直达后台；`?next=//evil.com` 被拒；错误密码提示正确；弱密码注册被拦截。
+- **Git**：commit `3e6ac7e` 已推 main。
+
 ---
 
 ## 五、待 Owner 配合 / 当前挂起事项
 
 | 事项 | 状态 | 说明 |
 | --- | --- | --- |
-| **邮箱验证开关** | ⚠️ 当前为**开启**（`mailer_autoconfirm: false`） | Owner 要求"上线再开"→ 现在应关闭。需要 Owner 在 Supabase Dashboard → Authentication → Sign In / Up → Email → 关闭 "Confirm email"（Service Role Key 无法改这个配置，Agent 改不了）。**在关闭之前，Phase 2 注册页必须兼容"待验证"状态**（注册后提示查收邮件，见第六节） |
-| Worker Secret 注入 | ⏳ 未做 | Phase 2 需要：`set -a; source .env; set +a; npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY`（粘贴 .env 里的值） |
+| **邮箱验证开关** | ✅ 看起来已关闭 | Phase 2 线上实测：注册 `weaktest@example.com` 后**直接返回 session**（未出现"查收邮件"分支），说明 Confirm email 已被关闭。注册页的"待验证"分支代码保留，随时兼容重新开启 |
+| Worker Secret 注入 | ⏳ 未做 | Phase 5（下载流）需要：`set -a; source .env; set +a; npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY`（粘贴 .env 里的值）。Phase 2 未用到 Worker 业务接口，暂不需要 |
 
 ---
 
-## 六、下一步任务：Phase 2 — Authentication（未开始）
+## 六、下一步任务：Phase 3 — Asset Core（未开始）
 
-按 `【分阶段】` 文档执行。**开工前先输出 Phase 开始报告**（模板见第八节），完成后对照 Gate G2 验收。
+按 `【分阶段】` 文档执行。**开工前先输出 Phase 开始报告**，完成后对照 Gate G3 验收。
 
-### 任务清单
-1. **登录页** `/login`：邮箱+密码表单 → `supabase.auth.signInWithPassword`；错误分桶提示（凭据错误 / 未验证 / 网络）；已登录访问则跳 `/`；支持 `?next=` 回跳。
-2. **注册页** `/register`：
-   - 密码规则（Owner 要求）：**至少 8 位，且包含数字、大写、小写中的至少两类**（例：`20011228fqh` 合法）。前后端各校验一次。
-   - 注册后行为分支：若邮箱验证仍开着 → 显示"请查收邮件"页（检查返回的 `user.email_confirmed_at` 或 session 是否为空）；若已关 → 直接登录进站。
-   - 触发器会自动建 profiles + user_roles('user')，无需前端额外写。
-3. **Profile 页** `/profile` 升级：显示邮箱/角色；可编辑 `display_name`（RLS 限本人行）。
-4. **Auth 集成检查**：AuthProvider 已就绪（`src/features/auth/AuthProvider.tsx`），导航栏登录态切换已实现；补 Logout 后清缓存。
-5. **安全测试（必须执行并写入收工报告）**：
-   - 未登录访问 `/admin` → 跳登录；USER 访问 `/admin` → 403
-   - 创建临时测试用户（Admin API `POST /auth/v1/admin/users`）→ 用其 JWT 尝试：INSERT/UPDATE/DELETE assets（应 42501 拒绝）、UPDATE user_roles（应拒绝）、SELECT assets（只见 published）→ 测完 `DELETE /auth/v1/admin/users/:id` 删除
-6. 构建 + 部署 + 线上验证 + 提交推送。
-
-### Gate G2 验收标准（来自分阶段文档）
-```
-注册正常 / 登录正常 / Session 正常 / Role 正常 / Admin Guard 正常
-```
-
-### Phase 3-10 概要（详见分阶段文档，勿跳级）
+### 后续 Phase 概要（详见分阶段文档，勿跳级）
 Phase 3 Asset Core（Admin 建 Asset/上传/排序/Cover/Publish，用户浏览）→ 4 多语言 → 5 下载三件套 → 6 搜索+Tag → 7 Admin 控制台 → 8 安全加固 → 9 UX/性能 → 10 发布。
 
 ---
