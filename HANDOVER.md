@@ -131,6 +131,7 @@ anon  SELECT schema_migrations → permission denied ✓
 - **安全测试 16/16**：guest 401；USER 下载 published 单图/ZIP 200；draft 语言/资产图 404；ZIP 跨语言 400 / >30 400 / null file_size 413；ZIP 结构合法（PK 头 + EOCD + 条目数）；Package guest RLS 0 行 / user 2 行；恶意域被 DB 守卫拒。
 - **线上 UI E2E**：登录态单图下载 GET 200、ZIP POST 200 触发浏览器下载、Package 2 源弹 Quark/Baidu 选择器；游客显示"下载需登录"+"登录后可获取网盘下载链接"。
 - **坑**：① PostgREST to-one embed 是对象不是数组（`img.asset_languages` 直接取，勿 `[0]`）；② 0003 Publish 守卫会拦"INSERT 直接 published"，播种脚本须先 draft 再 PATCH 发布；③ 清理脚本按 name 匹配漏删（演示资产 name='Download Demo'、slug 才是 dl-demo-*），按 id 兜底删。
+- **文件名保留（Owner 复核项，已线上验证 ✅）**：单图走 Worker 302→public URL，**Supabase public 对象 GET 不返回 Content-Disposition（实测 null）**，故 302 上设的 CD 不会附着到被重定向后的响应。真正保住原始文件名的是**前端**：`fetch` 跟随 302 取 blob 后以 `a.download = img.filename`（DB 原始名）命名；`filenameFromResponse` 因重定向响应无 CD 而正确回退到原始名。ZIP 路径是 Worker 直接 200 流（非重定向），其 `Content-Disposition: {slug}-{lang}.zip` 正常生效。→ 结论：行为正确，无返工；上一版报告"CD 由 Worker 侧给"表述不严谨，以本条为准。
 - **Git**：Phase 5 commit 已推 main。
 
 ---
