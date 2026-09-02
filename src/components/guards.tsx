@@ -21,10 +21,10 @@ export function RequireRole({
   allow: Array<'user' | 'admin'>
   children: ReactNode
 }) {
-  const { session, role, loading } = useAuth()
+  const { session, role, loading, roleLoading } = useAuth()
   const location = useLocation()
 
-  if (loading) return <FullPageSpinner />
+  if (loading || roleLoading || (session && !role)) return <FullPageSpinner />
   if (!session) return <Navigate to="/login" state={{ from: location.pathname }} replace />
   if (!role || !allow.includes(role)) return <Navigate to="/403" replace />
   return <>{children}</>

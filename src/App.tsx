@@ -7,7 +7,8 @@ import { HomePage } from '@/routes/pages/HomePage'
 import { SearchPage } from '@/routes/pages/SearchPage'
 import { AssetDetailPage } from '@/routes/pages/AssetDetailPage'
 import { ProfilePage } from '@/routes/pages/ProfilePage'
-import { AuthPlaceholderPage } from '@/routes/pages/AuthPlaceholderPage'
+import { LoginPage } from '@/routes/pages/LoginPage'
+import { RegisterPage } from '@/routes/pages/RegisterPage'
 import { ForbiddenPage, NotFoundPage } from '@/routes/pages/ErrorPages'
 import {
   AdminDashboardPage,
@@ -29,8 +30,8 @@ export default function App() {
             <Route path="/explore" element={<HomePage />} />
             <Route path="/search" element={<SearchPage />} />
             <Route path="/asset/:slug" element={<AssetDetailPage />} />
-            <Route path="/login" element={<AuthPlaceholderPage mode="login" />} />
-            <Route path="/register" element={<AuthPlaceholderPage mode="register" />} />
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/register" element={<RegisterPage />} />
             <Route
               path="/profile"
               element={
