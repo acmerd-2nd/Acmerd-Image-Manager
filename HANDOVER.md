@@ -56,6 +56,16 @@ Supabase 项目：`ctddbmadywtdufazhwiq`（Asia-Pacific）。Storage bucket `ima
 
 ---
 
+## 三·五、平台工程铁律（跨阶段长期有效，所有 Agent 必须遵守）
+
+1. **Supabase Storage `list` ≠ 权威存在性判断。** `object/list` 返回的 `name` 是 **basename 而非完整相对路径**，且有**缓存延迟**（刚上传/刚删除的对象短时间内可能查不到或仍显示）。任何"对象是否存在 / 是否已删除"的判定，一律用**完整相对路径 `{asset}/{lang}/{file}` + 权威响应**（精确 DELETE 返回 200=之前存在、400 NoSuchKey=不存在；或 HEAD public URL 但注意 CDN 缓存）。清理/校验脚本必须遵循此律（Phase 3/4 均因违反踩过坑）。
+2. **PostgREST 对 RLS 过滤后 0 行命中的 UPDATE/DELETE 返回 204/200，不代表放行。** 验证"写被拒"必须**回读数据确认未变**，不能只看状态码。
+3. **Supabase Storage 把 RLS 拒绝包装成 HTTP 400 + body `{statusCode:403, code:'AccessDenied'/'new row violates row-level security'}`**，不是直接 403。安全测试断言要按 body 判定。
+4. **可见性规则是单一事实来源，禁止在各阶段重新发明。** 前台可见 = `Asset.status='published' AND Language.status='published'`（图片再叠加其语言可见）。Phase 5 下载、Phase 6 搜索**必须直接继承**这套双层门控（RLS 已在 0001 落地），UI 层不得作为唯一屏障。
+5. **多语言模型已冻结为长期基线**：`Asset → asset_languages(EN/DE/IT/FR/ES) → images`，语言是 Asset 下的版本，**绝不拆成 Asset-EN/Asset-DE**。`?lang` 只是前端状态同步，不是权限入口。
+
+---
+
 ## 四、已完成进度明细
 
 ### Phase 0 — Architecture Baseline ✅（Owner 已批准）
