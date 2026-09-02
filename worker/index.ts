@@ -10,97 +10,494 @@ export interface Env {
 
 const app = new Hono<{ Bindings: Env }>()
 
+// ===========================================================================
+// 常量与 ZIP 资源限制（Phase 5，Owner 批准 Decision D）
+// ===========================================================================
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+const LANGS = ['en', 'de', 'it', 'fr', 'es']
+const MAX_ZIP_IMAGES = 30
+const MAX_ZIP_BYTES = 100 * 1024 * 1024 // 100MB
+const ZIP_CONCURRENCY = 4 // 有界预取并发
+
+// ===========================================================================
+// CORS（仅允许生产域与本地开发源）
+// ===========================================================================
+function allowedOrigin(req: string | null): string | null {
+  if (!req) return null
+  if (req === 'https://image.acmerd.com') return req
+  if (/^http:\/\/localhost(:\d+)?$/.test(req)) return req
+  if (/^http:\/\/127\.0\.0\.1(:\d+)?$/.test(req)) return req
+  return null
+}
+
+app.use('/api/*', async (c, next) => {
+  const origin = c.req.header('Origin') ?? null
+  const allow = allowedOrigin(origin)
+  if (allow) {
+    c.res.headers.set('Access-Control-Allow-Origin', allow)
+    c.res.headers.set('Vary', 'Origin')
+    c.res.headers.set('Access-Control-Allow-Headers', 'Authorization, Content-Type')
+    c.res.headers.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+    c.res.headers.set('Access-Control-Max-Age', '86400')
+  }
+  if (c.req.method === 'OPTIONS') return new Response(null, { status: 204, headers: c.res.headers })
+  await next()
+})
+
+// ===========================================================================
+// 鉴权：JWT → Supabase Auth 验签 → 查 user_roles 角色（service role，不下发）
+// ===========================================================================
+type FailStatus = 401 | 403 | 500 | 502
+
+interface AuthOk {
+  ok: true
+  userId: string
+  roles: string[]
+}
+interface AuthFail {
+  ok: false
+  status: FailStatus
+  message: string
+}
+
+async function authenticate(
+  header: string | undefined,
+  env: Env,
+): Promise<AuthOk | AuthFail> {
+  if (!env.SUPABASE_SERVICE_ROLE_KEY) {
+    return { ok: false, status: 500, message: 'Service role key not configured' }
+  }
+  if (!header?.startsWith('Bearer ')) {
+    return { ok: false, status: 401, message: 'Missing bearer token' }
+  }
+  const jwt = header.slice(7)
+
+  const userRes = await fetch(`${env.SUPABASE_URL}/auth/v1/user`, {
+    headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY, Authorization: `Bearer ${jwt}` },
+  })
+  if (!userRes.ok) return { ok: false, status: 401, message: 'Invalid or expired token' }
+  const user = (await userRes.json()) as { id?: string }
+  if (!user.id) return { ok: false, status: 401, message: 'Invalid user payload' }
+
+  const roleRes = await fetch(
+    `${env.SUPABASE_URL}/rest/v1/user_roles?user_id=eq.${user.id}&select=role`,
+    {
+      headers: {
+        apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+        Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+      },
+    },
+  )
+  if (!roleRes.ok) return { ok: false, status: 500, message: 'Role lookup failed' }
+  const roles = ((await roleRes.json()) as Array<{ role: string }>).map((r) => r.role)
+  return { ok: true, userId: user.id, roles }
+}
+
+/** USER 或 ADMIN（下载类接口） */
+async function requireUser(c: { req: { header: (k: string) => string | undefined }; env: Env }) {
+  const auth = await authenticate(c.req.header('Authorization'), c.env)
+  if (!auth.ok) return auth
+  if (!auth.roles.some((r) => r === 'user' || r === 'admin')) {
+    return { ok: false as const, status: 403 as const, message: 'Login required' }
+  }
+  return auth
+}
+
+/** 仅 ADMIN（高权限接口） */
+async function requireAdmin(c: { req: { header: (k: string) => string | undefined }; env: Env }) {
+  const auth = await authenticate(c.req.header('Authorization'), c.env)
+  if (!auth.ok) return auth
+  if (!auth.roles.includes('admin')) {
+    return { ok: false as const, status: 403 as const, message: 'Admin required' }
+  }
+  return auth
+}
+
+// ===========================================================================
+// service role 请求头
+// ===========================================================================
+function svc(env: Env) {
+  return {
+    apikey: env.SUPABASE_SERVICE_ROLE_KEY!,
+    Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY!}`,
+    'Content-Type': 'application/json',
+  }
+}
+
+// ===========================================================================
+// GET /api/health
+// ===========================================================================
 app.get('/api/health', (c) =>
   c.json({ status: 'ok', service: 'acmerd-image-manager', time: new Date().toISOString() }),
 )
 
-// ---------------------------------------------------------------------------
-// 高权限 Storage 删除端点（Phase 3，Owner 指定通道）
-//
-// 设计：
-//   * 浏览器只携带自己的普通登录 JWT（admin），无任何高权限凭据
-//   * Worker 校验 JWT 有效且角色为 admin 后，用 Worker Secret 里的
-//     Service Role Key 调 Storage 批量删除 —— 密钥不出服务器
-//   * 只接受「精确对象路径」：images/{asset_uuid}/{lang}/{filename}
-//     （实测 Storage 的 {prefixes} 目录删除不递归、list 有缓存延迟，
-//      精确路径删除是唯一可靠方式；前端从 images 表收集路径传入）
-// ---------------------------------------------------------------------------
+// ===========================================================================
+// GET /api/downloads/image/:imageId —— 单图下载（软门控：登录 + published 校验）
+//   校验通过 → 302 到对象 public URL（浏览器另存）。
+// ===========================================================================
+app.get('/api/downloads/image/:imageId', async (c) => {
+  const auth = await requireUser(c)
+  if (!auth.ok) return c.json({ error: { code: 'unauthorized', message: auth.message } }, auth.status)
 
+  const imageId = c.req.param('imageId')
+  if (!UUID_RE.test(imageId)) {
+    return c.json({ error: { code: 'bad_request', message: 'Invalid image id' } }, 400)
+  }
+
+  // service role 查图片 + 其语言/资产发布状态（双层可见性铁律）
+  // 注意：images→asset_languages→assets 均为多对一，embed 返回对象（非数组）
+  const res = await fetch(
+    `${c.env.SUPABASE_URL}/rest/v1/images?id=eq.${imageId}&select=id,storage_path,filename,asset_languages!inner(status,assets!inner(status))`,
+    { headers: svc(c.env) },
+  )
+  if (!res.ok) return c.json({ error: { code: 'internal', message: 'Lookup failed' } }, 500)
+  const rows = (await res.json()) as Array<{
+    id: string
+    storage_path: string
+    filename: string
+    asset_languages: { status: string; assets: { status: string } }
+  }>
+  const img = rows[0]
+  const lang = img?.asset_languages
+  if (!img || !lang || lang.status !== 'published' || lang.assets?.status !== 'published') {
+    return c.json({ error: { code: 'not_found', message: 'Image not available' } }, 404)
+  }
+
+  const relative = img.storage_path.split('/').slice(1).join('/')
+  const publicUrl = `${c.env.SUPABASE_URL}/storage/v1/object/public/images/${relative}`
+  return c.redirect(publicUrl, 302)
+})
+
+// ===========================================================================
+// POST /api/downloads/zip —— 多选 ZIP（当前语言内），流式 store 模式
+//   限额：≤30 张 / ≤100MB；任一 file_size 为 null → 拒绝（Decision B）
+//   无部分成功：预检 HEAD 失败 → 干净报错；流中读失败 → 中断流（无效 zip）
+// ===========================================================================
+interface ZipBody {
+  assetLanguageId?: unknown
+  imageIds?: unknown
+}
+
+app.post('/api/downloads/zip', async (c) => {
+  const auth = await requireUser(c)
+  if (!auth.ok) return c.json({ error: { code: 'unauthorized', message: auth.message } }, auth.status)
+
+  let body: ZipBody
+  try {
+    body = await c.req.json<ZipBody>()
+  } catch {
+    return c.json({ error: { code: 'bad_request', message: 'Invalid JSON body' } }, 400)
+  }
+
+  const langId = body.assetLanguageId
+  const imageIds = body.imageIds
+  if (typeof langId !== 'string' || !UUID_RE.test(langId)) {
+    return c.json({ error: { code: 'bad_request', message: 'Invalid assetLanguageId' } }, 400)
+  }
+  if (
+    !Array.isArray(imageIds) ||
+    imageIds.length === 0 ||
+    imageIds.length > MAX_ZIP_IMAGES ||
+    !imageIds.every((x) => typeof x === 'string' && UUID_RE.test(x))
+  ) {
+    return c.json(
+      { error: { code: 'bad_request', message: `imageIds must be 1-${MAX_ZIP_IMAGES} uuids` } },
+      400,
+    )
+  }
+
+  // 1. 语言 + 资产发布校验
+  const langRes = await fetch(
+    `${c.env.SUPABASE_URL}/rest/v1/asset_languages?id=eq.${langId}&select=id,language_code,status,assets!inner(status,slug)`,
+    { headers: svc(c.env) },
+  )
+  if (!langRes.ok) return c.json({ error: { code: 'internal', message: 'Lookup failed' } }, 500)
+  const langRows = (await langRes.json()) as Array<{
+    id: string
+    language_code: string
+    status: string
+    assets: { status: string; slug: string }
+  }>
+  const lang = langRows[0]
+  if (!lang || lang.status !== 'published' || lang.assets?.status !== 'published') {
+    return c.json({ error: { code: 'not_found', message: 'Language not available' } }, 404)
+  }
+
+  // 2. 取图片行，强制全部属于该语言（跨语言混选拒绝）
+  const inList = (imageIds as string[]).map((x) => `"${x}"`).join(',')
+  const imgRes = await fetch(
+    `${c.env.SUPABASE_URL}/rest/v1/images?select=id,filename,storage_path,file_size,sort_order&id=in.(${inList})&asset_language_id=eq.${langId}`,
+    { headers: svc(c.env) },
+  )
+  if (!imgRes.ok) return c.json({ error: { code: 'internal', message: 'Lookup failed' } }, 500)
+  const files = (await imgRes.json()) as Array<{
+    id: string
+    filename: string
+    storage_path: string
+    file_size: number | null
+    sort_order: number
+  }>
+  if (files.length !== (imageIds as string[]).length) {
+    return c.json(
+      { error: { code: 'bad_request', message: 'Some images do not belong to this language' } },
+      400,
+    )
+  }
+  files.sort((a, b) => a.sort_order - b.sort_order)
+
+  // 3. 限额 + file_size null 拒绝（Decision B：null 绝不当 0）
+  if (files.some((f) => f.file_size == null)) {
+    return c.json(
+      { error: { code: 'zip_limit_exceeded', message: 'Some images have unknown size; cannot zip.' } },
+      413,
+    )
+  }
+  const totalSize = files.reduce((s, f) => s + (f.file_size as number), 0)
+  if (totalSize > MAX_ZIP_BYTES) {
+    return c.json(
+      {
+        error: {
+          code: 'zip_limit_exceeded',
+          message: 'Too many images selected. Please download in smaller batches.',
+        },
+      },
+      413,
+    )
+  }
+
+  // 4. 预检 HEAD（有界并发）：任一对象缺失 → 流开始前干净报错
+  const headOk = await preflightHead(c.env, files, ZIP_CONCURRENCY)
+  if (!headOk) {
+    return c.json({ error: { code: 'storage_error', message: 'Some files are unavailable' } }, 502)
+  }
+
+  // 5. 流式打包（store 模式 + CRC32；有界预取；读失败中断流）
+  const zipName = sanitizeZipName(`${lang.assets.slug}-${lang.language_code}.zip`)
+  const stream = buildZipStream(c.env, files, ZIP_CONCURRENCY)
+  return new Response(stream, {
+    status: 200,
+    headers: {
+      'Content-Type': 'application/zip',
+      'Content-Disposition': `attachment; filename="${zipName}"`,
+      'Cache-Control': 'no-store',
+    },
+  })
+})
+
+// ===========================================================================
+// ZIP 构建（store 模式，不压缩；每文件缓冲 ≤15MB 计算 CRC32 后写出）
+// ===========================================================================
+async function preflightHead(env: Env, files: { storage_path: string }[], concurrency: number) {
+  let cursor = 0
+  let failed = false
+  async function worker() {
+    while (cursor < files.length && !failed) {
+      const f = files[cursor++]
+      const relative = f.storage_path.split('/').slice(1).join('/')
+      try {
+        const r = await fetch(`${env.SUPABASE_URL}/storage/v1/object/public/images/${relative}`, {
+          method: 'HEAD',
+        })
+        if (!r.ok) failed = true
+      } catch {
+        failed = true
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: concurrency }, worker))
+  return !failed
+}
+
+/** 有界预取：最多 concurrency 个 fetch 在途，按序产出 Uint8Array */
+async function* orderedPrefetch<T, R>(
+  items: T[],
+  fetchOne: (item: T) => Promise<R>,
+  concurrency: number,
+): AsyncGenerator<R> {
+  const inflight: Promise<R>[] = []
+  let next = 0
+  const pump = () => {
+    while (inflight.length < concurrency && next < items.length) {
+      const p = fetchOne(items[next++])
+      inflight.push(p)
+    }
+  }
+  pump()
+  for (let i = 0; i < items.length; i++) {
+    const p = inflight.shift()!
+    const value = await p
+    pump()
+    yield value
+  }
+}
+
+function buildZipStream(env: Env, files: ZipFile[], concurrency: number): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder()
+  return new ReadableStream<Uint8Array>({
+    async start(controller) {
+      try {
+        let offset = 0
+        const central: Uint8Array[] = []
+        const now = new Date()
+        const { time, date } = dosDateTime(now)
+
+        const bytesGen = orderedPrefetch(files, (f) => fetchObjectBytes(env, f), concurrency)
+
+        let idx = 0
+        for await (const bytes of bytesGen) {
+          const f = files[idx++]
+          const nameBytes = encoder.encode(sanitizeEntryName(f.filename))
+          const crc = crc32(bytes)
+          const lfh = localFileHeader(nameBytes, crc, bytes.length, time, date)
+          controller.enqueue(lfh)
+          offset += lfh.length
+          controller.enqueue(bytes)
+          offset += bytes.length
+          central.push(centralEntry(nameBytes, crc, bytes.length, time, date, offset - lfh.length - bytes.length))
+        }
+
+        const cdStart = offset
+        let cdSize = 0
+        for (const e of central) {
+          controller.enqueue(e)
+          cdSize += e.length
+        }
+        controller.enqueue(endOfCentral(central.length, cdSize, cdStart))
+        controller.close()
+      } catch (e) {
+        // 无部分成功：中断流 → 浏览器判定下载失败（不会产生合法 zip）
+        console.error('ZIP stream aborted:', e)
+        controller.error(e)
+      }
+    },
+  })
+}
+
+interface ZipFile {
+  filename: string
+  storage_path: string
+}
+
+async function fetchObjectBytes(env: Env, f: ZipFile): Promise<Uint8Array> {
+  const relative = f.storage_path.split('/').slice(1).join('/')
+  const r = await fetch(`${env.SUPABASE_URL}/storage/v1/object/images/${relative}`, {
+    headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY!, Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY!}` },
+  })
+  if (!r.ok || !r.body) throw new Error(`object read failed: ${r.status}`)
+  return new Uint8Array(await r.arrayBuffer())
+}
+
+// ---- ZIP 结构（小端）----
+function localFileHeader(name: Uint8Array, crc: number, size: number, time: number, date: number): Uint8Array {
+  const h = new Uint8Array(30 + name.length)
+  const dv = new DataView(h.buffer)
+  dv.setUint32(0, 0x04034b50, true)
+  dv.setUint16(4, 20, true) // version needed
+  dv.setUint16(6, 0, true) // flags
+  dv.setUint16(8, 0, true) // method = store
+  dv.setUint16(10, time, true)
+  dv.setUint16(12, date, true)
+  dv.setUint32(14, crc, true)
+  dv.setUint32(18, size, true) // compressed
+  dv.setUint32(22, size, true) // uncompressed
+  dv.setUint16(26, name.length, true)
+  dv.setUint16(28, 0, true) // extra len
+  h.set(name, 30)
+  return h
+}
+
+function centralEntry(name: Uint8Array, crc: number, size: number, time: number, date: number, offset: number): Uint8Array {
+  const h = new Uint8Array(46 + name.length)
+  const dv = new DataView(h.buffer)
+  dv.setUint32(0, 0x02014b50, true)
+  dv.setUint16(4, 20, true) // version made by
+  dv.setUint16(6, 20, true) // version needed
+  dv.setUint16(8, 0, true) // flags
+  dv.setUint16(10, 0, true) // method store
+  dv.setUint16(12, time, true)
+  dv.setUint16(14, date, true)
+  dv.setUint32(16, crc, true)
+  dv.setUint32(20, size, true)
+  dv.setUint32(24, size, true)
+  dv.setUint16(28, name.length, true)
+  dv.setUint16(30, 0, true) // extra
+  dv.setUint16(32, 0, true) // comment
+  dv.setUint16(34, 0, true) // disk number
+  dv.setUint16(36, 0, true) // internal attrs
+  dv.setUint32(38, 0, true) // external attrs
+  dv.setUint32(42, offset, true)
+  h.set(name, 46)
+  return h
+}
+
+function endOfCentral(count: number, cdSize: number, cdOffset: number): Uint8Array {
+  const h = new Uint8Array(22)
+  const dv = new DataView(h.buffer)
+  dv.setUint32(0, 0x06054b50, true)
+  dv.setUint16(8, count, true)
+  dv.setUint16(10, count, true)
+  dv.setUint32(12, cdSize, true)
+  dv.setUint32(16, cdOffset, true)
+  return h
+}
+
+function dosDateTime(d: Date): { time: number; date: number } {
+  const time = (d.getHours() << 11) | (d.getMinutes() << 5) | (Math.floor(d.getSeconds() / 2))
+  const date = ((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate()
+  return { time, date }
+}
+
+// ---- CRC32 ----
+const CRC_TABLE = (() => {
+  const t = new Uint32Array(256)
+  for (let n = 0; n < 256; n++) {
+    let c = n
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1
+    t[n] = c >>> 0
+  }
+  return t
+})()
+
+function crc32(buf: Uint8Array): number {
+  let c = 0xffffffff
+  for (let i = 0; i < buf.length; i++) c = CRC_TABLE[(c ^ buf[i]) & 0xff] ^ (c >>> 8)
+  return (c ^ 0xffffffff) >>> 0
+}
+
+// ---- 文件名消毒 ----
+function sanitizeEntryName(name: string): string {
+  // 取 basename，去掉路径分隔/.. /控制字符；限制长度
+  let base = name.split(/[\\/]/).pop() ?? 'file'
+  base = base.replace(/\.\./g, '').replace(/[\x00-\x1f\x7f]/g, '')
+  if (base.length > 120) {
+    const dot = base.lastIndexOf('.')
+    base = dot > 0 ? base.slice(0, 100) + base.slice(dot) : base.slice(0, 100)
+  }
+  return base || 'file'
+}
+
+function sanitizeZipName(name: string): string {
+  // Content-Disposition 内禁止 CR/LF/引号/反斜杠
+  return name.replace(/["\\\r\n]/g, '').replace(/[^\w.\-]/g, '-').slice(0, 120)
+}
+
+// ===========================================================================
+// POST /api/admin/storage/delete —— 高权限精确路径删除（Phase 3）
+// ===========================================================================
 interface StorageDeleteBody {
   paths?: unknown
 }
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
-const LANGS = ['en', 'de', 'it', 'fr', 'es']
-
 function isValidImagePath(p: string): boolean {
   if (typeof p !== 'string' || p.length > 512 || p.includes('..')) return false
   const parts = p.split('/')
-  // images/{asset_uuid}/{lang}/{filename}
   if (parts.length !== 4) return false
-  return (
-    parts[0] === 'images' &&
-    UUID_RE.test(parts[1]) &&
-    LANGS.includes(parts[2]) &&
-    parts[3].length > 0
-  )
-}
-
-async function requireAdmin(c: { req: { header: (k: string) => string | undefined }; env: Env }) {
-  const auth = c.req.header('Authorization')
-  if (!auth?.startsWith('Bearer ')) {
-    return { ok: false as const, status: 401 as const, message: 'Missing bearer token' }
-  }
-  const jwt = auth.slice(7)
-
-  // 1. JWT 有效性：交给 Supabase Auth 验证（不自己解签，杜绝伪造）
-  const userRes = await fetch(`${c.env.SUPABASE_URL}/auth/v1/user`, {
-    headers: {
-      apikey: c.env.SUPABASE_PUBLISHABLE_KEY,
-      Authorization: `Bearer ${jwt}`,
-    },
-  })
-  if (!userRes.ok) {
-    return { ok: false as const, status: 401 as const, message: 'Invalid or expired token' }
-  }
-  const user = (await userRes.json()) as { id?: string }
-  if (!user.id) {
-    return { ok: false as const, status: 401 as const, message: 'Invalid user payload' }
-  }
-
-  // 2. 角色校验：user_roles 表（service role 只读查询，绝不下发）
-  const roleRes = await fetch(
-    `${c.env.SUPABASE_URL}/rest/v1/user_roles?user_id=eq.${user.id}&select=role`,
-    {
-      headers: {
-        apikey: c.env.SUPABASE_SERVICE_ROLE_KEY!,
-        Authorization: `Bearer ${c.env.SUPABASE_SERVICE_ROLE_KEY!}`,
-      },
-    },
-  )
-  if (!roleRes.ok) {
-    return { ok: false as const, status: 500 as const, message: 'Role lookup failed' }
-  }
-  const roles = (await roleRes.json()) as Array<{ role: string }>
-  if (!roles.some((r) => r.role === 'admin')) {
-    return { ok: false as const, status: 403 as const, message: 'Admin required' }
-  }
-
-  return { ok: true as const, userId: user.id }
+  return parts[0] === 'images' && UUID_RE.test(parts[1]) && LANGS.includes(parts[2]) && parts[3].length > 0
 }
 
 app.post('/api/admin/storage/delete', async (c) => {
-  if (!c.env.SUPABASE_SERVICE_ROLE_KEY) {
-    return c.json(
-      { error: { code: 'not_configured', message: 'Service role key not configured on worker' } },
-      500,
-    )
-  }
-
   const auth = await requireAdmin(c)
-  if (!auth.ok) {
-    return c.json({ error: { code: 'unauthorized', message: auth.message } }, auth.status)
-  }
+  if (!auth.ok) return c.json({ error: { code: 'unauthorized', message: auth.message } }, auth.status)
 
   let body: StorageDeleteBody
   try {
@@ -108,7 +505,6 @@ app.post('/api/admin/storage/delete', async (c) => {
   } catch {
     return c.json({ error: { code: 'bad_request', message: 'Invalid JSON body' } }, 400)
   }
-
   const paths = body.paths
   if (
     !Array.isArray(paths) ||
@@ -122,22 +518,14 @@ app.post('/api/admin/storage/delete', async (c) => {
     )
   }
 
-  // Storage 删除：endpoint 已限定 bucket=images，prefixes 须为 bucket 内相对路径
-  // （前端传入的路径带 bucket 名，与 DB images.storage_path 约定一致，这里剥掉首段）
   const relativePaths = (paths as string[]).map((p) => p.split('/').slice(1).join('/'))
-  const authHeaders = {
-    apikey: c.env.SUPABASE_SERVICE_ROLE_KEY,
-    Authorization: `Bearer ${c.env.SUPABASE_SERVICE_ROLE_KEY}`,
-    'Content-Type': 'application/json',
-  }
-
+  const headers = svc(c.env)
   try {
-    // 精确路径删除，每批最多 100 个
     for (let i = 0; i < relativePaths.length; i += 100) {
       const batch = relativePaths.slice(i, i + 100)
       const delRes = await fetch(`${c.env.SUPABASE_URL}/storage/v1/object/images`, {
         method: 'DELETE',
-        headers: authHeaders,
+        headers,
         body: JSON.stringify({ prefixes: batch }),
       })
       if (!delRes.ok) throw new Error(`delete failed: ${delRes.status}`)
@@ -146,7 +534,6 @@ app.post('/api/admin/storage/delete', async (c) => {
     console.error('Storage delete failed:', e)
     return c.json({ error: { code: 'storage_error', message: 'Storage deletion failed' } }, 502)
   }
-
   return c.json({ deleted: true, objects: relativePaths.length })
 })
 

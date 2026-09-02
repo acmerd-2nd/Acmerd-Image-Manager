@@ -78,3 +78,26 @@ export function parseLanguageCode(raw: string | null | undefined): string | null
   // 严格小写匹配：'EN' / 'En' / 'de-DE' / 'en ' 等一律无效
   return LANGUAGE_SET.has(raw) ? raw : null
 }
+
+/**
+ * 网盘 Package URL 安全校验（Phase 5，与 0004 DB 触发器同规则的前端二次防御）。
+ * 规则：必须 https；host 精确等于允许列表（禁止子串/前缀匹配）；无 userinfo/端口。
+ * 绝不对未通过校验的 URL 调用 window.open。
+ */
+const PACKAGE_ALLOWED_HOSTS = new Set(['pan.quark.cn', 'pan.baidu.com', 'yun.baidu.com'])
+
+export function isSafePackageUrl(raw: string | null | undefined): boolean {
+  if (typeof raw !== 'string' || raw.length === 0 || raw.length > 2048) return false
+  // eslint-disable-next-line no-control-regex
+  if (/[\u0000-\u001f\u007f]/.test(raw)) return false
+  let u: URL
+  try {
+    u = new URL(raw)
+  } catch {
+    return false
+  }
+  if (u.protocol !== 'https:') return false
+  if (u.username || u.password) return false
+  if (u.port) return false
+  return PACKAGE_ALLOWED_HOSTS.has(u.hostname.toLowerCase())
+}

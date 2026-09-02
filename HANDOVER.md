@@ -1,7 +1,7 @@
 # 🔄 HANDOVER — ACMERD Image Manager 交接文档
 
-> **最后更新**: 2026-09-03（Phase 4 收工）
-> **当前状态**: Phase 0-3 ✅ · **Phase 4 ✅（Gate G4 PASS）** · Phase 5 待开始
+> **最后更新**: 2026-09-03（Phase 5 收工）
+> **当前状态**: Phase 0-4 ✅ · **Phase 5 ✅（Gate G5 PASS）** · Phase 6 待开始
 > **新 Agent 从「第六节 · 下一步任务」直接接手即可**
 
 ---
@@ -120,6 +120,19 @@ anon  SELECT schema_migrations → permission denied ✓
 - **坑复现**：Storage list 返回的 `name` 是 basename 非全路径 → 清理孤儿对象必须用完整相对路径 `{asset}/{lang}/{file}` 精确删（已踩并修正清理脚本）。
 - **Git**：Phase 4 commit 已推 main。
 
+### Phase 5 — Download System ✅（Gate G5 PASS，2026-09-03，Owner 过 Design Gate + 4 决策后实施）
+- **Owner 决策**：A=维持 public bucket（单图为软门控，硬门控留 Phase 8）；B=ZIP 中任一 file_size 为 null → 拒绝（绝不当 0）；C=加 0004 URL 校验触发器（https + 精确 host 白名单，禁子串）；D=ZIP 上限 30 图 / 100MB / 并发 4。**无部分成功**：流式中途读失败即中断流（无效 zip），不返回"跳过文件的假成功"。
+- **DB**：`0004_download_source_url_guard.sql`——`download_sources.url` BEFORE 触发器，仅 https、host 精确等于 `pan.quark.cn/pan.baidu.com/yun.baidu.com`、拒 userinfo/端口/控制字符。正/负样本全过（子串伪装域 `pan.quark.cn.evil.com` 被拒）。
+- **Worker**（复用已注入的 Service Role Secret）：
+  - `requireUser`（JWT→/auth/v1/user→查 user_roles，user 或 admin）+ CORS（仅 image.acmerd.com + localhost）
+  - `GET /api/downloads/image/:id`：软门控 + 双层发布校验（**注意 image→language→asset 是多对一，PostgREST embed 返回对象非数组**，踩坑修正）→ 302 public URL
+  - `POST /api/downloads/zip`：service role 校验语言/资产 published + imageIds 全属该语言（跨语言 400）→ 限额（>30 400、null file_size 413、>100MB 413）→ 预检 HEAD（有界并发 4，缺失则流前 502）→ **流式 store 模式 ZIP**：有界预取按 sort_order 写出，每文件缓冲≤15MB 算 CRC32，内存只留中央目录；Content-Disposition `{slug}-{lang}.zip`（消毒）
+- **前端**：`features/downloads/`（api + PackageDownloadPanel）+ `validators.isSafePackageUrl`（与 DB 同规则二次防御）。详情页：单图下载按钮（登录门控）、ZIP 选择模式（≤30、切语言清空、底部浮条）、Package 面板（0 隐藏/1 直跳/2 选择器，**与语言完全解耦**，仅 `window.open` 安全 URL）。
+- **安全测试 16/16**：guest 401；USER 下载 published 单图/ZIP 200；draft 语言/资产图 404；ZIP 跨语言 400 / >30 400 / null file_size 413；ZIP 结构合法（PK 头 + EOCD + 条目数）；Package guest RLS 0 行 / user 2 行；恶意域被 DB 守卫拒。
+- **线上 UI E2E**：登录态单图下载 GET 200、ZIP POST 200 触发浏览器下载、Package 2 源弹 Quark/Baidu 选择器；游客显示"下载需登录"+"登录后可获取网盘下载链接"。
+- **坑**：① PostgREST to-one embed 是对象不是数组（`img.asset_languages` 直接取，勿 `[0]`）；② 0003 Publish 守卫会拦"INSERT 直接 published"，播种脚本须先 draft 再 PATCH 发布；③ 清理脚本按 name 匹配漏删（演示资产 name='Download Demo'、slug 才是 dl-demo-*），按 id 兜底删。
+- **Git**：Phase 5 commit 已推 main。
+
 ---
 
 ## 五、待 Owner 配合 / 当前挂起事项
@@ -131,15 +144,15 @@ anon  SELECT schema_migrations → permission denied ✓
 
 ---
 
-## 六、下一步任务：Phase 5 — Download System（未开始）
+## 六、下一步任务：Phase 6 — Search & Tags（未开始）
 
-按 `【分阶段】` 文档执行。**开工前先输出 Phase 开始报告（Design Gate）**，完成后对照 Gate G5 验收。
+按 `【分阶段】` 文档执行。**开工前先输出 Phase 开始报告（Design Gate）**，完成后对照 Gate G6 验收。
 
-### Phase 5 概要（分三个子阶段 5A/5B/5C）
-5A 单图下载（View Image → Download，Guest 不允许下载）；5B 多选 ZIP 打包下载（Worker service role 流式 ZIP，绑定 assetLanguageId）；5C Package Download（网盘链接：按数量 0 隐藏 / 1 直跳 / 2 选择器，**与语言完全解耦**）。
+### Phase 6 概要
+搜索（关键词匹配 Asset）+ Tags（属于 Asset 的多对多标签，`tags`/`asset_tags` 表已在 0001 建好，写策略 admin-only）。注意：Tags 属 Asset 级，不绑 Image；搜索/筛选走 `published_assets` 视图 + RLS，**继承双层可见性铁律，不重发明**。
 
 ### 后续 Phase 概要（详见分阶段文档，勿跳级）
-Phase 5 下载三件套 → 6 搜索+Tag → 7 Admin 控制台 → 8 安全加固 → 9 UX/性能 → 10 发布。
+Phase 6 搜索+Tag → 7 Admin 控制台 → 8 安全加固 → 9 UX/性能 → 10 发布。
 
 ---
 
