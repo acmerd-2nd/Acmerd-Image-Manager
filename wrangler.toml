@@ -1,3 +1,19 @@
+#:schema node_modules/wrangler/config-schema.json
 name = "acmerd-image-manager"
-main = "src/index.js"
-compatibility_date = "2026-09-02"
+main = "worker/index.ts"
+compatibility_date = "2026-08-01"
+
+# 自定义域（Zone 在同一 CF 账户下）— 必须位于任何 [section] 之前
+routes = [
+  { pattern = "image.acmerd.com", custom_domain = true }
+]
+
+# SPA 静态资源：构建产物目录；未命中路径回退 index.html（/admin/* 深链）
+[assets]
+directory = "./dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+
+[vars]
+SUPABASE_URL = "https://ctddbmadywtdufazhwiq.supabase.co"
+SUPABASE_PUBLISHABLE_KEY = "sb_publishable_NcRTArTwZopEQAH6gb3LJw_VPXCgEG5"

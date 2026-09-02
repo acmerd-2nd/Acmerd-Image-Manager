@@ -1,0 +1,69 @@
+import { NavLink, Link, Outlet } from 'react-router-dom'
+import { FolderOpen, LayoutDashboard, ScrollText, Settings, Tags, Users, Database } from 'lucide-react'
+import { cn } from '@/lib/utils'
+
+const items = [
+  { to: '/admin/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { to: '/admin/assets', label: 'Assets', icon: FolderOpen },
+  { to: '/admin/users', label: 'Users', icon: Users },
+  { to: '/admin/tags', label: 'Tags', icon: Tags },
+  { to: '/admin/storage', label: 'Storage', icon: Database },
+  { to: '/admin/audit-logs', label: 'Audit Logs', icon: ScrollText },
+  { to: '/admin/settings', label: 'Settings', icon: Settings },
+]
+
+export function AdminLayout() {
+  return (
+    <div className="flex min-h-[calc(100vh-3.5rem)]">
+      <aside className="hidden w-56 shrink-0 border-r bg-muted/40 md:block">
+        <div className="sticky top-14 flex h-[calc(100vh-3.5rem)] flex-col p-4">
+          <div className="mb-4 px-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Admin Console
+          </div>
+          <nav className="flex flex-col gap-1">
+            {items.map(({ to, label, icon: Icon }) => (
+              <NavLink
+                key={to}
+                to={to}
+                className={({ isActive }) =>
+                  cn(
+                    'flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground',
+                    isActive && 'bg-accent text-accent-foreground',
+                  )
+                }
+              >
+                <Icon className="h-4 w-4" />
+                {label}
+              </NavLink>
+            ))}
+          </nav>
+          <div className="mt-auto px-2 text-xs text-muted-foreground">
+            <Link to="/" className="hover:underline">
+              ← Back to site
+            </Link>
+          </div>
+        </div>
+      </aside>
+      <div className="flex-1 p-6">
+        {/* 移动端简易导航（Phase 9 响应式再完善） */}
+        <nav className="mb-4 flex flex-wrap gap-2 md:hidden">
+          {items.map(({ to, label }) => (
+            <NavLink
+              key={to}
+              to={to}
+              className={({ isActive }) =>
+                cn(
+                  'rounded-md border px-3 py-1.5 text-xs font-medium',
+                  isActive && 'bg-accent',
+                )
+              }
+            >
+              {label}
+            </NavLink>
+          ))}
+        </nav>
+        <Outlet />
+      </div>
+    </div>
+  )
+}
