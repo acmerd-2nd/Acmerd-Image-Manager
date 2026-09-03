@@ -1,46 +1,49 @@
 # 🔄 HANDOVER — ACMERD Image Manager 交接文档
 
-> **最后更新**: 2026-09-03（Phase 6 收工，换号交接）
-> **当前状态**: Phase 0-6 ✅ 全 CLOSED · **Phase 7（Admin Platform Consolidation）待开始**
-> **当前 HEAD**: `edf1bf0`（= origin/main，已推送，工作树干净）
-> **线上**: https://image.acmerd.com 运行中（`/api/health` 200）
-> **新 Agent 请先读「第零节 · 接手清单」，再按「第六节 · 下一步任务」开工**
+> **最后更新**: 2026-09-03 深夜（换号交接）
+> **当前状态**: Phase 0-8 ✅ 全 CLOSED（G1–G8 PASS）· **Phase 9（UX & Performance）Design Gate 已交审，PENDING OWNER REVIEW**（尚未开写任何实现代码）
+> **当前 HEAD**: `main` = `74cae3a`（Phase 8）→ 其后追加本交接 commit（见 `git log` 最新一条）
+> **线上**: https://image.acmerd.com 运行中（`/api/health` 200，Worker + SPA 均已部署）
+> **新 Agent 请先读「第零节 · 接手清单」，再按「第六节 · 当前唯一待办」开工**
 
 ---
 
 ## 零、新 Agent 接手清单（照此顺序即可无缝接管）
 
-**这是一个"换号/换人"的全新会话，你对此项目零上下文。按下面 6 步走：**
+**这是一个"换号/换人"的全新会话，你对此项目零上下文。按下面顺序走：**
 
-1. **读三份权威文档**（顺序不可跳）：
-   - `【总纲】acmerdImage-manager.md`（产品宪章 + Agent 绝对规则）
-   - `【分阶段】acmerdImage-manager.md`（Phase 0-10 路线图 + 各 Gate 验收标准）
-   - `docs/phase-0/01~12-*.md`（已批准的架构基线）
-   - 然后通读本 HANDOVER 全文。
-2. **确认密钥就位**：项目根 `.env` 必须存在（见第二节密钥表）。若新机器没有 `.env`，**必须找 Owner 索取**——所有密钥（Supabase / DATABASE_URL / Cloudflare / GITHUB_TOKEN / ADMIN 账号）都在里面，无法从别处重建。`.env` 已被 `.gitignore` 排除，绝不提交。
-3. **确认工具链**（Windows 专属）：npm 一律用 `D:\node\npm.cmd` / `D:\node\npx.cmd`（全局 npm 已损坏，见第三节）。Node v24。
+1. **读权威文档**（顺序不可跳）：
+   - `【总纲】acmerdImage-manager.md`（产品宪章 + Agent 绝对规则）——本地文件，**故意未推送**公开仓库
+   - `【分阶段】acmerdImage-manager.md`（Phase 0-10 路线图 + 各 Gate 验收）——同上，本地文件
+   - `docs/phase-0/01~12-*.md`（Phase 0 已批准架构基线）
+   - `docs/phase-7/01-design-gate.md`（含附录 A1–A6 裁决，是最完整的"裁决落档"范例）
+   - `docs/phase-8/02-security-review.md`（**安全基线冻结文件**，G8 后任何改动都要对照它说明是否触碰边界）
+   - 本 HANDOVER 全文
+2. **确认密钥就位**：项目根 `.env` 必须存在（键名见第二节）。若新机器没有 `.env`，**必须找 Owner 索取原文件**——所有密钥都只在 `.env`，无法从别处重建。`.env` 已被 `.gitignore` 排除，**绝不提交**。
+3. **确认工具链**：bash 会话中 `node`/`npm` 可直接用（受管 Node v22）。若 npm 解析失败，回退 `/d/node/npm.cmd`（历史已知可用 Node v24）。`python` 可直接用（受管 3.13）。
 4. **验证环境健康**（只读，安全）：
    ```bash
-   git log --oneline -3          # 应见 edf1bf0 起
-   "/d/node/npm.cmd" run typecheck
-   "/d/node/npm.cmd" run build
+   git log --oneline -3          # 应见 74cae3a 及本交接 commit
+   npm run typecheck             # 前后端 TS 0 错误
    curl -s -o /dev/null -w "%{http_code}\n" https://image.acmerd.com/api/health   # 200
+   npm run db:migrate            # 全部 skip（幂等）即 DB 状态正确
    ```
-5. **确认 DB 状态**：`supabase/migrations/` 有 0001–0005，全部已应用（`schema_migrations` 表记录）。跑 `"/d/node/npm.cmd" run db:migrate` 应全部 `skip`（幂等）。**不要**在 Supabase Dashboard 手改生产库。
-6. **进入 Phase 7**：先输出 **Design Gate 报告**（模板见第八节），等 Owner 批准再动手。**严禁跳阶段、严禁顺手重构**。
+5. **确认 DB 状态**：`supabase/migrations/` 有 0001–0007，`schema_migrations` 全记录（本机实测：1 asset / 1 lang / 1 image / 0 tags / 64 audit rows，演示级数据）。**不要在 Supabase Dashboard 手改生产库**——结构变更只许新增 `supabase/migrations/XXXX_*.sql` 后跑 `npm run db:migrate`。
+6. **进入 Phase 9**：见「第六节」。**先等 Owner 对 D1–D10 的裁决，严禁未批准先写实现代码。**
 
-**关键红线（违反会被 Owner 打回）**：Service Role Key 只进 Worker Secret / 本地脚本，绝不进前端 bundle / Git / wrangler.toml；权限只靠 UI 隐藏无效，必须 RLS/服务端兜底；改设计先交 Change Proposal；两份中文规划文档不推公开仓库。
+**关键红线（违反会被 Owner 打回）**：Service Role Key 只进 Worker Secret / 本地脚本，绝不进前端 bundle / Git / wrangler.toml；权限只靠 UI 隐藏无效，必须 RLS/服务端兜底；改设计先交 Change Proposal；两份中文规划文档 + `.workbuddy/` 不推公开仓库；**未提供证据前不得宣布 Gate PASS**；不扩大 Scope、不重构已完成 Phase。
 
-### 当前状态快照（截至本交接）
+### 当前状态快照
 | 维度 | 值 |
 | --- | --- |
-| HEAD / 远端 | `edf1bf0` = origin/main，工作树干净（仅 3 个未跟踪：2 份规划文档[故意] + `.tmp_admin_token`[已 gitignore，可删]） |
-| 已应用迁移 | 0001 schema+RLS+storage / 0002 grants / 0003 asset 完整性守卫 / 0004 网盘 URL 守卫 / 0005 search_assets RPC + tag slug + 审计 |
-| Worker 端点 | `/api/health`、`/api/admin/storage/delete`、`/api/downloads/image/:id`、`/api/downloads/zip`（均带 requireUser/requireAdmin + CORS） |
-| Worker Secret | `SUPABASE_SERVICE_ROLE_KEY` 已注入（`wrangler secret`），`worker/.dev.vars` 本地同步 |
+| HEAD / 远端 | `74cae3a`（Phase 8）= origin/main，已推送；本交接 commit 紧随其后 |
+| 工作树 | 仅未跟踪：`.workbuddy/`[故意]、`docs/phase-9/`[本交接将提交]、两份规划文档[故意] |
+| 已应用迁移 | 0001 schema+RLS+storage / 0002 grants / 0003 asset 完整性守卫 / 0004 下载源 URL 守卫 / 0005 search_assets+tag slug+审计 / 0006 Admin 控制台（原子变更 RPC+disabled 门禁+stats+allowlist18）/ 0007 审计收口（asset_languages 五语义+images WHEN 审计+DEF-1 tags.updated_at+allowlist24） |
+| Worker 端点 | `/api/health`；`/api/downloads/image/:id`、`/api/downloads/zip`；`/api/admin/storage/delete`；`/api/admin/users`（分页 envelope）、`/api/admin/users/:id/role`、`/api/admin/users/:id/disabled`、`/api/admin/stats`。全部经 `authenticate()`（角色 + `profiles.disabled` 逐请求校验 → 403 `account_disabled`） |
+| Worker Secret | `SUPABASE_SERVICE_ROLE_KEY` 已 `wrangler secret put`；本地 `worker/.dev.vars` 同步 |
 | 管理员账号 | `1902768564@qq.com`（密码见 `.env` 的 `ADMIN_PASSWORD`），角色 admin |
-| 冻结基线 | 双层可见性（Asset+Language published）、多语言模型、三套下载解耦、ZIP ≤30/≤100MB/并发4、public bucket（单图软门控，硬门控留 Phase 8） |
-| 数据现状 | 生产库 assets/tags 均为空（测试数据已全部清理）；审计日志保留历史 |
+| 冻结基线 | 双层可见性（Asset+Language published，0007 后语义经 NO-DRIFT 证明未漂移）、多语言模型、三套下载解耦、ZIP ≤30/≤100MB/并发4、public bucket（残余风险已记录，见 D5/5a）、audit allowlist=24、last-admin 原子保护、disabled 门禁对偶（Worker 403 + RLS `is_admin` 含 `disabled=false`） |
+| 数据现状 | 生产库极小（1 asset/1 image/0 tags）——**分页/大列表验收必须在隔离库造数**，不许拿生产小数据集充数 |
 
 ---
 
@@ -49,17 +52,10 @@
 | 项 | 值 |
 | --- | --- |
 | 项目 | ACMERD Image Manager（品牌：ACMERD · 探知，Research · Discover · Create） |
-| 线上地址 | https://image.acmerd.com （已部署，运行正常） |
-| GitHub | https://github.com/acmerd-2nd/Acmerd-Image-Manager （公开仓库，默认分支 main） |
+| 线上地址 | https://image.acmerd.com（已部署，运行正常） |
+| GitHub | https://github.com/acmerd-2nd/Acmerd-Image-Manager（公开仓库，默认分支 main） |
 | 定位 | 管理员维护图片资产、注册用户浏览+下载的 Digital Asset Library。核心对象是 **Asset**（不是 Image/Folder） |
 | 架构 | React SPA + Hono Worker（同一 Worker 托管静态资源与 /api/*）→ Supabase（Auth / PostgreSQL+RLS / Storage） |
-
-**必读文档（按顺序）**：
-
-1. `【总纲】acmerdImage-manager.md`（项目根目录，产品/架构总宪章，含 Agent 18 条绝对规则）
-2. `【分阶段】acmerdImage-manager.md`（Phase 0-10 施工路线图 + Gate 验收标准）
-3. `docs/phase-0/01~12-*.md`（已获 Owner 批准的架构基线：ERD / Schema / RLS / Storage / Route / API / 下载流 / 多语言流 / Admin 工作流 / 密钥计划）
-4. `README.md`
 
 > ⚠️ 两份中文规划文档（总纲/分阶段）**故意未推送**到公开 GitHub 仓库，仅存本地。保持现状，勿提交。
 
@@ -67,215 +63,234 @@
 
 ## 二、密钥与凭据（全部在 `.env`，绝不提交 Git）
 
-`.env`（项目根目录）已被 `.gitignore` 排除，内容一览：
+`.env`（项目根目录，**本机绝对路径 `E:\【项目】0002.Acmerd-Image-Manager\.env`**）已被 `.gitignore` 排除。换号交接时**原样复制 `.env` 即可**（若新会话在同一台机器上，路径不变、直接可用）。键名一览：
 
 | 变量 | 用途 | 红线 |
 | --- | --- | --- |
 | `SUPABASE_URL` / `SUPABASE_PUBLISHABLE_KEY` | 前端+Worker 公开凭据 | 可进前端 bundle，安全靠 RLS |
-| `SUPABASE_SERVICE_ROLE_KEY` | 绕过 RLS 的服务端密钥 | **仅** Cloudflare Worker Secret / 本地 scripts；绝不进前端/ Git / wrangler.toml |
-| `DATABASE_URL` / `SUPABASE_DB_PASSWORD` | 直连 postgres，跑 migration（scripts/db-apply.mjs） | 绝不进 Git |
+| `SUPABASE_SERVICE_ROLE_KEY` | 绕过 RLS 的服务端密钥 | **仅** Cloudflare Worker Secret / 本地 scripts；绝不进前端 / Git / wrangler.toml |
+| `DATABASE_URL` / `SUPABASE_DB_PASSWORD` | 直连 postgres，跑 migration（`npm run db:migrate`）与脚本 | 绝不进 Git |
 | `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` | wrangler deploy | 绝不进 Git |
-| `GITHUB_TOKEN` | push 代码（PAT，对仓库有写权限） | 绝不进 Git |
-| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | Owner 的管理员账号（已创建+提权） | 本地记录用，绝不进 Git |
+| `GITHUB_TOKEN` | push 代码（PAT，仓库写权限） | 绝不进 Git |
+| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | Owner 管理员账号（本地记录用） | 绝不进 Git |
 | `VITE_SUPABASE_URL` / `VITE_SUPABASE_PUBLISHABLE_KEY` | Vite 构建注入前端 | 公开变量 |
 
-Supabase 项目：`ctddbmadywtdufazhwiq`（Asia-Pacific）。Storage bucket `images`（public）已建好，策略齐全。
+Supabase 项目 ref：`ctddbmadywtdufazhwiq`（Asia-Pacific）。Storage bucket `images`（public=1，唯一桶）已建好，策略齐全。存储对象相对路径格式：`{assetId}/{langCode}/{file}`（DB 的 `images.storage_path` 存的是 `images/{assetId}/{langCode}/{file}`，调 Storage API 时要剥掉首段 `images/`）。
+
+**注意**：本交接文档与一切进入 Git 的文档**故意不写密钥明文**（Phase 8 Secret 扫描基线）。密钥唯一的权威载体就是 `.env`。
 
 ---
 
-## 三、本机环境须知（Windows 专属坑）
+## 三、本机环境与运维要点（血泪坑合集，跨阶段有效）
 
-1. **全局 npm 已损坏**（`C:\Users\Admin\AppData\Roaming\npm` 缺 npm-cli.js）。一律使用 `D:\node\npm.cmd` 和 `D:\node\npx.cmd`。Node v24.16.0。
-2. Shell 是 Git Bash。**临时文件路径在 bash 与 node 之间不一致**（bash 的 `/tmp` ≠ node 的 `/tmp`）→ 用项目内相对路径（如 `.tmp_xxx`），用完删除。
-3. `wrangler deploy` 前必须先 `set -a; source .env; set +a` 导出 CF 凭据（或用 `npm run deploy`）。
-4. pg 多语句查询是**隐式事务**：一个 migration 文件失败会整体回滚，不留半成品。
-5. PostgreSQL 14+ 创建 `language sql` 函数时会**校验函数体引用的表**——函数必须在依赖的表之后创建（0001 里 `is_admin()` 放在建表后的原因）。
-6. `wrangler.toml` 中 `routes` 等顶层键必须放在任何 `[section]` **之前**，否则会被解析进错误的段（踩过：routes 进了 [vars]）。
-
----
-
-## 三·五、平台工程铁律（跨阶段长期有效，所有 Agent 必须遵守）
-
-1. **Supabase Storage `list` ≠ 权威存在性判断。** `object/list` 返回的 `name` 是 **basename 而非完整相对路径**，且有**缓存延迟**（刚上传/刚删除的对象短时间内可能查不到或仍显示）。任何"对象是否存在 / 是否已删除"的判定，一律用**完整相对路径 `{asset}/{lang}/{file}` + 权威响应**（精确 DELETE 返回 200=之前存在、400 NoSuchKey=不存在；或 HEAD public URL 但注意 CDN 缓存）。清理/校验脚本必须遵循此律（Phase 3/4 均因违反踩过坑）。
-2. **PostgREST 对 RLS 过滤后 0 行命中的 UPDATE/DELETE 返回 204/200，不代表放行。** 验证"写被拒"必须**回读数据确认未变**，不能只看状态码。
-3. **Supabase Storage 把 RLS 拒绝包装成 HTTP 400 + body `{statusCode:403, code:'AccessDenied'/'new row violates row-level security'}`**，不是直接 403。安全测试断言要按 body 判定。
-4. **可见性规则是单一事实来源，禁止在各阶段重新发明。** 前台可见 = `Asset.status='published' AND Language.status='published'`（图片再叠加其语言可见）。Phase 5 下载、Phase 6 搜索**必须直接继承**这套双层门控（RLS 已在 0001 落地），UI 层不得作为唯一屏障。
-5. **多语言模型已冻结为长期基线**：`Asset → asset_languages(EN/DE/IT/FR/ES) → images`，语言是 Asset 下的版本，**绝不拆成 Asset-EN/Asset-DE**。`?lang` 只是前端状态同步，不是权限入口。
-
----
-
-## 四、已完成进度明细
-
-### Phase 0 — Architecture Baseline ✅（Owner 已批准）
-- 12 份设计文档在 `docs/phase-0/`，是后续所有阶段的实施依据。
-
-### Phase 1 — Foundation ✅（Gate G1 PASS）
-- **前端**：React 18 + TS + Vite + Tailwind + shadcn 风格组件（`src/components/ui/`）；AppShell（顶部导航，Admin 链接仅 admin 可见）；AdminLayout（侧边栏 + 7 个占位页）；路由全套（`/` `/search` `/asset/:slug` `/login` `/register` `/profile` `/403` `/404` `/admin/*`）；`RequireAuth`/`RequireRole` 路由守卫；`AuthProvider`（session + role，role 来自 `user_roles` 表自身行）；ErrorBoundary。
-- **Worker**：`worker/index.ts`（Hono），`/api/health` 已通；SPA 静态资源由 `[assets]` 绑定托管（深链回退 single-page-application）。
-- **数据库**（已应用 migration）：
-  - `0001_initial_schema.sql`：9 张表（profiles/user_roles/assets/asset_languages/images/tags/asset_tags/download_sources/audit_logs）、27 条 RLS 策略、审计触发器（write_audit）、published_assets 视图、storage bucket + 4 条 Storage Policy、`assign_first_admin()` 提权函数。
-  - `0002_grants.sql`：anon/authenticated/service_role 的表级 GRANT（**2026-09-02 刚应用**）。安全设计：`user_roles`/`audit_logs` 客户端角色**无写权限**（改角色只能走 Worker service role，强制留审计）；`schema_migrations` 对客户端关闭。
-- **部署**：`https://image.acmerd.com` 运行中（自定义域绑定 Worker）；`/api/health` 200；深链 200。
-- **Git**：已推送 main（commit `560cf2f` + 之前 `c8f1bd5` 是 Owner 手传的旧占位 Worker）。
-
-### 管理员账号 ✅（已就绪）
-- `1902768564@qq.com` / 密码见 `.env` 的 `ADMIN_PASSWORD`
-- 已通过服务端 Admin API 创建（email_confirm=true，绕过邮箱验证），已用 `assign_first_admin()` 提权为 `admin`
-- 已验证：密码登录 200；JWT 查 user_roles 返回 admin；INSERT assets 成功（RLS+GRANT 双通过）
-
-### RLS 冒烟测试 ✅（2026-09-02 全部通过）
-```
-admin INSERT assets        → 成功（已清理测试数据）
-anon  SELECT assets        → [] （RLS 过滤，非报错）
-anon  SELECT schema_migrations → permission denied ✓
-```
-
-### Phase 2 — Authentication ✅（Gate G2 PASS，2026-09-02）
-- **登录页** `/login`：`signInWithPassword`；错误分桶（凭据错误/未验证+重发按钮/限速/其他）；`?next=` 白名单（反复解码后在最终形态校验，拒绝 `//`、`\`、`:`、控制字符及双重编码绕过）；已登录访问回跳。
-- **注册页** `/register`：共享校验器 `src/lib/validators.ts`（≥8 位且数字/大写/小写至少两类，唯一实现）；注册分支按 Supabase 返回值判定（有 session 直接进站 / 无 session 显示查收邮件）；**无前端兜底写入**，profiles/user_roles 全靠触发器。
-- **Profile 页**：display_name 编辑（RLS 限本人行），实测保存+刷新持久化。
-- **守卫竞态修复**：`roleLoading` 与 setSession 同批同步更新（否则登录后瞬间误判 403）；role 查询失败按安全方向兜底为 'user'。
-- **安全测试 15/15 通过**（PostgREST + 临时 USER JWT）：INSERT assets 403；UPDATE/DELETE published 资产数据未被改动（注意：PostgREST 对 RLS USING 过滤后 0 行命中返回 204，必须回读验证数据不变）；user_roles 自我提权/新增行 403（permission denied）；SELECT 仅见 published；user_roles 仅见本人行。触发器三表联动验证通过。临时用户与测试数据全部清理。
-- **线上实测**：未登录 /admin → /login；USER /admin → /403；admin `?next=%2Fadmin` 登录直达后台；`?next=//evil.com` 被拒；错误密码提示正确；弱密码注册被拦截。
-- **Git**：commit `3e6ac7e` 已推 main。
-
-### Phase 3 — Asset Core ✅（Gate G3 PASS，2026-09-02，Owner 过 Design Gate 后实施）
-- **DB**：`0003_asset_integrity.sql`（无表结构变更）：① 状态化审计（asset.published/unpublished/archived/restored，Owner 批准 unpublished + archived 可恢复）；② Cover 同资产守卫（COVER_MISMATCH）；③ **Publish 服务端终守卫**（PUBLISH_BLOCKED：INSERT 直接 published 也拦）。三守卫冒烟+负样本全过。
-- **Worker**：`POST /api/admin/storage/delete`（Owner 裁决通道）：验证调用者 JWT 为 admin（/auth/v1/user + service role 查 user_roles）→ Service Role 按**精确对象路径**删。**坑**：Storage 的 `{prefixes}` 目录删除不递归子文件夹、list 有延迟缓存 —— 唯一可靠方式是前端从 images 表收集 `storage_path` 传精确路径；prefixes 须为 bucket 内相对路径（剥掉首段 `images/`）。
-- **前端**：Admin 资产列表/新建/编辑三页（上传直传 admin JWT；排序 V1 用上移/下移，拖拽留 Phase 9；语言删除仅限 0 图；Publish 前客户端预检+服务端终审）；用户端 HomePage/AssetDetailPage 接真数据（published_assets 视图 + published 链查询）；AssetCard 真封面。
-- **安全测试 25/25**：USER 对 assets/asset_languages/images 全只读（UPDATE/DELETE 用回读验证，非状态码）；Storage USER 上传/删除拒绝（RLS 拒绝被 Storage 包成 HTTP 400 + body statusCode 403）；Worker 端点 无凭据401/伪造JWT401/USER 403/恶意路径400/ADMIN 删除真删（权威复查）；Phase 2 不变量回归（自我提权 403 等）。
-- **线上 UI 实测**：新建→上传→Set Cover→Publish→游客浏览卡片+详情→Archive→游客不可见→Restore→Delete，审计链完整（created→uploaded→updated→published→archived→restored→deleted）。
-- **已知小坑**：① Supabase Storage list 有缓存延迟，删除验证必须用"精确 DELETE → 看 NoSuchKey(400)"；② supabase 的 PostgrestError 不是 Error 实例，throw 时要 `new Error(error.message)`，否则 UI 显示 [object Object]（已修）；③ CF wrangler deploy 的 routes 步偶发 10000 认证错误，重试即可，版本实际已生效。
-
-### Phase 4 — Multi-language ✅（Gate G4 PASS，2026-09-03，Owner 过 Design Gate 后实施）
-- **零 schema/RLS/Storage/Worker 变更**（按 Owner 约束）：语言状态模型、双层可见性、路径约定全部沿用 0001/0003 基线。纯前端阶段。
-- **数据层**：`api.ts` 新增 `listPublishedLanguages`（显式 `.eq('status','published')`，draft 语言对任何角色都不出现在 public 页）、`listImagesByLanguage`；移除死代码 `listPublishedImages`。
-- **校验**：`validators.ts` 新增 `parseLanguageCode`（?lang 唯一实现，**仅小写** en/de/it/fr/es；大写/非法一律 null → 调用方静默回退）。
-- **用户端 `/asset/:slug`**：语言 Tab（固定顺序 EN→DE→IT→FR→ES，只列 published）；默认 en 否则首个 published；`?lang` 命中 published 才用，否则回退；**replaceState 规范化 URL**（无效/draft/大写都改写为有效语言）；切换只换 Image Grid，不重载 Asset。
-- **Admin 编辑器**：新增语言状态总览条（每语言 图数·status·用户可见✓，固定顺序）。
-- **线上实测全过**：EN/DE/IT/ES published + FR draft 场景 → public 只 4 Tab（无 FR）；点 Deutsch 网格切蓝图 + URL ?lang=de；?lang=fr→静默回退 en；?lang=ES(大写)→判无效回退 en；?lang=es→持久选中西班牙语；刷新保持。
-- **安全回归**：游客 API 只见 4 published 语言 + 8 图，FR 语言行与图片均不可见（双层 RLS 铁证）；Phase 2/3 不变量未触碰（无 RLS/Worker/schema 改动）。
-- **坑复现**：Storage list 返回的 `name` 是 basename 非全路径 → 清理孤儿对象必须用完整相对路径 `{asset}/{lang}/{file}` 精确删（已踩并修正清理脚本）。
-- **Git**：Phase 4 commit 已推 main。
-
-### Phase 5 — Download System ✅（Gate G5 PASS，2026-09-03，Owner 过 Design Gate + 4 决策后实施）
-- **Owner 决策**：A=维持 public bucket（单图为软门控，硬门控留 Phase 8）；B=ZIP 中任一 file_size 为 null → 拒绝（绝不当 0）；C=加 0004 URL 校验触发器（https + 精确 host 白名单，禁子串）；D=ZIP 上限 30 图 / 100MB / 并发 4。**无部分成功**：流式中途读失败即中断流（无效 zip），不返回"跳过文件的假成功"。
-- **DB**：`0004_download_source_url_guard.sql`——`download_sources.url` BEFORE 触发器，仅 https、host 精确等于 `pan.quark.cn/pan.baidu.com/yun.baidu.com`、拒 userinfo/端口/控制字符。正/负样本全过（子串伪装域 `pan.quark.cn.evil.com` 被拒）。
-- **Worker**（复用已注入的 Service Role Secret）：
-  - `requireUser`（JWT→/auth/v1/user→查 user_roles，user 或 admin）+ CORS（仅 image.acmerd.com + localhost）
-  - `GET /api/downloads/image/:id`：软门控 + 双层发布校验（**注意 image→language→asset 是多对一，PostgREST embed 返回对象非数组**，踩坑修正）→ 302 public URL
-  - `POST /api/downloads/zip`：service role 校验语言/资产 published + imageIds 全属该语言（跨语言 400）→ 限额（>30 400、null file_size 413、>100MB 413）→ 预检 HEAD（有界并发 4，缺失则流前 502）→ **流式 store 模式 ZIP**：有界预取按 sort_order 写出，每文件缓冲≤15MB 算 CRC32，内存只留中央目录；Content-Disposition `{slug}-{lang}.zip`（消毒）
-- **前端**：`features/downloads/`（api + PackageDownloadPanel）+ `validators.isSafePackageUrl`（与 DB 同规则二次防御）。详情页：单图下载按钮（登录门控）、ZIP 选择模式（≤30、切语言清空、底部浮条）、Package 面板（0 隐藏/1 直跳/2 选择器，**与语言完全解耦**，仅 `window.open` 安全 URL）。
-- **安全测试 16/16**：guest 401；USER 下载 published 单图/ZIP 200；draft 语言/资产图 404；ZIP 跨语言 400 / >30 400 / null file_size 413；ZIP 结构合法（PK 头 + EOCD + 条目数）；Package guest RLS 0 行 / user 2 行；恶意域被 DB 守卫拒。
-- **线上 UI E2E**：登录态单图下载 GET 200、ZIP POST 200 触发浏览器下载、Package 2 源弹 Quark/Baidu 选择器；游客显示"下载需登录"+"登录后可获取网盘下载链接"。
-- **坑**：① PostgREST to-one embed 是对象不是数组（`img.asset_languages` 直接取，勿 `[0]`）；② 0003 Publish 守卫会拦"INSERT 直接 published"，播种脚本须先 draft 再 PATCH 发布；③ 清理脚本按 name 匹配漏删（演示资产 name='Download Demo'、slug 才是 dl-demo-*），按 id 兜底删。
-- **文件名保留（Owner 复核项，已线上验证 ✅）**：单图走 Worker 302→public URL，**Supabase public 对象 GET 不返回 Content-Disposition（实测 null）**，故 302 上设的 CD 不会附着到被重定向后的响应。真正保住原始文件名的是**前端**：`fetch` 跟随 302 取 blob 后以 `a.download = img.filename`（DB 原始名）命名；`filenameFromResponse` 因重定向响应无 CD 而正确回退到原始名。ZIP 路径是 Worker 直接 200 流（非重定向），其 `Content-Disposition: {slug}-{lang}.zip` 正常生效。→ 结论：行为正确，无返工；上一版报告"CD 由 Worker 侧给"表述不严谨，以本条为准。
-- **Git**：Phase 5 commit 已推 main。
-
-### Phase 6 — Search & Tags ✅（Gate G6 PASS，2026-09-03，Owner 过 Design Gate + 5 决策后实施）
-- **信息架构锁定**：Search 搜 **Asset**（绝不返回散乱 Image）；Tags 属 **Asset 级**（tags + asset_tags 多对多），不绑 Image/Language。
-- **DB（0005，无表结构变更）**：① `search_assets(p_q, p_tags)` **SECURITY INVOKER** RPC，读 `published_assets` 视图（继承双层可见性，anon 只见 published），ILIKE 子串匹配 name/description/tag 名，多标签 **AND**，`updated_at DESC, id ASC` 确定性排序，有界校验（q≤200 / tags≤10 / 单tag≤64，超限 raise）；② `generate_tag_slug` BEFORE INSERT 触发器（D4：仅创建时生成 slug，改名不动；CJK 回退 `tag-<md5前8>`，冲突递增）；③ `audit_asset_tag` 触发器（D5：asset_tags 增删落 `asset.tag_added`/`asset.tag_removed`）。
-- **RPC 返回契约（稳定，= published_assets 形状）**：`id,name,slug,description,cover_image_id,image_count,language_count,tags(jsonb)`。踩坑：视图 `tags` 是 `json_agg` 的 **json** 类型，RPC 声明 **jsonb** → 需 `pa.tags::jsonb` 显式转，否则 42804。
-- **前端 Query Layer 分层**：`UI → features/search → search_assets() → published_assets → RLS`。`features/search/api.ts`（searchAssets 经 rpc + 前端预校验）、`features/tags/api.ts`（tag CRUD + listAssetTags/listAssetTagIds/add/remove）。SearchPage 重构（搜索框 + tag 筛选 chips ?q&tags + Asset Cards）；AssetDetailPage 可点标签→/search?tags=slug；Admin `/admin/tags`（Create/Rename/Delete，删前显示关联数）；编辑器标签选择器（搜现有 + 快速新建并关联）。
-- **测试**：RPC 冒烟 16/16（空=全部/tag-only/keyword/AND/去重/通配符转义/三项上限/anon 只见 published/审计）；线上 UI E2E 全过（空查询含3隐藏draft、AND 只剩交集、详情页点标签跳转、admin 建 Pro 自动 slug、编辑器关联 Pro + 审计）。
-- **约束遵守**：未改视图（仅 join assets 取 updated_at）；未引入全文/相关性/模糊/同义词/图片级搜索；Phase 2-5 不变量全保留。
-- **Git**：Phase 6 commit 已推 main。
+1. **bash 中 `node`/`npm` 现可直接用**（Phase 7/8 全程直接用，无需再绕 `D:\node`；历史 HANDOVER 记的"全局 npm 损坏"已过时）。若个别命令解析失败，回退 `/d/node/npm.cmd`。
+2. **git push 必须沙箱外执行 + 禁用凭据助手 + HTTP/1.1**（直接 `git push` 会挂在凭据管理器交互等待，曾卡 7 分钟）。可靠模式：
+   ```bash
+   set -a; . ./.env; set +a
+   GIT_TERMINAL_PROMPT=0 git -c credential.helper= -c http.version=HTTP/1.1 \
+     -c http.lowSpeedLimit=1 -c http.lowSpeedTime=45 \
+     push "https://x-access-token:${GITHUB_TOKEN}@github.com/acmerd-2nd/Acmerd-Image-Manager.git" main
+   ```
+3. **生产 Postgres 的 postgres 角色非超级用户、只是 `authenticated` 成员** → 模拟 Guest 视角用 `SET ROLE authenticated`（不带 `request.jwt.claim.sub` → `auth.uid()=null`）；**不能 `SET ROLE anon`**（会报非成员）。
+4. **node-pg 多语句（simple protocol）返回 `Result[]` 而非单个 Result** → 取行要 `rowsOf` 式助手（取首个有行的 Result）；**参数化查询（`$1`）不能与多语句混用**（extended protocol 禁止）→ 固定字符串直接插值。
+5. **事务内语句报错后会话进入 aborted**，后续错误显示为 "current transaction is aborted" 掩盖真凶 → 每条断言用独立 `begin/commit`，catch 里显式 `rollback`。
+6. **RLS 对 UPDATE/DELETE 过滤 0 行时返回 204/0 行而不报错**（只有 INSERT `WITH CHECK` 才抛错）→ 验证"写被拒"必须**回读数据确认未变**，不能只看状态码。PostgREST 同理。
+7. **Supabase Storage `list` ≠ 权威存在性判断**（返回 basename 非完整路径、有缓存延迟）→ 存在性判定一律用完整相对路径 + 精确 DELETE/HEAD 权威响应。
+8. **Supabase `/storage/v1/render/image/public/{obj}?width=&height=&resize=cover` 变换端点实测可用**（200 PNG）→ 缩略图免 Worker 代理（Phase 9 据此选型）。Storage public 对象直出响应 `Cache-Control: no-cache`。
+9. **wrangler deploy 结尾 routes 同步步骤会报 `Authentication error [code:10000]`**（token 缺该 zone Workers Routes 读权限）→ **cosmetic，不影响已绑定自定义域**（历史两轮线上 E2E 均证明新版本已生效）。验证是否生效用**判别器**（如新增端点无 token 返回 401 JSON，而非 SPA 200 回落）。若想消除告警需 Owner 在 Cloudflare 补 token 权限（运维项，非 blocker）。
+10. **GoTrue 会话撤销**：可用端点只有 `POST /auth/v1/admin/users/{id}/logout`（service role，`/sessions*` 404）。禁用用户先落库后 best-effort 撤会话；**未过期 access token 不会因此失效** → Worker 的 disabled 门禁才是真正的强制点（线上已证：被禁用户带有效 JWT 请求 /api → 403 `account_disabled`）。
+11. **隔离库冒烟范式**（`scripts/phase8-isolated-smoke.mjs`）：从 `DATABASE_URL` 拆出主连接建一次性库 → 建桩（storage.buckets/objects、auth.users 触发器桩、`schema_migrations` 表——0002 会对它 REVOKE 所以必须先建、default privileges）→ 0001→000N 全量应用 → 用例 → **finally DROP DATABASE**。生产库/隔离库判定一律靠一次性库名。
+12. **生产抽查范式**（`scripts/phase8-prod-spotcheck.mjs`）：只读 sanity 直查；写路径（如审计触发器）用真实 admin 身份 + `BEGIN…ROLLBACK` 包裹，验证后回滚**零残留**。不在生产创建残留用户/不改真实数据。
+13. **create function language sql 会校验函数体引用的表** → 函数必须在依赖表之后建；PG 无 docker/psql 本地环境，一切经 node-pg。
+14. **审计动作 allowlist**：`audit_logs` 上有 CHECK 约束（当前 24 项，0007 重建）。新增审计动作必须同步扩 allowlist（幂等 DO 块），否则 INSERT 直接报错。
 
 ---
 
-## 五、待 Owner 配合 / 当前挂起事项
+## 四、已完成进度明细（Phase 0–8）
 
+### Phase 0 — Architecture Baseline ✅
+12 份设计文档在 `docs/phase-0/`，是后续所有阶段的实施依据。
+
+### Phase 1 — Foundation ✅（G1）
+React 18 + TS + Vite + Tailwind + shadcn 风格 UI；Hono Worker + `[assets]` SPA 托管；0001 九表 + 27 条 RLS + 审计触发器（`write_audit`）+ `published_assets` 视图 + storage bucket + `assign_first_admin()`；0002 grants（客户端角色对 `user_roles`/`audit_logs` 无写权限）。
+
+### Phase 2 — Authentication ✅（G2）
+登录/注册/Profile；`?next=` 白名单（防开放重定向）；密码/语言共享校验器在 `src/lib/validators.ts`；守卫竞态修复（roleLoading 与 setSession 同批）；安全测试 15/15。
+
+### Phase 3 — Asset Core ✅（G3）
+0003 asset 完整性守卫（状态化审计 published/unpublished/archived/restored、Cover 同资产守卫、Publish 终守卫）；Worker `POST /api/admin/storage/delete`（精确路径）；Admin 资产列表/新建/编辑三页；用户端 Home/Detail 接真数据；安全测试 25/25。
+
+### Phase 4 — Multi-language ✅（G4）
+**零 schema/RLS/Storage/Worker 变更**（纯前端）；语言 Tab 固定序 + `?lang` 校验回退 + replaceState 规范化；双层可见性语义落 UI。
+
+### Phase 5 — Download System ✅（G5）
+0004 下载源 URL 守卫触发器（https + 精确 host 白名单）；Worker 单图 302（软门控）+ 流式 ZIP（store 模式、≤30 图/100MB/并发 4、CRC32、无部分成功）；三套下载（单图/ZIP/网盘）彼此解耦、网盘与语言解耦；安全测试 16/16。
+**文件名保留结论（重要）**：Supabase public 对象 GET 无 Content-Disposition → 单图原始文件名靠**前端 blob + `a.download=img.filename`** 保住；ZIP 是 Worker 直出 200（非 302），其 `Content-Disposition` 正常生效。
+
+### Phase 6 — Search & Tags ✅（G6）
+0005 `search_assets(p_q,p_tags)` SECURITY INVOKER RPC（读 `published_assets`，继承双层可见性；ILIKE 子串 + 多标签 AND + 确定性排序 + 有界校验）；`generate_tag_slug` 触发器；asset_tags 增删审计；Query Layer 分层 `UI → features/search → search_assets() → published_assets → RLS`；`src/features/search/api.ts`、`src/features/tags/api.ts`；Admin Tags 页。
+**坑**：视图 tags 是 json、RPC 声明 jsonb → 需 `pa.tags::jsonb` 显式转。
+
+### Phase 7 — Admin Platform Consolidation ✅（G7，commit `d4253ec`）
+详见 `docs/phase-7/01-design-gate.md`（附录 A1–A6 = 主理人裁决）+ `02-implementation-report.md` + `evidence/{0006-smoke,worker-endpoints,frontend,qa-report,online-e2e}.md`。要点：
+- **0006_admin_console.sql（生产已应用）**：`is_admin()` 收紧为活跃 admin（join profiles + `disabled=false`）；`guard_profile_disabled` 三段式（自禁/自降 forbidden、被禁 admin 不能自愈）；`admin_user_mutation()` 单事务 SECURITY DEFINER RPC（`pg_advisory_xact_lock(hashtext('acmerd_admin_mutation')::bigint)` + 锁内重读 actor/target + **last-admin 普查**——除 target 外仍须 ≥1 活跃 admin，Owner 硬门槛）；`admin_stats()` 7 键原子快照；audit allowlist 18；`(action,created_at desc)` 索引。
+- **Worker**：`authenticate()` 逐请求查 `profiles.disabled` → 403 `{code:'account_disabled'}`（D2 门禁，7 个 authed handler 全覆盖）；`authErrBody()` 统一错误体（**code 回退按状态推导**：401→unauthorized / 500→internal，DEF-2 修复）；4 个 admin 端点（users 分页 envelope / role / disabled / stats）；role+disabled 经 service-role 调 `admin_user_mutation`；错误映射 SELF_*/FORBIDDEN→403、LAST_ADMIN→409、TARGET_NOT_FOUND→404；disabled=true 后 best-effort `POST /auth/v1/admin/users/{id}/logout`。
+- **前端**：`src/features/admin/api.ts`（AdminApiError + 中文映射）；AuthProvider 并行取 role+disabled，disabled 时折叠为 'user' 并暴露 `isDisabled`；Admin Console 四个真实页（Dashboard/Users/Storage/AuditLogs）替代占位；**移除 Settings 路由/侧栏项**（不扩大 Scope）；Audit 页 = admin JWT 经 RLS 直读（D4，无 Worker 读端点）。
+- **并发语义裁决 A1**：并发 last-admin 双 admin 互禁，败者实际为 **FORBIDDEN**（锁内重读更严格）；LAST_ADMIN 可达性由人工负样本证明。
+- **QA 31/31 + 线上 E2E 13/13**（含被禁用户带 JWT → 403 `account_disabled` 的 S8 闭环）。
+- 复用脚本：`scripts/phase7-online-e2e.mjs`（一次性用户 + finally 清理 + 级联 0 残留）。
+
+### Phase 8 — Security Hardening ✅（G8，commit `74cae3a`）
+详见 `docs/phase-8/01-design-gate.md`（重建版 + Owner 裁决）+ `02-security-review.md`（**安全基线冻结**）+ `03-implementation-report.md` + `evidence/{isolated-smoke,secret-scan,production-apply}.md`。要点：
+- **0007_audit_hardening.sql（生产已应用）**：
+  - **GAP-A** `asset_languages` 五语义审计（created/published/unpublished/updated/deleted 分离留痕——语言 publish 是公开边界第二层开关）；
+  - **GAP-B** `images` UPDATE 审计 WHEN 限定业务列（filename/storage_path/mime_type/file_size/width/height/sort_order）——纯 touch/no-op 永不刷屏；
+  - **allowlist 18→24**（严格超集，幂等 DO 块）；
+  - **DEF-1 pre-existing fix**：`tags` 补 `updated_at`（NOT NULL default now()），恢复 0001 `touch_tags_upd`/`audit_tags_upd` → AdminTagsPage 改名可用。文件头与 Review 显式标记历史缺陷修复。
+  - SELECT 面零改动、无 BEFORE 守卫 → published 双门控语义结构性不受影响。
+- **Owner 强制的公开集合不漂移回归**：`0001–0006 → 快照 A → 0007 → 快照 B`，Guest 视角（authenticated 无 JWT）**逐字节一致（NO-DRIFT）** + C2b 状态迁移语义正确 —— 证明补审计未改变 published 双门控业务语义。
+- **隔离库冒烟 20/20**（`scripts/phase8-isolated-smoke.mjs`，一次性库自动清理）。
+- **Secret 扫描 0 命中**（`scripts/security-scan.mjs`，可复跑：git 全历史 237 blobs + dist + 跟踪文件；**阳性对照**证明检出能力：伪造 service_role JWT/DB 密码/私钥 → 命中 → 删分支 → 归零）。
+- **生产抽查 14/14**（`scripts/phase8-prod-spotcheck.mjs`：只读 sanity 7/7 + 审计写入链路 ROLLBACK 安全构造 7/7）。
+- **Security Review 结论**：五层防线 + Secret + Audit **无阻断性缺陷**。**残余风险已显式记录**：
+  - **D5/5a**：public bucket + Worker 软门控为既定模型；"已知 public URL 可 GET"= 产品模型残余风险（Guest 浏览要求图片公开可读），**非阻断**；5b/5c 硬门控/私有化需单独 Change Proposal，不得偷塞进任何 Phase。
+  - wrangler routes 列表权限（运维项，cosmetic，非 blocker）。
+
+---
+
+## 五、已完成待办 / 关闭事项
 | 事项 | 状态 | 说明 |
 | --- | --- | --- |
-| **邮箱验证开关** | ✅ 看起来已关闭 | Phase 2 线上实测：注册 `weaktest@example.com` 后**直接返回 session**（未出现"查收邮件"分支），说明 Confirm email 已被关闭。注册页的"待验证"分支代码保留，随时兼容重新开启 |
-| Worker Secret 注入 | ✅ 已注入 | Phase 3 已 `wrangler secret put SUPABASE_SERVICE_ROLE_KEY`（Storage 删除端点使用）；本地 `worker/.dev.vars` 同步更新 |
+| DEF-1（tags.updated_at） | ✅ 已随 0007 修复 | Backlog 关闭；改名能力线上验证 |
+| Phase 7/8 全部 QA 缺陷 | ✅ 已闭环 | DEF-1 修复 + DEF-2 发布前修复 |
+| 邮箱验证开关 | ✅ 关闭 | 注册直返 session；注册页"待验证"分支代码保留兼容 |
+| Worker Secret | ✅ 已注入 | `wrangler secret put SUPABASE_SERVICE_ROLE_KEY`；`worker/.dev.vars` 同步 |
 
 ---
 
-## 六、下一步任务：Phase 7 — Admin Platform Consolidation（未开始）
+## 六、当前唯一待办：Phase 9 — UX & Performance（Design Gate 已交审，等 Owner 裁决）
 
-按 `【分阶段】` 文档执行。**开工前先输出 Phase 开始报告（Design Gate）**，完成后对照 Gate G7 验收。
+**状态**：Owner 已裁决 G8 PASS / Phase 8 CLOSED，明确 **Phase 9 先交 Design Gate、不得先写码**。当前 `docs/phase-9/01-design-gate.md`（192 行）已产出并提交评审，**§7 Owner 裁决块待填写**（L175 起）。**尚未写任何实现代码。**
 
-### ⚠️ 重要定位（Owner 明确）：Phase 7 ≠ 新建一套 Admin
-Phase 3–6 为完成业务闭环，已**提前零散落地**了大量后台能力：Admin Assets（CRUD/上传/排序/Cover/发布）、语言管理、下载源管理、标签管理。**Phase 7 的正确理解是「Admin Platform Consolidation」**——把已有后台能力 + 尚缺的 Users/Storage/Audit/Settings **统一收敛**成一个完整、导航一致的 Admin Console，**绝不要另起一套 Admin 系统**。局部能力提前落地 ≠ 整个 Phase 被提前完成。
+### 你（下一个 Agent）接手后的第一动作
+1. 读完本交接后，**通读 `docs/phase-9/01-design-gate.md`**（重点 §3 决策表 D1–D10、§5 不变量 I1–I4、§6 六类证据、§7 裁决块）。
+2. **等 Owner 逐项裁决 D1–D10**（Owner 会在对话里给出，或直接在门禁文档裁决块留言）。
+3. 收到裁决后：**把裁决原文原样落档到 §7**（先读该文件、用 Edit，格式参照 phase-7/phase-8 门禁的做法），再启动 Implementation。
+4. 实施顺序（门禁已定）：**0008 → 隔离库冒烟（I1–I4）→ 前端改造 → 构建/响应式证据 → 生产 0008 + 线上抽验 → Git + Gate G9**。**六类证据全 CONFIRMED 才可宣布 G9 PASS。**
 
-### Phase 7 概要
-收敛现有 Admin 页；补齐 Users（改角色/禁用，经 Worker 落审计）、Storage 概览、Audit Logs 视图、Settings。改角色/禁用走 Worker（service role），最后一名 admin 不可降级/禁用。
+### Phase 9 调研实测结论（写 Gate 前已验证，非猜测）
+- **生产数据极小**（1 asset/1 image/0 tags）→ 分页/大列表是结构性防御；**G9 验收必须隔离库造 30+ 资产、多语言多图**。
+- **Supabase `/storage/v1/render/image` 变换端点实测可用**（40×40 cover → 200 PNG）→ 缩略图免 Worker 代理，仅展示链路加参数。
+- **Storage public 对象响应 `Cache-Control: no-cache`** → 上传时写 `cacheControl:'immutable'`。
+- 三处列表全量无分页：HomePage（published_assets）、SearchPage（`search_assets` RPC **无 LIMIT**）、AdminAssetsPage。
+- `App.tsx` **全静态 import 无 Code Splitting**；无全局 Toast / Skeleton / Lightbox（Detail 页仅局部 toast）；AdminUsersPage **已有数字分页先例**（envelope total + prev/next）可复用；项目**零 UI/数据层运行时依赖**（自维护 shadcn 风格），新增基建须维持零依赖原则。
+- 规划文档内部差异：总纲把 Responsive 放 Phase 10、分阶段放 Phase 9.1 —— 已作为决策面处理（D9 收敛式，见门禁 §3）。
 
-### 后续 Phase 概要（详见分阶段文档，勿跳级）
-Phase 7 Admin 收敛 → 8 安全加固 → 9 UX/性能 → 10 发布。
+### 决策点速览（推荐项已由主理人给出；最终以 Owner 裁决为准）
+| 决策 | 推荐 | 一句话 |
+| --- | --- | --- |
+| D1 分页形态 | 1a 数字分页 | 复用 AdminUsers 先例，`?page=` 可分享 |
+| D2 实现 | 2a | Home/Admin 走 PostgREST `.range()+count` **零迁移**；Search 抽 `_search_assets_core` + 薄壳 `search_assets`（**无参契约零破坏**）+ 新 `search_assets_paged`（total over()）→ 唯一 DB 触碰面 = `0008_search_pagination.sql` |
+| D3 Code Splitting | 3a React.lazy | 路由级，守卫不动 |
+| D4 缩略图 | 4a transform 两档 | 封面 640×480 / 详情 640×640，端点已实测 |
+| D5 缓存 | 5a upload cacheControl | 新对象 immutable，无新端点 |
+| D6 Toast | 6a 自建 Provider | 零依赖原则 |
+| D7 Lightbox | 7a 自建 overlay | 与选择模式互斥、Esc 关闭 |
+| D8 骨架屏 | 8a CardSkeleton | 替换图片空挡 |
+| D9 响应式+Polish | 9a 收敛式 | Admin 溢出修复（不重构 Drawer）+ Design System 基线文档（不引库） |
+| D10 验收 | 10a 六类证据 | 含响应式截图/人工视口（备选见文档） |
+
+### 四个强制回归不变量（G9 硬门槛，Owner 风格）
+- **I1**：`search_assets` 无参调用结果与 0005 现网实现**逐字节一致**（薄壳重构唯一正确性判据）。
+- **I2**：`search_assets_paged` 任意合法 (page,per_page) 并集 = 全量，与 I1 全量一致（无丢失/重复/新增可见行）。
+- **I3**：0008 前后 Guest 视角公开集合**不漂移**（沿用 Phase 8 快照 A/B 法，快照集与 0007 证据一致）。
+- **I4**：RLS / allowlist 24 / disabled 门禁 / admin RPC 在 0008 隔离库仍通过 Phase 8 抽样（C10 负样本 + is_admin 三态 + last-admin 语义抽样）。
+
+### 后续 Phase（勿跳级）
+Phase 9 UX/性能 → **Phase 10 全量回归发布**（总纲定义，无新功能）。
 
 ---
 
 ## 七、常用命令（全部在项目根目录）
 
 ```bash
-"/d/node/npm.cmd" install        # 安装依赖（全局 npm 是坏的，必须用 D:\node）
-"/d/node/npm.cmd" run dev        # 前端开发 :5173（/api 代理到 8787）
-"/d/node/npm.cmd" run dev:worker # Worker 本地 :8787（读 worker/.dev.vars）
-"/d/node/npm.cmd" run typecheck  # 前端 + Worker TS 检查
-"/d/node/npm.cmd" run build      # 构建前端 → dist/
-"/d/node/npm.cmd" run db:migrate # 应用未执行的 migration（读 .env 的 DATABASE_URL，幂等）
-# 部署（先导出 CF 凭据）：
-set -a; source .env; set +a; "/d/node/npx.cmd" wrangler deploy
-# 推送（用 token，origin 已配置）：
-git push https://x-access-token:${GITHUB_TOKEN}@github.com/acmerd-2nd/Acmerd-Image-Manager.git main:main
+npm install                  # 装依赖（bash 中 npm 可直接用；坏了回退 /d/node/npm.cmd）
+npm run dev                  # 前端 :5173（/api 代理到 8787）
+npm run dev:worker           # Worker 本地 :8787（读 worker/.dev.vars）
+npm run typecheck            # 前端 + Worker TS 检查
+npm run build                # 构建前端 → dist/
+npm run db:migrate           # 应用未执行的 migration（读 .env DATABASE_URL，幂等）
+# 部署（先 source .env 导出 CF 凭据）：
+set -a; . ./.env; set +a; npm run deploy
+# 或直接 wrangler：set -a; . ./.env; set +a; npx wrangler deploy
+# 推送（沙箱外，模式见第三节 #2）：
+#  ...GIT_TERMINAL_PROMPT=0 git -c credential.helper= ... push https://x-access-token:${GITHUB_TOKEN}@github.com/acmerd-2nd/Acmerd-Image-Manager.git main
 ```
 
 **数据库铁律**：结构变更只许新增 `supabase/migrations/XXXX_*.sql` 后跑 `db:migrate`，禁止 Dashboard 手改生产库。
 
 ---
 
-## 八、固定工作流程（Agent 纪律，摘自总纲，违者 Owner 会打回）
+## 八、固定工作流程（Agent 纪律，摘自总纲，违者 Owner 打回）
 
-1. **每个 Phase 开工前**输出开始报告：Phase / Goal / Scope / Out of Scope / Files / Database Impact / Security Impact / Acceptance Criteria。
-2. **完成后**输出结束报告：Implemented / Files Changed / Database Changes / Tests / Security Tests / Known Issues / Gate Status。
-3. 不得跳阶段、不得顺手重构别的模块；需要改设计先交 Change Proposal 等 Owner 批准。
-4. 权限只靠 UI 隐藏 = 无效；必须有 RLS/服务端兜底。
-5. Admin 重要操作必须落 audit_logs；Service Role Key 只进 Worker Secret。
-6. V1 禁加：用户上传/编辑、付费、AI Tag、评论点赞、社交、复杂推荐（总纲 54 条）。
-7. 关键产品规则：Asset 是核心对象；多语言是 Asset 下的版本（不拆 Asset）；三种下载（单图/多选 ZIP/网盘）是独立机制；**网盘下载与语言完全解耦**；Tags 属于 Asset；Package Download 按链接数量：0 隐藏 / 1 直跳 / 2 选择器。
+1. 每个 Phase 先出 **Design Gate**（Phase/Goal/Scope/Out of Scope/DB/Worker/前端改动面/安全边界/验收），等 Owner 逐项裁决（D1..Dn）并**落档裁决原文**后才实施。
+2. 实施顺序与本仓库惯例：DB migration → 隔离库冒烟 → Worker/前端 → QA 独立证据 → 生产 migration（`db:migrate`）→ 线上抽查 → 结束报告（Implemented/Files/Database/Tests/Security/Evidence/Gate Status）→ commit+push → 证据全 CONFIRMED 才宣布 Gate PASS。
+3. 不得跳阶段、不得顺手重构别的模块；改设计先交 Change Proposal。
+4. 权限只靠 UI 隐藏 = 无效；必须有 RLS/服务端兜底。Admin 重要操作必须落 audit_logs（动作须在 allowlist 内）。
+5. V1 禁加：用户上传/编辑、付费、AI Tag、评论点赞、社交、复杂推荐。
+6. 产品规则红线：Asset 是核心对象；多语言是 Asset 下的版本；三套下载独立、网盘与语言解耦；Tags 属 Asset；Package Download 0 隐藏/1 直跳/2 选择器；双层可见性是唯一事实来源。
+7. **换号衔接纪律**：每阶段结束或换人前，更新本 HANDOVER（含当前 HEAD/状态/下一步/密钥位置/最新坑），并 append 当日 `.workbuddy/memory/YYYY-MM-DD.md`。
 
 ---
 
-## 九、快速上下文索引（代码地图，截至 Phase 6）
+## 九、代码地图（截至 Phase 8 / Phase 9 前置现状）
 
 ```plaintext
-src/
-├── App.tsx                         # 全部路由 + 守卫挂载（含 /admin/assets/new、/admin/assets/:id、/admin/tags）
-├── features/
-│   ├── auth/AuthProvider.tsx       # session + role + roleLoading（竞态修复）；signOut 清态
-│   ├── assets/
-│   │   ├── api.ts                  # Asset/Language/Image CRUD + 状态迁移 + published 链查询 + toPublicUrl
-│   │   ├── storage.ts              # 上传(admin JWT 直传) / 删除(经 Worker 精确路径) + 文件校验
-│   │   └── AssetCard.tsx           # 卡片（真封面 + tags 徽标）
-│   ├── downloads/                  # Phase 5 三套下载（彼此独立）
-│   │   ├── api.ts                  # downloadSingleImage / downloadZip / fetchDownloadSources
-│   │   └── PackageDownloadPanel.tsx# 0/1/2 决策，与语言解耦
-│   ├── search/api.ts               # Phase 6 searchAssets() → rpc('search_assets')
-│   └── tags/api.ts                 # Phase 6 tag CRUD + listAssetTags/listAssetTagIds/add/remove
-├── components/
-│   ├── ui/                         # Button/Card/Input/Badge（自维护 shadcn 风格）
-│   ├── guards.tsx                  # RequireAuth / RequireRole（等 roleLoading）
-│   ├── layout/                     # AppShell（用户端）/ AdminLayout（后台侧边栏）
-│   └── ConfirmDialog.tsx           # 轻量确认框
-├── routes/pages/
-│   ├── HomePage / SearchPage / AssetDetailPage / ProfilePage
-│   ├── LoginPage / RegisterPage / ErrorPages
-│   └── admin/                      # Assets / AssetNew / AssetEditor / Tags 已实装；Users/Storage/Audit/Settings 仍占位
-├── lib/
-│   ├── supabase/client.ts          # 前端 Client（仅 Publishable Key）
-│   ├── validators.ts               # 密码规则 / sanitizeInternalRedirect / parseLanguageCode / isSafePackageUrl
-│   └── utils.ts                    # cn()
-└── types/database.ts               # AssetRow/AssetLanguageRow/ImageRow/PublishedAssetRow/TagRow/LanguageCode…
+supabase/migrations/
+├── 0001_initial_schema.sql            # 九表 + RLS + write_audit/touch_updated_at + published_assets 视图 + storage + assign_first_admin
+├── 0002_grants.sql                    # anon/authenticated/service_role GRANT；user_roles/audit_logs 客户端无写
+├── 0003_asset_integrity.sql           # 状态审计 + Cover/Publish 守卫（guard_asset_publish 等）
+├── 0004_download_source_url_guard.sql # download_sources.url https+host 白名单
+├── 0005_search_and_tags.sql           # search_assets RPC + generate_tag_slug + audit_asset_tag
+├── 0006_admin_console.sql             # is_admin(含 disabled) + guard_profile_disabled 三段式 + admin_user_mutation(advisory lock+last-admin) + admin_stats + allowlist18
+└── 0007_audit_hardening.sql           # asset_languages 五语义审计 + images WHEN 审计 + allowlist24 + tags.updated_at(DEF-1)
 
-worker/index.ts                     # Hono：/api/health + requireUser/requireAdmin + CORS
-                                    #   + /api/admin/storage/delete（精确路径删）
-                                    #   + /api/downloads/image/:id（302）+ /api/downloads/zip（流式 store ZIP + CRC32）
-wrangler.toml                       # routes 必须在 [section] 前！（见第三节坑 6）
-worker/.dev.vars                    # 本地 Worker 变量（含 service key），已 gitignore
-supabase/migrations/                # 0001→0005 全部已应用（见第四节各 Phase 明细）
-scripts/db-apply.mjs                # migration 执行器（幂等，读 .env DATABASE_URL）
+worker/index.ts                        # Hono：authenticate(JWT+role+profiles.disabled) + authErrBody
+                                       # /api/health；/api/downloads/image/:id(302)；/api/downloads/zip(流式)
+                                       # /api/admin/storage/delete；/api/admin/users|:id/role|:id/disabled|stats
+wrangler.toml                          # 自定义域 image.acmerd.com；[vars] SUPABASE_URL/PUBLISHABLE；SERVICE_ROLE 走 secret
+worker/.dev.vars                       # 本地 Worker 变量（含 service key），已 gitignore
+
+src/
+├── App.tsx                            # 路由 + guards + ErrorBoundary（Phase 9 将加 React.lazy）
+├── features/
+│   ├── auth/AuthProvider.tsx          # session+role+disabled（Promise.all，disabled 折叠 'user'，暴露 isDisabled）
+│   ├── assets/api.ts · storage.ts · AssetCard.tsx
+│   ├── downloads/api.ts · PackageDownloadPanel.tsx   # 三套下载；403 account_disabled 中文文案
+│   ├── search/api.ts                  # searchAssets() → rpc('search_assets')（Phase 9 将分页化）
+│   ├── tags/api.ts
+│   └── admin/api.ts                   # listAdminUsers/changeUserRole/setUserDisabled/getAdminStats + AdminApiError 中文映射
+├── components/
+│   ├── ui/                            # Button/Card/Input/Badge（自维护 shadcn 风格，零依赖）
+│   ├── guards.tsx · ConfirmDialog.tsx
+│   └── layout/AppShell.tsx · AdminLayout.tsx   # AdminLayout 侧栏已去 Settings；留移动导航 Phase 9 注释
+├── routes/pages/
+│   ├── HomePage / SearchPage / AssetDetailPage / ProfilePage / LoginPage / RegisterPage / ErrorPages
+│   └── admin/  AdminDashboardPage / AdminUsersPage(数字分页先例) / AdminStoragePage / AdminAuditLogsPage
+│               AdminAssetsPage / AssetNewPage / AssetEditorPage / AdminTagsPage
+├── lib/supabase/client.ts · validators.ts · utils.ts
+└── types/database.ts                  # AssetRow/…/AuditLogRow
+
+scripts/
+├── db-apply.mjs                       # migration 执行器（文件名序 + schema_migrations + 幂等）
+├── phase7-online-e2e.mjs              # Phase 7 线上 E2E（一次性用户 + 清理）
+├── phase8-isolated-smoke.mjs          # Phase 8 隔离库冒烟范式（0001→0007 + NO-DRIFT，一次性库）
+├── phase8-prod-spotcheck.mjs          # Phase 8 生产 ROLLBACK 抽查范式
+└── security-scan.mjs                  # Secret 扫描（git 全历史 + dist + 跟踪，可复跑 + 阳性对照法）
+
+docs/
+├── phase-0/   · phase-7/（gate+impl+evidence，附录 A1–A6）· phase-8/（gate+review+impl+evidence）
+└── phase-9/01-design-gate.md          # ⭐ 当前唯一待办（PENDING OWNER REVIEW，§7 裁决块待填）
 ```
 
-**Query Layer 分层（Phase 6 起）**：`UI → features/search → search_assets() RPC → published_assets 视图 → RLS`。新增按日期/语言/图片数/热门等检索能力时，扩 `search_assets` 或加同类 SECURITY INVOKER RPC，**不要在页面里各写一套查询**。
+**证据与记忆纪律**：每 Phase 的 evidence 落在 `docs/phase-X/evidence/*.md`；六类证据模板（实际 SQL / 权限验证 / 并发语义 / 门禁线上 / RLS 回归 / 前 Phase 回归）；换人衔接更新本文件 + `.workbuddy/memory/YYYY-MM-DD.md`（append-only，勿删 `.workbuddy/`）。
