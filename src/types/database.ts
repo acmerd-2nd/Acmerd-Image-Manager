@@ -78,3 +78,14 @@ export interface TagRow {
   slug: string
   created_at: string
 }
+
+/** audit_logs 表行（Phase 7 审计页；D4：admin JWT 经 RLS 直连读取，不走 Worker） */
+export interface AuditLogRow {
+  id: number
+  actor_id: string | null
+  action: string
+  target_type: string
+  target_id: string | null
+  metadata: Record<string, unknown> | null
+  created_at: string
+}

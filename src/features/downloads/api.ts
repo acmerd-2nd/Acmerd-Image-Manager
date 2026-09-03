@@ -49,7 +49,13 @@ export async function downloadSingleImage(imageId: string, fallbackName: string)
     headers: { Authorization: `Bearer ${jwt}` },
   })
   if (res.status === 401) throw new DownloadError('请先登录后下载', 401, 'unauthorized')
-  if (res.status === 403) throw new DownloadError('无权下载', 403, 'forbidden')
+  if (res.status === 403) {
+    const body = (await res.json().catch(() => null)) as { error?: { code?: string } } | null
+    if (body?.error?.code === 'account_disabled') {
+      throw new DownloadError('账号已被禁用，请联系管理员', 403, 'account_disabled')
+    }
+    throw new DownloadError('无权下载', 403, 'forbidden')
+  }
   if (res.status === 404) throw new DownloadError('图片不可用', 404, 'not_found')
   if (!res.ok) throw new DownloadError('下载失败', res.status, 'error')
 
@@ -72,7 +78,13 @@ export async function downloadZip(
     body: JSON.stringify({ assetLanguageId, imageIds }),
   })
   if (res.status === 401) throw new DownloadError('请先登录后下载', 401, 'unauthorized')
-  if (res.status === 403) throw new DownloadError('无权下载', 403, 'forbidden')
+  if (res.status === 403) {
+    const body = (await res.json().catch(() => null)) as { error?: { code?: string } } | null
+    if (body?.error?.code === 'account_disabled') {
+      throw new DownloadError('账号已被禁用，请联系管理员', 403, 'account_disabled')
+    }
+    throw new DownloadError('无权下载', 403, 'forbidden')
+  }
   if (res.status === 404) throw new DownloadError('语言版本不可用', 404, 'not_found')
   if (res.status === 413) {
     const body = await res.json().catch(() => null)

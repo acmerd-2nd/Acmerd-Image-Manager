@@ -1,5 +1,5 @@
 import { NavLink, Link, Outlet } from 'react-router-dom'
-import { FolderOpen, LayoutDashboard, ScrollText, Settings, Tags, Users, Database } from 'lucide-react'
+import { FolderOpen, LayoutDashboard, ScrollText, Tags, Users, Database } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const items = [
@@ -9,7 +9,6 @@ const items = [
   { to: '/admin/tags', label: 'Tags', icon: Tags },
   { to: '/admin/storage', label: 'Storage', icon: Database },
   { to: '/admin/audit-logs', label: 'Audit Logs', icon: ScrollText },
-  { to: '/admin/settings', label: 'Settings', icon: Settings },
 ]
 
 export function AdminLayout() {

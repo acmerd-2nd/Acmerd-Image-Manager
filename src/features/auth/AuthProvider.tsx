@@ -6,10 +6,14 @@ import type { AppRole } from '@/types/database'
 interface AuthState {
   session: Session | null
   user: User | null
+  /** 生效角色：disabled=true 时按 'user' 处理（不进入 admin 路由/守卫） */
   role: AppRole | null
   loading: boolean
-  /** role 查询进行中（守卫必须等它结束，否则登录后瞬间误判 403） */
+  /** role/disabled 查询进行中（守卫必须等它结束，否则登录后瞬间误判 403） */
   roleLoading: boolean
+  /** 本人 profiles.disabled（D2 对偶；仅影响身份展示与守卫，不触碰业务查询通道） */
+  disabled: boolean
+  isDisabled: boolean
   isAdmin: boolean
   signOut: () => Promise<void>
 }
@@ -19,6 +23,7 @@ const AuthContext = createContext<AuthState | null>(null)
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
   const [role, setRole] = useState<AppRole | null>(null)
+  const [disabled, setDisabled] = useState(false)
   const [loading, setLoading] = useState(true)
   const [roleLoading, setRoleLoading] = useState(true)
 
@@ -40,6 +45,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setRoleLoading(true)
       } else {
         setRole(null)
+        setDisabled(false)
         setRoleLoading(false)
       }
     })
@@ -47,37 +53,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => subscription.unsubscribe()
   }, [])
 
-  // RLS 只允许查看自己的 user_roles 行
+  // RLS 允许查看自己的 user_roles 行与自己的 profiles 行；
+  // 并行取 role + disabled，一次判定生效身份（Phase 7 D2）。
   useEffect(() => {
     const userId = session?.user?.id
     if (!userId) {
       setRole(null)
+      setDisabled(false)
       setRoleLoading(false)
       return
     }
     setRoleLoading(true)
-    supabase
-      .from('user_roles')
-      .select('role')
-      .eq('user_id', userId)
-      .maybeSingle()
-      .then(
-        ({ data }) => {
-          setRole((data?.role as AppRole) ?? 'user')
-          setRoleLoading(false)
-        },
-        () => {
-          // 查询失败按安全方向兜底：当作普通 user（admin 会得到 403，不会误放行）
-          setRole('user')
-          setRoleLoading(false)
-        },
-      )
+    Promise.all([
+      supabase.from('user_roles').select('role').eq('user_id', userId).maybeSingle(),
+      supabase.from('profiles').select('disabled').eq('id', userId).maybeSingle(),
+    ]).then(
+      ([roleRes, profRes]) => {
+        const dbRole = (roleRes.data?.role as AppRole) ?? 'user'
+        const isDisabled = profRes.data?.disabled === true
+        setDisabled(isDisabled)
+        // disabled=true → 身份按"非 admin"处理：即使 DB 角色为 admin 也降为 user，
+        // 使 RequireRole(['admin']) 等守卫直接拒绝，且不触碰任何业务查询通道。
+        setRole(isDisabled ? 'user' : dbRole)
+        setRoleLoading(false)
+      },
+      () => {
+        // 查询失败按安全方向兜底：当作普通 user（admin 会得到 403，不会误放行）
+        setRole('user')
+        setDisabled(false)
+        setRoleLoading(false)
+      },
+    )
   }, [session])
 
   const signOut = async () => {
     await supabase.auth.signOut()
     setSession(null)
     setRole(null)
+    setDisabled(false)
     setRoleLoading(false)
   }
 
@@ -89,6 +102,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         role,
         loading,
         roleLoading,
+        disabled,
+        isDisabled: disabled,
         isAdmin: role === 'admin',
         signOut,
       }}

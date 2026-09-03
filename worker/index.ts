@@ -45,7 +45,8 @@ app.use('/api/*', async (c, next) => {
 })
 
 // ===========================================================================
-// 鉴权：JWT → Supabase Auth 验签 → 查 user_roles 角色（service role，不下发）
+// 鉴权：JWT → Supabase Auth 验签 → 查 user_roles 角色 + profiles.disabled
+//       （D2 硬门禁：disabled=true 时对每一个 /api 请求拒绝 403 account_disabled）
 // ===========================================================================
 type FailStatus = 401 | 403 | 500 | 502
 
@@ -53,11 +54,14 @@ interface AuthOk {
   ok: true
   userId: string
   roles: string[]
+  disabled: boolean
 }
 interface AuthFail {
   ok: false
   status: FailStatus
   message: string
+  /** 业务错误短名：默认 'unauthorized'；D2 禁用门禁用 'account_disabled' */
+  code?: 'unauthorized' | 'account_disabled'
 }
 
 async function authenticate(
@@ -79,18 +83,39 @@ async function authenticate(
   const user = (await userRes.json()) as { id?: string }
   if (!user.id) return { ok: false, status: 401, message: 'Invalid user payload' }
 
-  const roleRes = await fetch(
-    `${env.SUPABASE_URL}/rest/v1/user_roles?user_id=eq.${user.id}&select=role`,
-    {
+  // 并行取 user_roles(role) 与 profiles(disabled)：禁用的唯一数据源是 profiles.disabled
+  const [roleRes, profRes] = await Promise.all([
+    fetch(`${env.SUPABASE_URL}/rest/v1/user_roles?user_id=eq.${user.id}&select=role`, {
       headers: {
         apikey: env.SUPABASE_SERVICE_ROLE_KEY,
         Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
       },
-    },
-  )
+    }),
+    fetch(`${env.SUPABASE_URL}/rest/v1/profiles?id=eq.${user.id}&select=disabled`, {
+      headers: {
+        apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+        Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+      },
+    }),
+  ])
   if (!roleRes.ok) return { ok: false, status: 500, message: 'Role lookup failed' }
+  if (!profRes.ok) return { ok: false, status: 500, message: 'Profile lookup failed' }
+
   const roles = ((await roleRes.json()) as Array<{ role: string }>).map((r) => r.role)
-  return { ok: true, userId: user.id, roles }
+  const profRows = (await profRes.json()) as Array<{ disabled: boolean }>
+  const disabled = Array.isArray(profRows) ? profRows[0]?.disabled === true : false
+  if (disabled) {
+    return { ok: false, status: 403, code: 'account_disabled', message: 'Account disabled' }
+  }
+  return { ok: true, userId: user.id, roles, disabled }
+}
+
+/** 把鉴权失败转成既有错误响应体（保留 account_disabled / unauthorized 区分） */
+function authErrBody(auth: AuthFail): { code: string; message: string } {
+  return {
+    code: auth.code ?? (auth.status >= 500 ? 'internal' : 'unauthorized'),
+    message: auth.message,
+  }
 }
 
 /** USER 或 ADMIN（下载类接口） */
@@ -137,7 +162,7 @@ app.get('/api/health', (c) =>
 // ===========================================================================
 app.get('/api/downloads/image/:imageId', async (c) => {
   const auth = await requireUser(c)
-  if (!auth.ok) return c.json({ error: { code: 'unauthorized', message: auth.message } }, auth.status)
+  if (!auth.ok) return c.json({ error: authErrBody(auth) }, auth.status)
 
   const imageId = c.req.param('imageId')
   if (!UUID_RE.test(imageId)) {
@@ -180,7 +205,7 @@ interface ZipBody {
 
 app.post('/api/downloads/zip', async (c) => {
   const auth = await requireUser(c)
-  if (!auth.ok) return c.json({ error: { code: 'unauthorized', message: auth.message } }, auth.status)
+  if (!auth.ok) return c.json({ error: authErrBody(auth) }, auth.status)
 
   let body: ZipBody
   try {
@@ -497,7 +522,7 @@ function isValidImagePath(p: string): boolean {
 
 app.post('/api/admin/storage/delete', async (c) => {
   const auth = await requireAdmin(c)
-  if (!auth.ok) return c.json({ error: { code: 'unauthorized', message: auth.message } }, auth.status)
+  if (!auth.ok) return c.json({ error: authErrBody(auth) }, auth.status)
 
   let body: StorageDeleteBody
   try {
@@ -535,6 +560,268 @@ app.post('/api/admin/storage/delete', async (c) => {
     return c.json({ error: { code: 'storage_error', message: 'Storage deletion failed' } }, 502)
   }
   return c.json({ deleted: true, objects: relativePaths.length })
+})
+
+// ===========================================================================
+// Phase 7 Admin Console —— 4 个新端点
+//   * 全部 requireAdmin（authenticate 内已含 D2 硬门禁：
+//     disabled=true → 403 {code:'account_disabled'}）
+//   * 用户变更唯一写入通道 = service_role 调 admin_user_mutation RPC
+//     （原子 + 锁内重读 + last-admin 普查 + 审计均在 DB 函数内完成）
+// ===========================================================================
+interface AdminRpcErrorBody {
+  code?: string
+  message?: string
+  details?: string | null
+  hint?: string | null
+}
+
+/** 把 admin_user_mutation RPC 非 2xx 响应映射为对外错误（识别 DB raise 短名前缀） */
+function mapAdminMutationError(
+  status: number,
+  body: AdminRpcErrorBody,
+): { status: 403 | 404 | 409 | 502; error: { code: string; message: string } } {
+  const msg = typeof body?.message === 'string' ? body.message : ''
+  if (
+    msg.startsWith('SELF_DEMOTE_FORBIDDEN') ||
+    msg.startsWith('SELF_DISABLE_FORBIDDEN') ||
+    msg.startsWith('FORBIDDEN')
+  ) {
+    return { status: 403, error: { code: 'forbidden', message: 'Not allowed to perform this user change' } }
+  }
+  if (msg.startsWith('LAST_ADMIN')) {
+    return { status: 409, error: { code: 'last_admin', message: 'Operation would leave no active admin' } }
+  }
+  if (msg.startsWith('TARGET_NOT_FOUND')) {
+    return { status: 404, error: { code: 'not_found', message: 'Target user not found' } }
+  }
+  // 其余一律视为上游故障（参数错/实例异常等），不向前端泄露细节
+  return { status: 502, error: { code: 'upstream_error', message: 'Admin service error' } }
+}
+
+interface MutationResult {
+  user_id: string
+  role: string
+  disabled: boolean
+  role_changed: boolean
+  disabled_changed: boolean
+}
+
+/** 调 admin_user_mutation 的统一封装（null 字段 = 不变） */
+async function callUserMutation(
+  env: Env,
+  p_actor: string,
+  p_target: string,
+  p_role: string | null,
+  p_disabled: boolean | null,
+): Promise<{ ok: true; result: MutationResult } | { ok: false; status: 403 | 404 | 409 | 502; error: { code: string; message: string } }> {
+  const res = await fetch(`${env.SUPABASE_URL}/rest/v1/rpc/admin_user_mutation`, {
+    method: 'POST',
+    headers: svc(env),
+    body: JSON.stringify({ p_actor, p_target, p_role, p_disabled }),
+  })
+  if (!res.ok) {
+    let body: AdminRpcErrorBody = {}
+    try {
+      body = (await res.json()) as AdminRpcErrorBody
+    } catch {
+      body = {}
+    }
+    const mapped = mapAdminMutationError(res.status, body)
+    return { ok: false, status: mapped.status, error: mapped.error }
+  }
+  const result = (await res.json()) as MutationResult
+  return { ok: true, result }
+}
+
+// ===========================================================================
+// GET /api/admin/users —— 用户列表（D1：Auth Admin API 列举 + service-role join）
+//   分页：?page=&per_page=（默认 1/20，per_page ≤100）；
+//   GoTrue 返回 envelope {users,aud} + x-total-count/Link（D3 实测）。
+//   本端点返回自包含 envelope {users,total,page,per_page}，避免前端依赖响应头。
+// ===========================================================================
+interface GoTrueUserEnvelope {
+  users?: Array<{
+    id: string
+    email?: string | null
+    created_at?: string | null
+    last_sign_in_at?: string | null
+  }>
+  aud?: string | null
+}
+
+app.get('/api/admin/users', async (c) => {
+  const auth = await requireAdmin(c)
+  if (!auth.ok) return c.json({ error: authErrBody(auth) }, auth.status)
+
+  const rawPage = c.req.query('page')
+  const rawPer = c.req.query('per_page')
+  const page = rawPage === undefined ? 1 : /^\d+$/.test(rawPage) ? Number(rawPage) : NaN
+  const perPage = rawPer === undefined ? 20 : /^\d+$/.test(rawPer) ? Number(rawPer) : NaN
+  if (!Number.isInteger(page) || page < 1) {
+    return c.json({ error: { code: 'bad_request', message: 'page must be a positive integer' } }, 400)
+  }
+  if (!Number.isInteger(perPage) || perPage < 1 || perPage > 100) {
+    return c.json({ error: { code: 'bad_request', message: 'per_page must be an integer 1-100' } }, 400)
+  }
+
+  // 1) Auth Admin API 列举（D3 实测可用；service role）
+  const listRes = await fetch(`${c.env.SUPABASE_URL}/auth/v1/admin/users?page=${page}&per_page=${perPage}`, {
+    headers: svc(c.env),
+  })
+  if (!listRes.ok) {
+    console.error('Admin users list failed:', listRes.status)
+    return c.json({ error: { code: 'upstream_error', message: 'User list unavailable' } }, 502)
+  }
+  const totalRaw = listRes.headers.get('x-total-count')
+  const total = totalRaw !== null && /^\d+$/.test(totalRaw) ? Number(totalRaw) : 0
+  const envelope = (await listRes.json()) as GoTrueUserEnvelope
+  const goTrueUsers = Array.isArray(envelope.users) ? envelope.users : []
+  if (goTrueUsers.length === 0) {
+    return c.json({ users: [], total, page, per_page: perPage })
+  }
+
+  // 2) service-role join：user_roles(role) + profiles(display_name/disabled)
+  const inList = goTrueUsers.map((u) => `"${u.id}"`).join(',')
+  const [roleRes, profRes] = await Promise.all([
+    fetch(`${c.env.SUPABASE_URL}/rest/v1/user_roles?user_id=in.(${inList})&select=user_id,role`, {
+      headers: svc(c.env),
+    }),
+    fetch(`${c.env.SUPABASE_URL}/rest/v1/profiles?id=in.(${inList})&select=id,display_name,disabled`, {
+      headers: svc(c.env),
+    }),
+  ])
+  if (!roleRes.ok || !profRes.ok) {
+    console.error('Admin users join failed:', roleRes.status, profRes.status)
+    return c.json({ error: { code: 'upstream_error', message: 'User list unavailable' } }, 502)
+  }
+  const rolesById = new Map<string, string>()
+  for (const r of (await roleRes.json()) as Array<{ user_id: string; role: string }>) {
+    if (!rolesById.has(r.user_id)) rolesById.set(r.user_id, r.role)
+  }
+  const profById = new Map<string, { display_name: string | null; disabled: boolean }>()
+  for (const p of (await profRes.json()) as Array<{ id: string; display_name: string | null; disabled: boolean }>) {
+    profById.set(p.id, { display_name: p.display_name, disabled: p.disabled === true })
+  }
+
+  const users = goTrueUsers.map((u) => {
+    const prof = profById.get(u.id)
+    return {
+      id: u.id,
+      email: typeof u.email === 'string' ? u.email : null,
+      display_name: prof ? prof.display_name : null,
+      // 缺省 'user'：既有注册流程保证每个账号都有 user_roles 行；防御性兜底不伪造更高权限
+      role: rolesById.get(u.id) ?? 'user',
+      disabled: prof ? prof.disabled : false,
+      created_at: u.created_at ?? null,
+      last_sign_in_at: u.last_sign_in_at ?? null,
+    }
+  })
+  return c.json({ users, total, page, per_page: perPage })
+})
+
+// ===========================================================================
+// POST /api/admin/users/:userId/role —— 改角色（D6 原子路径）
+//   仅接受 'user' | 'admin'；self-demote 由 DB 拒绝（SELF_DEMOTE_FORBIDDEN → 403）
+// ===========================================================================
+interface RoleBody {
+  role?: unknown
+}
+
+app.post('/api/admin/users/:userId/role', async (c) => {
+  const auth = await requireAdmin(c)
+  if (!auth.ok) return c.json({ error: authErrBody(auth) }, auth.status)
+
+  const targetId = c.req.param('userId')
+  if (!UUID_RE.test(targetId)) {
+    return c.json({ error: { code: 'bad_request', message: 'Invalid user id' } }, 400)
+  }
+
+  let body: RoleBody
+  try {
+    body = await c.req.json<RoleBody>()
+  } catch {
+    return c.json({ error: { code: 'bad_request', message: 'Invalid JSON body' } }, 400)
+  }
+  const role = body.role
+  if (role !== 'user' && role !== 'admin') {
+    return c.json({ error: { code: 'bad_request', message: 'role must be "user" or "admin"' } }, 400)
+  }
+
+  const mut = await callUserMutation(c.env, auth.userId, targetId, role, null)
+  if (!mut.ok) return c.json({ error: mut.error }, mut.status)
+  return c.json(mut.result)
+})
+
+// ===========================================================================
+// POST /api/admin/users/:userId/disabled —— 禁用/启用（D2/D6/D3 组合）
+//   先原子落库（admin_user_mutation），成功后再 best-effort 撤会话：
+//   撤会话失败仅 console.error，绝不回滚、绝不阻塞（D3 裁决）。
+// ===========================================================================
+interface DisabledBody {
+  disabled?: unknown
+}
+
+app.post('/api/admin/users/:userId/disabled', async (c) => {
+  const auth = await requireAdmin(c)
+  if (!auth.ok) return c.json({ error: authErrBody(auth) }, auth.status)
+
+  const targetId = c.req.param('userId')
+  if (!UUID_RE.test(targetId)) {
+    return c.json({ error: { code: 'bad_request', message: 'Invalid user id' } }, 400)
+  }
+
+  let body: DisabledBody
+  try {
+    body = await c.req.json<DisabledBody>()
+  } catch {
+    return c.json({ error: { code: 'bad_request', message: 'Invalid JSON body' } }, 400)
+  }
+  if (typeof body.disabled !== 'boolean') {
+    return c.json({ error: { code: 'bad_request', message: 'disabled must be a boolean' } }, 400)
+  }
+  const disabled = body.disabled
+
+  // 1) 先落库（原子 + 审计在 DB 函数内完成）
+  const mut = await callUserMutation(c.env, auth.userId, targetId, null, disabled)
+  if (!mut.ok) return c.json({ error: mut.error }, mut.status)
+
+  // 2) 禁用成功后再 best-effort 撤会话（D3 实测：/admin/users/{id}/logout 已注册；
+  //    /sessions* 端点在本实例返回 404 不可用）
+  if (disabled) {
+    try {
+      const rev = await fetch(`${c.env.SUPABASE_URL}/auth/v1/admin/users/${targetId}/logout`, {
+        method: 'POST',
+        headers: svc(c.env),
+      })
+      if (!rev.ok) console.error('Session revoke best-effort failed:', rev.status)
+    } catch (e) {
+      console.error('Session revoke best-effort threw:', e)
+    }
+  }
+
+  return c.json(mut.result)
+})
+
+// ===========================================================================
+// GET /api/admin/stats —— 单一聚合统计（D5 + 约束 4）
+//   一次 service_role admin_stats() RPC（DB 原子快照）；storage 口径按 DB 记账估算。
+// ===========================================================================
+app.get('/api/admin/stats', async (c) => {
+  const auth = await requireAdmin(c)
+  if (!auth.ok) return c.json({ error: authErrBody(auth) }, auth.status)
+
+  const res = await fetch(`${c.env.SUPABASE_URL}/rest/v1/rpc/admin_stats`, {
+    method: 'POST',
+    headers: svc(c.env),
+    body: JSON.stringify({}),
+  })
+  if (!res.ok) {
+    console.error('Admin stats RPC failed:', res.status)
+    return c.json({ error: { code: 'upstream_error', message: 'Admin stats unavailable' } }, 502)
+  }
+  const stats = (await res.json()) as Record<string, unknown>
+  return c.json(stats)
 })
 
 app.notFound((c) => c.json({ error: { code: 'not_found', message: 'Not found' } }, 404))

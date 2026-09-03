@@ -10,13 +10,10 @@ import { ProfilePage } from '@/routes/pages/ProfilePage'
 import { LoginPage } from '@/routes/pages/LoginPage'
 import { RegisterPage } from '@/routes/pages/RegisterPage'
 import { ForbiddenPage, NotFoundPage } from '@/routes/pages/ErrorPages'
-import {
-  AdminDashboardPage,
-  AdminUsersPage,
-  AdminStoragePage,
-  AdminAuditLogsPage,
-  AdminSettingsPage,
-} from '@/routes/pages/admin/AdminPlaceholderPages'
+import { AdminDashboardPage } from '@/routes/pages/admin/AdminDashboardPage'
+import { AdminUsersPage } from '@/routes/pages/admin/AdminUsersPage'
+import { AdminStoragePage } from '@/routes/pages/admin/AdminStoragePage'
+import { AdminAuditLogsPage } from '@/routes/pages/admin/AdminAuditLogsPage'
 import { AdminTagsPage } from '@/routes/pages/admin/AdminTagsPage'
 import { AdminAssetsPage } from '@/routes/pages/admin/AdminAssetsPage'
 import { AdminAssetNewPage } from '@/routes/pages/admin/AdminAssetNewPage'
@@ -61,7 +58,6 @@ export default function App() {
               <Route path="tags" element={<AdminTagsPage />} />
               <Route path="storage" element={<AdminStoragePage />} />
               <Route path="audit-logs" element={<AdminAuditLogsPage />} />
-              <Route path="settings" element={<AdminSettingsPage />} />
             </Route>
 
             <Route path="*" element={<NotFoundPage />} />
