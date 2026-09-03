@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { Check, Download, DownloadCloud, Image as ImageIcon, ListChecks, Lock, Tag as TagIcon, X } from 'lucide-react'
+import { Check, Download, DownloadCloud, Image as ImageIcon, ListChecks, Lock, Tag as TagIcon } from 'lucide-react'
 import {
   getPublishedAssetBySlug,
   listImagesByLanguage,
   listPublishedLanguages,
-  toPublicUrl,
+  makeImageSrc,
+  THUMB_GRID,
 } from '@/features/assets/api'
 import { listAssetTags } from '@/features/tags/api'
 import { parseLanguageCode } from '@/lib/validators'
@@ -24,6 +25,8 @@ import {
   downloadZip,
 } from '@/features/downloads/api'
 import { PackageDownloadPanel } from '@/features/downloads/PackageDownloadPanel'
+import { Lightbox } from '@/components/Lightbox'
+import { useToast } from '@/components/ToastProvider'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/spinner'
 import { cn } from '@/lib/utils'
@@ -54,7 +57,8 @@ export function AssetDetailPage() {
   const [selectionMode, setSelectionMode] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState(false)
-  const [toast, setToast] = useState<{ kind: 'ok' | 'err'; msg: string } | null>(null)
+  const [preview, setPreview] = useState<ImageRow | null>(null)
+  const toast = useToast()
 
   // 1) 载入资产 + published 语言（固定顺序）
   useEffect(() => {
@@ -149,14 +153,9 @@ export function AssetDetailPage() {
   const activeImages = activeLang ? imagesByLang[activeLang] : undefined
   const activeLangRow = languages.find((l) => l.language_code === activeLang) ?? null
 
-  const flash = (kind: 'ok' | 'err', msg: string) => {
-    setToast({ kind, msg })
-    setTimeout(() => setToast(null), 4000)
-  }
-
   const requireLogin = (): boolean => {
     if (!session) {
-      flash('err', '请先登录后下载')
+      toast.error('请先登录后下载')
       return true
     }
     return false
@@ -168,7 +167,7 @@ export function AssetDetailPage() {
     try {
       await downloadSingleImage(img.id, img.filename)
     } catch (e) {
-      flash('err', e instanceof DownloadError ? e.message : '下载失败')
+      toast.error(e instanceof DownloadError ? e.message : '下载失败')
     }
     setBusy(false)
   }
@@ -188,11 +187,11 @@ export function AssetDetailPage() {
     setBusy(true)
     try {
       await downloadZip(activeLangRow.id, Array.from(selected), `${asset.slug}-${activeLang}.zip`)
-      flash('ok', `已打包 ${selected.size} 张`)
+      toast.success(`已打包 ${selected.size} 张`)
       setSelected(new Set())
       setSelectionMode(false)
     } catch (e) {
-      flash('err', e instanceof DownloadError ? e.message : '打包失败')
+      toast.error(e instanceof DownloadError ? e.message : '打包失败')
     }
     setBusy(false)
   }
@@ -305,12 +304,19 @@ export function AssetDetailPage() {
                       isSelected && 'ring-2 ring-primary',
                     )}
                   >
-                    <img
-                      src={toPublicUrl(img.storage_path)}
-                      alt={img.filename}
-                      loading="lazy"
-                      className="aspect-square w-full object-cover"
-                    />
+                    <button
+                      type="button"
+                      onClick={() => !selectionMode && setPreview(img)}
+                      className="block w-full cursor-zoom-in"
+                      aria-label={`Preview ${img.filename}`}
+                    >
+                      <img
+                        src={makeImageSrc(img.storage_path, THUMB_GRID)}
+                        alt={img.filename}
+                        loading="lazy"
+                        className="aspect-square w-full object-cover"
+                      />
+                    </button>
                     {/* 选择框（选择模式下） */}
                     {selectionMode && (
                       <button
@@ -382,21 +388,16 @@ export function AssetDetailPage() {
         </div>
       )}
 
-      {/* Toast */}
-      {toast && (
-        <div
-          className={cn(
-            'fixed bottom-20 left-1/2 z-40 -translate-x-1/2 rounded-lg px-4 py-2 text-sm shadow-lg',
-            toast.kind === 'ok' ? 'bg-green-600 text-white' : 'bg-destructive text-destructive-foreground',
-          )}
-        >
-          <span className="flex items-center gap-2">
-            {toast.msg}
-            <button type="button" onClick={() => setToast(null)} aria-label="Dismiss">
-              <X className="h-3.5 w-3.5" />
-            </button>
-          </span>
-        </div>
+      {/* 全屏预览（Phase 9 D7） */}
+      {preview && (
+        <Lightbox
+          image={preview}
+          onClose={() => setPreview(null)}
+          onDownload={(img) => {
+            setPreview(null)
+            onSingleDownload(img)
+          }}
+        />
       )}
     </div>
   )

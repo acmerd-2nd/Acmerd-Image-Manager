@@ -1,5 +1,7 @@
+import { Suspense } from 'react'
 import { NavLink, Link, Outlet } from 'react-router-dom'
 import { FolderOpen, LayoutDashboard, ScrollText, Tags, Users, Database } from 'lucide-react'
+import { Spinner } from '@/components/spinner'
 import { cn } from '@/lib/utils'
 
 const items = [
@@ -61,7 +63,9 @@ export function AdminLayout() {
             </NavLink>
           ))}
         </nav>
-        <Outlet />
+        <Suspense fallback={<div className="flex justify-center py-16"><Spinner className="h-6 w-6" /></div>}>
+          <Outlet />
+        </Suspense>
       </div>
     </div>
   )

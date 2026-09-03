@@ -2,17 +2,20 @@ import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Search as SearchIcon, X } from 'lucide-react'
 import type { AssetCardRow, TagRow } from '@/types/database'
-import { searchAssets, SearchValidationError } from '@/features/search/api'
+import { searchAssetsPaged, SearchValidationError } from '@/features/search/api'
 import { listTags } from '@/features/tags/api'
 import { AssetCard } from '@/features/assets/AssetCard'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
-import { Spinner } from '@/components/spinner'
+import { CardGridSkeleton } from '@/components/CardSkeleton'
+import { Pagination } from '@/components/Pagination'
 import { cn } from '@/lib/utils'
+
+const PAGE_SIZE = 24
 
 /**
  * 搜索结果页：关键词 + 标签筛选（AND），结果恒为 Asset Cards。
- * URL 状态：/search?q=<kw>&tags=<slug,slug>（可分享、可回退）。
+ * URL 状态：/search?q=<kw>&tags=<slug,slug>&page=N（可分享、可回退）。分页走 search_assets_paged。
  */
 export function SearchPage() {
   const [params, setParams] = useSearchParams()
@@ -21,16 +24,17 @@ export function SearchPage() {
     () => (params.get('tags') ?? '').split(',').map((s) => s.trim()).filter(Boolean),
     [params],
   )
+  const page = Math.max(1, Number(params.get('page') ?? '1') || 1)
 
   const [query, setQuery] = useState(q)
   const [allTags, setAllTags] = useState<TagRow[]>([])
   const [results, setResults] = useState<AssetCardRow[] | null>(null)
+  const [total, setTotal] = useState(0)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     listTags().then(setAllTags).catch(() => setAllTags([]))
   }, [])
-
   useEffect(() => {
     setQuery(q)
   }, [q])
@@ -39,9 +43,11 @@ export function SearchPage() {
     let cancelled = false
     setResults(null)
     setError(null)
-    searchAssets(q, selectedTags)
-      .then((rows) => {
-        if (!cancelled) setResults(rows)
+    searchAssetsPaged(q, selectedTags, page, PAGE_SIZE)
+      .then(({ rows, total: t }) => {
+        if (cancelled) return
+        setResults(rows)
+        setTotal(t)
       })
       .catch((e) => {
         if (cancelled) return
@@ -51,23 +57,20 @@ export function SearchPage() {
     return () => {
       cancelled = true
     }
-  }, [q, selectedTags])
+  }, [q, selectedTags, page])
 
-  const updateParams = (nextQ: string, nextTags: string[]) => {
+  const updateParams = (nextQ: string, nextTags: string[], nextPage = 1) => {
     const p = new URLSearchParams()
     if (nextQ) p.set('q', nextQ)
     if (nextTags.length) p.set('tags', nextTags.join(','))
+    if (nextPage > 1) p.set('page', String(nextPage))
     setParams(p)
   }
-
   const toggleTag = (slug: string) => {
-    const next = selectedTags.includes(slug)
-      ? selectedTags.filter((s) => s !== slug)
-      : [...selectedTags, slug]
-    updateParams(q, next)
+    const next = selectedTags.includes(slug) ? selectedTags.filter((s) => s !== slug) : [...selectedTags, slug]
+    updateParams(q, next, 1) // 改筛选回到第 1 页
   }
-
-  const clearAll = () => updateParams('', [])
+  const setPage = (p: number) => updateParams(q, selectedTags, p)
 
   const hasActive = q !== '' || selectedTags.length > 0
 
@@ -79,22 +82,16 @@ export function SearchPage() {
         className="mb-6 flex max-w-xl gap-2"
         onSubmit={(e) => {
           e.preventDefault()
-          updateParams(query.trim(), selectedTags)
+          updateParams(query.trim(), selectedTags, 1)
         }}
       >
         <div className="relative flex-1">
           <SearchIcon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            className="pl-9"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search assets by name, description, or tag..."
-          />
+          <Input className="pl-9" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search assets by name, description, or tag..." />
         </div>
         <Button type="submit">Search</Button>
       </form>
 
-      {/* 标签筛选 chips */}
       {allTags.length > 0 && (
         <div className="mb-6 flex flex-wrap items-center gap-2">
           <span className="text-xs font-medium text-muted-foreground">Filter by tag:</span>
@@ -107,9 +104,7 @@ export function SearchPage() {
                 onClick={() => toggleTag(t.slug)}
                 className={cn(
                   'rounded-full border px-3 py-1 text-xs transition-colors',
-                  active
-                    ? 'border-primary bg-primary text-primary-foreground'
-                    : 'border-input hover:bg-accent',
+                  active ? 'border-primary bg-primary text-primary-foreground' : 'border-input hover:bg-accent',
                 )}
               >
                 {t.name}
@@ -117,7 +112,7 @@ export function SearchPage() {
             )
           })}
           {hasActive && (
-            <Button size="sm" variant="ghost" onClick={clearAll} className="h-7 gap-1 text-xs">
+            <Button size="sm" variant="ghost" onClick={() => updateParams('', [], 1)} className="h-7 gap-1 text-xs">
               <X className="h-3 w-3" />
               Clear
             </Button>
@@ -128,9 +123,7 @@ export function SearchPage() {
       {error && <p className="py-8 text-center text-sm text-destructive">{error}</p>}
 
       {!error && results === null ? (
-        <div className="flex justify-center py-20">
-          <Spinner className="h-6 w-6" />
-        </div>
+        <CardGridSkeleton count={8} />
       ) : !error && results && results.length === 0 ? (
         <div className="rounded-xl border border-dashed py-20 text-center">
           <p className="font-medium">No results</p>
@@ -139,11 +132,14 @@ export function SearchPage() {
       ) : (
         !error &&
         results && (
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-            {results.map((a) => (
-              <AssetCard key={a.id} asset={a} />
-            ))}
-          </div>
+          <>
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+              {results.map((a) => (
+                <AssetCard key={a.id} asset={a} />
+              ))}
+            </div>
+            <Pagination page={page} perPage={PAGE_SIZE} total={total} onPage={setPage} />
+          </>
         )
       )}
     </div>

@@ -157,36 +157,80 @@ Phase 8 Security Review 冻结的五层防线 + M1–M7 逐项映射：
 
 ---
 
-## 6. 测试与证据（Gate G9 六类，全 CONFIRMED 才 PASS）
+## 6. 测试与证据（Gate G9 七类，全 CONFIRMED 才 PASS）
 
 | # | 证据 | 方法 |
 | -- | ---- | ---- |
 | 1 | 实际 SQL | 0008 全文（薄壳 + core + paged 函数体；隔离库实测） |
-| 2 | 隔离库验证 | 一次性库 0001→0008 全量应用：I1 新旧一致 / I2 分页并集 / I3 NO-DRIFT / I4 Phase 8 抽样；**造 30+ 资产、多语言多图**验证分页语义（生产仅 1 条，必须隔离库造数） |
+| 2 | 隔离库验证 | 一次性库 0001→0008 全量应用：I1a 契约不变 / I1b canonical JSON 一致 / I2 分页并集=全量 / I2a 顺序一致 / I3 NO-DRIFT / I4 Phase 8 抽样；**造 30+ 资产、多 Tag、多语言多图**验证分页语义（生产仅 1 条，必须隔离库造数） |
 | 3 | 前端构建 | typecheck + `vite build`；lazy 前后 chunk 对比（首包降幅） |
-| 4 | 响应式证据 | preview server + 截图（Desktop 1280 / Tablet 768 / Mobile 390）三视口 × 关键页（Home/Search/Detail/Admin Assets/Admin Users）；D10 定工具 |
+| 4 | 响应式证据 | preview server + 截图（Desktop 1280 / Tablet 768 / Mobile 390）三视口 × 关键页（Home/Search/Detail/Admin Assets/Admin Users） |
 | 5 | UX 状态回归 | 每页 Loading/Empty/Error/Success Toast 抽查清单（含 404/403/Network） |
 | 6 | 生产应用 + 线上抽验 | 0008 上生产（schema_migrations 记录）；线上只读抽查：分页 envelope、thumb URL 200、search 无参兼容 |
+| 7 | **性能证据（D10 新增）** | **Baseline → Implementation → Compare**：改造前记录初始 bundle 体积 / 关键页网络请求数 / 展示图片字节数基线；改造后复测，证明 lazy 拆分生效、分页避免全量拉取、图片走 transform、无明显 layout overflow、请求数无异常膨胀。**不硬定绝对 LCP 阈值**（环境无稳定 benchmark）。 |
 
-**Gate G9 判据（规划原文对齐）**：Desktop / Tablet / Mobile PASS；Loading / Error / Empty State PASS；Image Performance PASS（缩略图实际字节 vs 原图对比 + lazy 已具）；六类证据全 CONFIRMED。
+**Gate G9 判据（规划原文对齐）**：Desktop / Tablet / Mobile PASS；Loading / Error / Empty State PASS；Image Performance PASS（缩略图实际字节 vs 原图对比 + lazy 已具）；**七类证据全 CONFIRMED**。
 
 ---
 
-## 7. Owner 裁决（待填写）
+## 7. Owner 裁决（已落档 · 2026-09-03）
 
 ```text
-Phase 9 Design Gate —— 裁决：
-D1 = __（1a / 1b）
-D2 = __（2a / 2b）
-D3 = __（3a / 3b）
-D4 = __（4a / 4b）
-D5 = __（5a / 备选）
-D6 = __（6a / 6b）
-D7 = __（7a / 7b）
-D8 = __（8a / 8b）
-D9 = __（9a / 9b）
-D10 = __（10a / 10b）
-附加修改意见：___
+Phase 9 Design Gate = APPROVED WITH REQUIRED ADJUSTMENTS
+
+D1 = APPROVED（1a 数字分页）
+  边界：固定 pageSize；越界页不报错、空页正常返回；排序稳定（updated_at DESC, id ASC）；
+  分页查询与 total 查询必须使用同一筛选条件；page=N 结果不得随数据变化漂移。
+
+D2 = APPROVED WITH GUARDRAILS（2a）
+  _search_assets_core → 薄壳 search_assets（对外契约零破坏）→ 新增 search_assets_paged。
+  I1a 原 search_assets 的签名/返回列/字段类型/NULL 语义/Tag AND/wildcard escaping/排序全部不变。
+  I1b 固定 fixture 下，旧 search_assets 结果与 core 结果 canonical JSON 完全一致。
+  I2  分页并集 = 全量，无遗漏/无重复。
+  I2a 分页拼接后的顺序与全量查询完全一致。
+  paged 的 total 不得改变原 search 的筛选语义（不为分页顺手改搜索规则）。
+  隔离库必须造 30+ assets 验证，禁止依赖生产 1 asset 数据。
+
+D3 = APPROVED（3a React.lazy）
+  Guard 顺序必须保持 Auth → Guard → Lazy Page，不得出现"先渲染页面再发现无权限"。
+
+D4 = APPROVED（4a Supabase transform 两档：封面 640×480 / 详情 640×640）
+  transform 仅用于展示；下载原图/ZIP 链路（storage path/鉴权/文件名/语义）完全保持 Phase 5 不变量。
+  缩略 URL 生成集中到一个 helper，禁止各页各写一套 query 参数。
+
+D5 = APPROVED（5a upload cacheControl=immutable）
+  immutable 仅用于"唯一路径的新对象"（当前路径含 UUID 随机前缀，成立）；
+  不得对"同路径覆盖写"的对象打 immutable；历史对象不批量迁移缓存策略。
+
+D6 = APPROVED（6a 自建 ToastProvider）
+  最小统一行为：success/error/info + 自动消失 + 手动关闭 + 多 toast 不互相覆盖；
+  不引入通知系统/全局事件总线。
+
+D7 = APPROVED（7a 自建 Lightbox）
+  至少保证：Esc 关闭、关闭后焦点回到触发图片、移动端无页面/overlay 双滚动冲突。
+
+D8 = APPROVED（8a CardSkeleton）
+  骨架尺寸/图片比例与最终卡片一致，避免明显 CLS（与 D4 缩略比例一并锁定）。
+
+D9 = APPROVED（9a 收敛式 Responsive + Visual Polish）
+  不重构 Drawer、不引入新 UI framework/design dependency；
+  Design System 基线文档保持轻量（字体层级/spacing/radius/shadow/form control/状态色）；
+  移动端优先修"功能可用性"（表格横向溢出、按钮挤压、侧栏、详情图区），非视觉重做。
+
+D10 = MODIFY → 七类证据 + Performance Evidence（Baseline → Implementation → Compare）
+  在原六类证据外，新增第 7 类「性能证据」：初始 bundle 因 lazy 拆分、
+  Home/Search/AdminAssets 分页避免全量拉取、图片走 transform 非原图、
+  典型移动/桌面视口无明显 layout overflow、关键页网络请求数无异常膨胀。
+  不硬定绝对 LCP 阈值（环境无稳定 benchmark），以 Baseline→Implementation→Compare 证明无倒退 + 三大收益有证据。
+
+隐藏硬约束（写入本 Gate）：
+  生产仅 1 asset/1 image，不得作为分页验证依据；分页必须隔离库 30+ assets、多 Tag、多页 Search，
+  并验证 page1+…+last 拼接与旧全量完全一致。
+  0008 是本 Phase 唯一 DB 变更面；published_assets / is_admin() / RLS / audit / disabled 门禁
+  视为【冻结基础设施】，除 search_assets 分页扩展外不得触碰 Phase 8 安全语义。
+
+实施顺序：0008 → 隔离库分页/NO-DRIFT（I1a/I1b/I2/I2a/I3/I4 + D1 边界）→ 前端 UX →
+Performance Evidence → 生产 0008 + 线上抽验 → Security Review 回填 → Git + Gate G9。
 ```
 
-批准后实施顺序：**0008 → 隔离库冒烟（I1–I4）→ 前端改造 → 构建/响应式证据 → 生产 0008 + 线上抽验 → Security Review 回填 → Git + Gate G9**。
+**批准人**：Owner · **批准日期**：2026-09-03 · **状态**：APPROVED，进入实施。

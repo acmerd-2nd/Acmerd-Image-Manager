@@ -44,7 +44,9 @@ export async function uploadImage(
     .from('images')
     .upload(path.replace(/^images\//, ''), file, {
       contentType: file.type,
-      cacheControl: '31536000',
+      // Phase 9 D5：路径含 uuid8() 随机段 + upsert:false → 唯一不可变对象，可安全 immutable。
+      // cacheControl 直接作为对象的 cache-control 响应头（仅作用于新上传；历史对象不批量迁移）。
+      cacheControl: 'public, max-age=31536000, immutable',
       upsert: false,
     })
   if (error) throw new Error(error.message)

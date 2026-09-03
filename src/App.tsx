@@ -1,23 +1,29 @@
+import { lazy } from 'react'
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import { AuthProvider } from '@/features/auth/AuthProvider'
 import { AppShell } from '@/components/layout/AppShell'
 import { AdminLayout } from '@/components/layout/AdminLayout'
 import { RequireAuth, RequireRole } from '@/components/guards'
-import { HomePage } from '@/routes/pages/HomePage'
-import { SearchPage } from '@/routes/pages/SearchPage'
-import { AssetDetailPage } from '@/routes/pages/AssetDetailPage'
-import { ProfilePage } from '@/routes/pages/ProfilePage'
 import { LoginPage } from '@/routes/pages/LoginPage'
 import { RegisterPage } from '@/routes/pages/RegisterPage'
 import { ForbiddenPage, NotFoundPage } from '@/routes/pages/ErrorPages'
-import { AdminDashboardPage } from '@/routes/pages/admin/AdminDashboardPage'
-import { AdminUsersPage } from '@/routes/pages/admin/AdminUsersPage'
-import { AdminStoragePage } from '@/routes/pages/admin/AdminStoragePage'
-import { AdminAuditLogsPage } from '@/routes/pages/admin/AdminAuditLogsPage'
-import { AdminTagsPage } from '@/routes/pages/admin/AdminTagsPage'
-import { AdminAssetsPage } from '@/routes/pages/admin/AdminAssetsPage'
-import { AdminAssetNewPage } from '@/routes/pages/admin/AdminAssetNewPage'
-import { AdminAssetEditorPage } from '@/routes/pages/admin/AdminAssetEditorPage'
+
+// Phase 9 D3：路由级代码分割。AuthProvider / 布局 / Guard 保持 eager，
+// 保证顺序 Auth → Guard → Lazy Page（不会"先渲染页面再发现无权限"）。
+// Suspense 边界在 AppShell / AdminLayout 的 <Outlet/> 处（导航稳定，仅内容区回落）。
+const HomePage = lazy(() => import('@/routes/pages/HomePage').then((m) => ({ default: m.HomePage })))
+const SearchPage = lazy(() => import('@/routes/pages/SearchPage').then((m) => ({ default: m.SearchPage })))
+const AssetDetailPage = lazy(() => import('@/routes/pages/AssetDetailPage').then((m) => ({ default: m.AssetDetailPage })))
+const ProfilePage = lazy(() => import('@/routes/pages/ProfilePage').then((m) => ({ default: m.ProfilePage })))
+
+const AdminDashboardPage = lazy(() => import('@/routes/pages/admin/AdminDashboardPage').then((m) => ({ default: m.AdminDashboardPage })))
+const AdminUsersPage = lazy(() => import('@/routes/pages/admin/AdminUsersPage').then((m) => ({ default: m.AdminUsersPage })))
+const AdminStoragePage = lazy(() => import('@/routes/pages/admin/AdminStoragePage').then((m) => ({ default: m.AdminStoragePage })))
+const AdminAuditLogsPage = lazy(() => import('@/routes/pages/admin/AdminAuditLogsPage').then((m) => ({ default: m.AdminAuditLogsPage })))
+const AdminTagsPage = lazy(() => import('@/routes/pages/admin/AdminTagsPage').then((m) => ({ default: m.AdminTagsPage })))
+const AdminAssetsPage = lazy(() => import('@/routes/pages/admin/AdminAssetsPage').then((m) => ({ default: m.AdminAssetsPage })))
+const AdminAssetNewPage = lazy(() => import('@/routes/pages/admin/AdminAssetNewPage').then((m) => ({ default: m.AdminAssetNewPage })))
+const AdminAssetEditorPage = lazy(() => import('@/routes/pages/admin/AdminAssetEditorPage').then((m) => ({ default: m.AdminAssetEditorPage })))
 
 export default function App() {
   return (

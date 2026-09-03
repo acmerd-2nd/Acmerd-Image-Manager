@@ -180,6 +180,30 @@ export function toPublicUrl(storagePath: string): string {
   return data.publicUrl
 }
 
+/**
+ * 展示用图片 URL（Phase 9 D4）：走 Supabase render/image 变换，集中一处生成，
+ * 禁止各页各写 query 参数。仅服务展示链路；下载原图/ZIP 不经此函数（保持 Phase 5 不变量）。
+ */
+export interface ImageVariant {
+  width: number
+  height: number
+  quality?: number
+}
+export const THUMB_COVER: ImageVariant = { width: 640, height: 480, quality: 80 } // 卡片 4:3
+export const THUMB_GRID: ImageVariant = { width: 640, height: 640, quality: 80 } // 详情 1:1
+
+export function makeImageSrc(storagePath: string, variant: ImageVariant): string {
+  const withoutBucket = storagePath.split('/').slice(1).join('/')
+  const { data } = supabase.storage.from('images').getPublicUrl(withoutBucket)
+  const params = new URLSearchParams({
+    resize: 'cover',
+    width: String(variant.width),
+    height: String(variant.height),
+    quality: String(variant.quality ?? 80),
+  })
+  return data.publicUrl.replace('/object/public/', '/render/image/public/') + '?' + params.toString()
+}
+
 export async function getCoverUrls(imageIds: string[]): Promise<Map<string, string>> {
   const map = new Map<string, string>()
   if (imageIds.length === 0) return map
@@ -189,9 +213,34 @@ export async function getCoverUrls(imageIds: string[]): Promise<Map<string, stri
     .in('id', imageIds)
   if (error) throw new Error(error.message)
   for (const row of (data ?? []) as Array<{ id: string; storage_path: string }>) {
-    map.set(row.id, toPublicUrl(row.storage_path))
+    map.set(row.id, makeImageSrc(row.storage_path, THUMB_COVER))
   }
   return map
+}
+
+// ---------------- Admin 资产分页（Phase 9 D2：.range() 零迁移，含全部状态） ----------------
+
+export interface PagedAssets {
+  rows: AssetRow[]
+  total: number
+}
+
+/**
+ * Admin 资产列表分页：直接 PostgREST .range + .count('exact')。
+ * 排序 updated_at DESC, id ASC（与用户侧一致的确定性序）；可见性由 RLS is_admin 放行全部状态。
+ */
+export async function listAllAssetsPaged(page: number, perPage: number): Promise<PagedAssets> {
+  const safePer = Math.min(Math.max(perPage, 1), 100)
+  const safePage = Math.max(page, 1)
+  const from = (safePage - 1) * safePer
+  const { data, error, count } = await supabase
+    .from('assets')
+    .select('*', { count: 'exact' })
+    .order('updated_at', { ascending: false })
+    .order('id', { ascending: true })
+    .range(from, from + safePer - 1)
+  if (error) throw new Error(error.message)
+  return { rows: (data ?? []) as AssetRow[], total: count ?? 0 }
 }
 
 // ---------------- Phase 4：按语言浏览 ----------------

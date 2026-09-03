@@ -1,7 +1,9 @@
+import { Suspense } from 'react'
 import { NavLink, Link, Outlet, useNavigate } from 'react-router-dom'
 import { LogOut, User } from 'lucide-react'
 import { useAuth } from '@/features/auth/AuthProvider'
 import { Button } from '@/components/ui/button'
+import { Spinner } from '@/components/spinner'
 import { cn } from '@/lib/utils'
 
 export function AppShell() {
@@ -80,7 +82,9 @@ export function AppShell() {
       </header>
 
       <main className="flex-1">
-        <Outlet />
+        <Suspense fallback={<div className="flex justify-center py-20"><Spinner className="h-6 w-6" /></div>}>
+          <Outlet />
+        </Suspense>
       </main>
 
       <footer className="border-t py-6">

@@ -1,25 +1,51 @@
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Search } from 'lucide-react'
-import { supabase } from '@/lib/supabase/client'
 import type { AssetCardRow } from '@/types/database'
 import { AssetCard } from '@/features/assets/AssetCard'
+import { searchAssetsPaged } from '@/features/search/api'
 import { Input } from '@/components/ui/input'
-import { Spinner } from '@/components/spinner'
+import { CardGridSkeleton } from '@/components/CardSkeleton'
+import { Pagination } from '@/components/Pagination'
+import { useToast } from '@/components/ToastProvider'
+
+const PAGE_SIZE = 24
 
 export function HomePage() {
+  const [params, setParams] = useSearchParams()
+  const page = Math.max(1, Number(params.get('page') ?? '1') || 1)
+  const toast = useToast()
+
   const [assets, setAssets] = useState<AssetCardRow[] | null>(null)
+  const [total, setTotal] = useState(0)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    supabase
-      .from('published_assets')
-      .select('*')
-      .order('id')
-      .then(({ data, error: err }) => {
-        if (err) setError(err.message)
-        else setAssets(data ?? [])
+    let cancelled = false
+    setError(null)
+    searchAssetsPaged('', [], page, PAGE_SIZE)
+      .then(({ rows, total: t }) => {
+        if (cancelled) return
+        setAssets(rows)
+        setTotal(t)
       })
-  }, [])
+      .catch((e) => {
+        if (cancelled) return
+        setError(e instanceof Error ? e.message : String(e))
+        setAssets([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [page])
+
+  const setPage = (p: number) => {
+    const next = new URLSearchParams(params)
+    if (p <= 1) next.delete('page')
+    else next.set('page', String(p))
+    setParams(next)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
 
   return (
     <div className="mx-auto w-full max-w-7xl px-4 py-12 sm:px-6">
@@ -45,11 +71,28 @@ export function HomePage() {
       </div>
 
       {error ? (
-        <p className="text-sm text-destructive">Failed to load assets: {error}</p>
-      ) : assets === null ? (
-        <div className="flex justify-center py-20">
-          <Spinner className="h-6 w-6" />
+        <div className="rounded-xl border border-destructive/40 bg-destructive/10 p-6 text-center">
+          <p className="font-medium text-destructive">加载失败</p>
+          <p className="mt-1 text-sm text-muted-foreground">{error}</p>
+          <button
+            type="button"
+            className="mt-3 text-sm underline"
+            onClick={() => {
+              setAssets(null)
+              searchAssetsPaged('', [], page, PAGE_SIZE)
+                .then(({ rows, total: t }) => {
+                  setAssets(rows)
+                  setTotal(t)
+                  setError(null)
+                })
+                .catch((e) => toast.error(e instanceof Error ? e.message : '重试失败'))
+            }}
+          >
+            重试
+          </button>
         </div>
+      ) : assets === null ? (
+        <CardGridSkeleton count={8} />
       ) : assets.length === 0 ? (
         <div className="rounded-xl border border-dashed py-20 text-center">
           <p className="font-medium">No assets published yet</p>
@@ -58,11 +101,14 @@ export function HomePage() {
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-          {assets.map((a) => (
-            <AssetCard key={a.id} asset={a} />
-          ))}
-        </div>
+        <>
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+            {assets.map((a) => (
+              <AssetCard key={a.id} asset={a} />
+            ))}
+          </div>
+          <Pagination page={page} perPage={PAGE_SIZE} total={total} onPage={setPage} />
+        </>
       )}
     </div>
   )
