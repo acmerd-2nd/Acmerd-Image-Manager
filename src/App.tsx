@@ -13,11 +13,11 @@ import { ForbiddenPage, NotFoundPage } from '@/routes/pages/ErrorPages'
 import {
   AdminDashboardPage,
   AdminUsersPage,
-  AdminTagsPage,
   AdminStoragePage,
   AdminAuditLogsPage,
   AdminSettingsPage,
 } from '@/routes/pages/admin/AdminPlaceholderPages'
+import { AdminTagsPage } from '@/routes/pages/admin/AdminTagsPage'
 import { AdminAssetsPage } from '@/routes/pages/admin/AdminAssetsPage'
 import { AdminAssetNewPage } from '@/routes/pages/admin/AdminAssetNewPage'
 import { AdminAssetEditorPage } from '@/routes/pages/admin/AdminAssetEditorPage'

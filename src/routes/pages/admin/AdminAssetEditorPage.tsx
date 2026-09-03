@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { ArrowDown, ArrowUp, ImagePlus, Trash2 } from 'lucide-react'
+import { ArrowDown, ArrowUp, ImagePlus, Plus, Trash2, X } from 'lucide-react'
 import type {
   AssetLanguageRow,
   AssetRow,
   AssetStatus,
   ImageRow,
   LanguageCode,
+  TagRow,
 } from '@/types/database'
 import { LANGUAGE_CODES, LANGUAGE_LABELS } from '@/types/database'
 import {
@@ -24,6 +25,13 @@ import {
   transitionAsset,
   updateAsset,
 } from '@/features/assets/api'
+import {
+  addAssetTag,
+  createTag,
+  listAssetTagIds,
+  listTags,
+  removeAssetTag,
+} from '@/features/tags/api'
 import { ALLOWED_MIME, MAX_FILE_SIZE, deleteStoragePaths, uploadImage } from '@/features/assets/storage'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -57,6 +65,11 @@ export function AdminAssetEditorPage() {
   const [slug, setSlug] = useState('')
   const [description, setDescription] = useState('')
 
+  // 标签（Phase 6）
+  const [allTags, setAllTags] = useState<TagRow[]>([])
+  const [assetTagIds, setAssetTagIds] = useState<Set<string>>(new Set())
+  const [tagFilter, setTagFilter] = useState('')
+
   const fileInputRef = useRef<HTMLInputElement>(null)
   const uploadLangRef = useRef<LanguageCode | null>(null)
 
@@ -71,9 +84,16 @@ export function AdminAssetEditorPage() {
       setName(a.name)
       setSlug(a.slug)
       setDescription(a.description ?? '')
-      const [langs, imgs] = await Promise.all([listLanguages(id), listImages(id)])
+      const [langs, imgs, tags, tagIds] = await Promise.all([
+        listLanguages(id),
+        listImages(id),
+        listTags(),
+        listAssetTagIds(id),
+      ])
       setLanguages(langs)
       setImages(imgs)
+      setAllTags(tags)
+      setAssetTagIds(new Set(tagIds))
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : String(e))
     }
@@ -328,6 +348,93 @@ export function AdminAssetEditorPage() {
         <Button size="sm" variant="outline" disabled={busy} onClick={saveBasics}>
           Save basics
         </Button>
+      </section>
+
+      {/* 标签（Asset 级，Phase 6） */}
+      <section className="max-w-xl space-y-3 rounded-lg border p-4">
+        <h2 className="font-medium">标签</h2>
+
+        {/* 已关联标签 */}
+        <div className="flex flex-wrap gap-1.5">
+          {allTags
+            .filter((t) => assetTagIds.has(t.id))
+            .map((t) => (
+              <span
+                key={t.id}
+                className="inline-flex items-center gap-1 rounded-full border border-primary/40 bg-primary/10 px-2.5 py-0.5 text-xs"
+              >
+                {t.name}
+                <button
+                  type="button"
+                  aria-label={`移除 ${t.name}`}
+                  disabled={busy}
+                  className="text-muted-foreground hover:text-foreground"
+                  onClick={() =>
+                    run(async () => {
+                      await removeAssetTag(asset.id, t.id)
+                    })
+                  }
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </span>
+            ))}
+          {assetTagIds.size === 0 && (
+            <span className="text-xs text-muted-foreground">暂无标签</span>
+          )}
+        </div>
+
+        {/* 添加：过滤现有 + 快速新建 */}
+        <div className="space-y-2">
+          <Input
+            value={tagFilter}
+            onChange={(e) => setTagFilter(e.target.value)}
+            placeholder="搜索标签，或输入新标签名"
+          />
+          <div className="flex flex-wrap gap-1.5">
+            {allTags
+              .filter(
+                (t) =>
+                  !assetTagIds.has(t.id) &&
+                  t.name.toLowerCase().includes(tagFilter.trim().toLowerCase()),
+              )
+              .slice(0, 12)
+              .map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  disabled={busy}
+                  onClick={() =>
+                    run(async () => {
+                      await addAssetTag(asset.id, t.id)
+                    })
+                  }
+                  className="inline-flex items-center gap-1 rounded-full border border-input px-2.5 py-0.5 text-xs hover:bg-accent"
+                >
+                  <Plus className="h-3 w-3" />
+                  {t.name}
+                </button>
+              ))}
+          </div>
+          {tagFilter.trim() &&
+            !allTags.some((t) => t.name.toLowerCase() === tagFilter.trim().toLowerCase()) && (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={busy}
+                onClick={() =>
+                  run(async () => {
+                    const created = await createTag(tagFilter.trim())
+                    await addAssetTag(asset.id, created.id)
+                    setTagFilter('')
+                  })
+                }
+              >
+                <Plus className="mr-1 h-4 w-4" />
+                新建标签「{tagFilter.trim()}」并关联
+              </Button>
+            )}
+        </div>
       </section>
 
       {/* 语言面板 */}

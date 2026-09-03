@@ -1,14 +1,21 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useParams, useSearchParams } from 'react-router-dom'
-import { Check, Download, DownloadCloud, Image as ImageIcon, ListChecks, Lock, X } from 'lucide-react'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { Check, Download, DownloadCloud, Image as ImageIcon, ListChecks, Lock, Tag as TagIcon, X } from 'lucide-react'
 import {
   getPublishedAssetBySlug,
   listImagesByLanguage,
   listPublishedLanguages,
   toPublicUrl,
 } from '@/features/assets/api'
+import { listAssetTags } from '@/features/tags/api'
 import { parseLanguageCode } from '@/lib/validators'
-import type { AssetLanguageRow, ImageRow, LanguageCode, PublishedAssetRow } from '@/types/database'
+import type {
+  AssetLanguageRow,
+  ImageRow,
+  LanguageCode,
+  PublishedAssetRow,
+  TagRow,
+} from '@/types/database'
 import { LANGUAGE_CODES, LANGUAGE_LABELS } from '@/types/database'
 import { useAuth } from '@/features/auth/AuthProvider'
 import {
@@ -32,11 +39,13 @@ const MAX_ZIP = 30
 export function AssetDetailPage() {
   const { slug } = useParams<{ slug: string }>()
   const [searchParams, setSearchParams] = useSearchParams()
+  const navigate = useNavigate()
   const { session } = useAuth()
 
   const [asset, setAsset] = useState<PublishedAssetRow | null>(null)
   const [languages, setLanguages] = useState<AssetLanguageRow[] | null>(null)
   const [notFound, setNotFound] = useState(false)
+  const [assetTags, setAssetTags] = useState<TagRow[]>([])
 
   const [imagesByLang, setImagesByLang] = useState<Record<string, ImageRow[]>>({})
   const [activeLang, setActiveLang] = useState<LanguageCode | null>(null)
@@ -116,6 +125,18 @@ export function AssetDetailPage() {
     }
   }, [effectiveLang, activeLang, languages, imagesByLang])
 
+  // 4) 载入该资产的标签（含 slug，供可点击筛选）
+  useEffect(() => {
+    if (!asset?.id) return
+    let cancelled = false
+    listAssetTags(asset.id).then((tags) => {
+      if (!cancelled) setAssetTags(tags)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [asset?.id])
+
   if (notFound) return <NotFoundInline />
   if (!asset || languages === null) {
     return (
@@ -188,6 +209,23 @@ export function AssetDetailPage() {
           <div className="mt-3 text-xs text-muted-foreground">
             {asset.image_count} Images · {asset.language_count} Languages
           </div>
+
+          {/* 标签（Asset 级，点击跳搜索结果） */}
+          {assetTags.length > 0 && (
+            <div className="mt-3 flex flex-wrap items-center gap-1.5">
+              <TagIcon className="h-3.5 w-3.5 text-muted-foreground" />
+              {assetTags.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => navigate(`/search?tags=${encodeURIComponent(t.slug)}`)}
+                  className="rounded-full border border-input px-2.5 py-0.5 text-xs transition-colors hover:bg-accent"
+                >
+                  {t.name}
+                </button>
+              ))}
+            </div>
+          )}
 
           {/* 语言 Tab 条 */}
           {languages.length > 1 && (

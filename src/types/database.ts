@@ -70,3 +70,11 @@ export interface AssetCardRow {
   language_count: number
   tags: string[]
 }
+
+/** tags 表行（Phase 6） */
+export interface TagRow {
+  id: string
+  name: string
+  slug: string
+  created_at: string
+}

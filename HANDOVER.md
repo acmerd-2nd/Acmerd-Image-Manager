@@ -1,7 +1,7 @@
 # 🔄 HANDOVER — ACMERD Image Manager 交接文档
 
-> **最后更新**: 2026-09-03（Phase 5 收工）
-> **当前状态**: Phase 0-4 ✅ · **Phase 5 ✅（Gate G5 PASS）** · Phase 6 待开始
+> **最后更新**: 2026-09-03（Phase 6 收工）
+> **当前状态**: Phase 0-5 ✅ · **Phase 6 ✅（Gate G6 PASS）** · Phase 7 待开始
 > **新 Agent 从「第六节 · 下一步任务」直接接手即可**
 
 ---
@@ -134,6 +134,15 @@ anon  SELECT schema_migrations → permission denied ✓
 - **文件名保留（Owner 复核项，已线上验证 ✅）**：单图走 Worker 302→public URL，**Supabase public 对象 GET 不返回 Content-Disposition（实测 null）**，故 302 上设的 CD 不会附着到被重定向后的响应。真正保住原始文件名的是**前端**：`fetch` 跟随 302 取 blob 后以 `a.download = img.filename`（DB 原始名）命名；`filenameFromResponse` 因重定向响应无 CD 而正确回退到原始名。ZIP 路径是 Worker 直接 200 流（非重定向），其 `Content-Disposition: {slug}-{lang}.zip` 正常生效。→ 结论：行为正确，无返工；上一版报告"CD 由 Worker 侧给"表述不严谨，以本条为准。
 - **Git**：Phase 5 commit 已推 main。
 
+### Phase 6 — Search & Tags ✅（Gate G6 PASS，2026-09-03，Owner 过 Design Gate + 5 决策后实施）
+- **信息架构锁定**：Search 搜 **Asset**（绝不返回散乱 Image）；Tags 属 **Asset 级**（tags + asset_tags 多对多），不绑 Image/Language。
+- **DB（0005，无表结构变更）**：① `search_assets(p_q, p_tags)` **SECURITY INVOKER** RPC，读 `published_assets` 视图（继承双层可见性，anon 只见 published），ILIKE 子串匹配 name/description/tag 名，多标签 **AND**，`updated_at DESC, id ASC` 确定性排序，有界校验（q≤200 / tags≤10 / 单tag≤64，超限 raise）；② `generate_tag_slug` BEFORE INSERT 触发器（D4：仅创建时生成 slug，改名不动；CJK 回退 `tag-<md5前8>`，冲突递增）；③ `audit_asset_tag` 触发器（D5：asset_tags 增删落 `asset.tag_added`/`asset.tag_removed`）。
+- **RPC 返回契约（稳定，= published_assets 形状）**：`id,name,slug,description,cover_image_id,image_count,language_count,tags(jsonb)`。踩坑：视图 `tags` 是 `json_agg` 的 **json** 类型，RPC 声明 **jsonb** → 需 `pa.tags::jsonb` 显式转，否则 42804。
+- **前端 Query Layer 分层**：`UI → features/search → search_assets() → published_assets → RLS`。`features/search/api.ts`（searchAssets 经 rpc + 前端预校验）、`features/tags/api.ts`（tag CRUD + listAssetTags/listAssetTagIds/add/remove）。SearchPage 重构（搜索框 + tag 筛选 chips ?q&tags + Asset Cards）；AssetDetailPage 可点标签→/search?tags=slug；Admin `/admin/tags`（Create/Rename/Delete，删前显示关联数）；编辑器标签选择器（搜现有 + 快速新建并关联）。
+- **测试**：RPC 冒烟 16/16（空=全部/tag-only/keyword/AND/去重/通配符转义/三项上限/anon 只见 published/审计）；线上 UI E2E 全过（空查询含3隐藏draft、AND 只剩交集、详情页点标签跳转、admin 建 Pro 自动 slug、编辑器关联 Pro + 审计）。
+- **约束遵守**：未改视图（仅 join assets 取 updated_at）；未引入全文/相关性/模糊/同义词/图片级搜索；Phase 2-5 不变量全保留。
+- **Git**：Phase 6 commit 已推 main。
+
 ---
 
 ## 五、待 Owner 配合 / 当前挂起事项
@@ -145,15 +154,18 @@ anon  SELECT schema_migrations → permission denied ✓
 
 ---
 
-## 六、下一步任务：Phase 6 — Search & Tags（未开始）
+## 六、下一步任务：Phase 7 — Admin Platform Consolidation（未开始）
 
-按 `【分阶段】` 文档执行。**开工前先输出 Phase 开始报告（Design Gate）**，完成后对照 Gate G6 验收。
+按 `【分阶段】` 文档执行。**开工前先输出 Phase 开始报告（Design Gate）**，完成后对照 Gate G7 验收。
 
-### Phase 6 概要
-搜索（关键词匹配 Asset）+ Tags（属于 Asset 的多对多标签，`tags`/`asset_tags` 表已在 0001 建好，写策略 admin-only）。注意：Tags 属 Asset 级，不绑 Image；搜索/筛选走 `published_assets` 视图 + RLS，**继承双层可见性铁律，不重发明**。
+### ⚠️ 重要定位（Owner 明确）：Phase 7 ≠ 新建一套 Admin
+Phase 3–6 为完成业务闭环，已**提前零散落地**了大量后台能力：Admin Assets（CRUD/上传/排序/Cover/发布）、语言管理、下载源管理、标签管理。**Phase 7 的正确理解是「Admin Platform Consolidation」**——把已有后台能力 + 尚缺的 Users/Storage/Audit/Settings **统一收敛**成一个完整、导航一致的 Admin Console，**绝不要另起一套 Admin 系统**。局部能力提前落地 ≠ 整个 Phase 被提前完成。
+
+### Phase 7 概要
+收敛现有 Admin 页；补齐 Users（改角色/禁用，经 Worker 落审计）、Storage 概览、Audit Logs 视图、Settings。改角色/禁用走 Worker（service role），最后一名 admin 不可降级/禁用。
 
 ### 后续 Phase 概要（详见分阶段文档，勿跳级）
-Phase 6 搜索+Tag → 7 Admin 控制台 → 8 安全加固 → 9 UX/性能 → 10 发布。
+Phase 7 Admin 收敛 → 8 安全加固 → 9 UX/性能 → 10 发布。
 
 ---
 
