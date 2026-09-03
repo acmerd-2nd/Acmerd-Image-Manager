@@ -1,8 +1,46 @@
 # 🔄 HANDOVER — ACMERD Image Manager 交接文档
 
-> **最后更新**: 2026-09-03（Phase 6 收工）
-> **当前状态**: Phase 0-5 ✅ · **Phase 6 ✅（Gate G6 PASS）** · Phase 7 待开始
-> **新 Agent 从「第六节 · 下一步任务」直接接手即可**
+> **最后更新**: 2026-09-03（Phase 6 收工，换号交接）
+> **当前状态**: Phase 0-6 ✅ 全 CLOSED · **Phase 7（Admin Platform Consolidation）待开始**
+> **当前 HEAD**: `edf1bf0`（= origin/main，已推送，工作树干净）
+> **线上**: https://image.acmerd.com 运行中（`/api/health` 200）
+> **新 Agent 请先读「第零节 · 接手清单」，再按「第六节 · 下一步任务」开工**
+
+---
+
+## 零、新 Agent 接手清单（照此顺序即可无缝接管）
+
+**这是一个"换号/换人"的全新会话，你对此项目零上下文。按下面 6 步走：**
+
+1. **读三份权威文档**（顺序不可跳）：
+   - `【总纲】acmerdImage-manager.md`（产品宪章 + Agent 绝对规则）
+   - `【分阶段】acmerdImage-manager.md`（Phase 0-10 路线图 + 各 Gate 验收标准）
+   - `docs/phase-0/01~12-*.md`（已批准的架构基线）
+   - 然后通读本 HANDOVER 全文。
+2. **确认密钥就位**：项目根 `.env` 必须存在（见第二节密钥表）。若新机器没有 `.env`，**必须找 Owner 索取**——所有密钥（Supabase / DATABASE_URL / Cloudflare / GITHUB_TOKEN / ADMIN 账号）都在里面，无法从别处重建。`.env` 已被 `.gitignore` 排除，绝不提交。
+3. **确认工具链**（Windows 专属）：npm 一律用 `D:\node\npm.cmd` / `D:\node\npx.cmd`（全局 npm 已损坏，见第三节）。Node v24。
+4. **验证环境健康**（只读，安全）：
+   ```bash
+   git log --oneline -3          # 应见 edf1bf0 起
+   "/d/node/npm.cmd" run typecheck
+   "/d/node/npm.cmd" run build
+   curl -s -o /dev/null -w "%{http_code}\n" https://image.acmerd.com/api/health   # 200
+   ```
+5. **确认 DB 状态**：`supabase/migrations/` 有 0001–0005，全部已应用（`schema_migrations` 表记录）。跑 `"/d/node/npm.cmd" run db:migrate` 应全部 `skip`（幂等）。**不要**在 Supabase Dashboard 手改生产库。
+6. **进入 Phase 7**：先输出 **Design Gate 报告**（模板见第八节），等 Owner 批准再动手。**严禁跳阶段、严禁顺手重构**。
+
+**关键红线（违反会被 Owner 打回）**：Service Role Key 只进 Worker Secret / 本地脚本，绝不进前端 bundle / Git / wrangler.toml；权限只靠 UI 隐藏无效，必须 RLS/服务端兜底；改设计先交 Change Proposal；两份中文规划文档不推公开仓库。
+
+### 当前状态快照（截至本交接）
+| 维度 | 值 |
+| --- | --- |
+| HEAD / 远端 | `edf1bf0` = origin/main，工作树干净（仅 3 个未跟踪：2 份规划文档[故意] + `.tmp_admin_token`[已 gitignore，可删]） |
+| 已应用迁移 | 0001 schema+RLS+storage / 0002 grants / 0003 asset 完整性守卫 / 0004 网盘 URL 守卫 / 0005 search_assets RPC + tag slug + 审计 |
+| Worker 端点 | `/api/health`、`/api/admin/storage/delete`、`/api/downloads/image/:id`、`/api/downloads/zip`（均带 requireUser/requireAdmin + CORS） |
+| Worker Secret | `SUPABASE_SERVICE_ROLE_KEY` 已注入（`wrangler secret`），`worker/.dev.vars` 本地同步 |
+| 管理员账号 | `1902768564@qq.com`（密码见 `.env` 的 `ADMIN_PASSWORD`），角色 admin |
+| 冻结基线 | 双层可见性（Asset+Language published）、多语言模型、三套下载解耦、ZIP ≤30/≤100MB/并发4、public bucket（单图软门控，硬门控留 Phase 8） |
+| 数据现状 | 生产库 assets/tags 均为空（测试数据已全部清理）；审计日志保留历史 |
 
 ---
 
@@ -200,21 +238,44 @@ git push https://x-access-token:${GITHUB_TOKEN}@github.com/acmerd-2nd/Acmerd-Ima
 
 ---
 
-## 九、快速上下文索引（代码地图）
+## 九、快速上下文索引（代码地图，截至 Phase 6）
 
 ```plaintext
 src/
-├── App.tsx                     # 全部路由 + 守卫挂载
-├── features/auth/AuthProvider  # session/role 上下文（role 查 user_roles 自身行）
-├── features/assets/AssetCard   # 资产卡片（cover 占位，Phase 3 接真图）
-├── components/ui/              # Button/Card/Input/Badge（shadcn 风格，自维护）
-├── components/guards.tsx       # RequireAuth / RequireRole
-├── components/layout/          # AppShell（用户端导航）/ AdminLayout（后台侧边栏）
-├── routes/pages/               # 各页面（AuthPlaceholderPage 是 Phase 2 要替换的占位）
-└── lib/supabase/client.ts      # 前端 Supabase Client（仅 Publishable Key）
+├── App.tsx                         # 全部路由 + 守卫挂载（含 /admin/assets/new、/admin/assets/:id、/admin/tags）
+├── features/
+│   ├── auth/AuthProvider.tsx       # session + role + roleLoading（竞态修复）；signOut 清态
+│   ├── assets/
+│   │   ├── api.ts                  # Asset/Language/Image CRUD + 状态迁移 + published 链查询 + toPublicUrl
+│   │   ├── storage.ts              # 上传(admin JWT 直传) / 删除(经 Worker 精确路径) + 文件校验
+│   │   └── AssetCard.tsx           # 卡片（真封面 + tags 徽标）
+│   ├── downloads/                  # Phase 5 三套下载（彼此独立）
+│   │   ├── api.ts                  # downloadSingleImage / downloadZip / fetchDownloadSources
+│   │   └── PackageDownloadPanel.tsx# 0/1/2 决策，与语言解耦
+│   ├── search/api.ts               # Phase 6 searchAssets() → rpc('search_assets')
+│   └── tags/api.ts                 # Phase 6 tag CRUD + listAssetTags/listAssetTagIds/add/remove
+├── components/
+│   ├── ui/                         # Button/Card/Input/Badge（自维护 shadcn 风格）
+│   ├── guards.tsx                  # RequireAuth / RequireRole（等 roleLoading）
+│   ├── layout/                     # AppShell（用户端）/ AdminLayout（后台侧边栏）
+│   └── ConfirmDialog.tsx           # 轻量确认框
+├── routes/pages/
+│   ├── HomePage / SearchPage / AssetDetailPage / ProfilePage
+│   ├── LoginPage / RegisterPage / ErrorPages
+│   └── admin/                      # Assets / AssetNew / AssetEditor / Tags 已实装；Users/Storage/Audit/Settings 仍占位
+├── lib/
+│   ├── supabase/client.ts          # 前端 Client（仅 Publishable Key）
+│   ├── validators.ts               # 密码规则 / sanitizeInternalRedirect / parseLanguageCode / isSafePackageUrl
+│   └── utils.ts                    # cn()
+└── types/database.ts               # AssetRow/AssetLanguageRow/ImageRow/PublishedAssetRow/TagRow/LanguageCode…
 
-worker/index.ts                 # Hono：/api/health + 静态资源转发
-wrangler.toml                   # routes 必须在 [section] 前！（见第三节坑 6）
-supabase/migrations/            # 0001 schema+RLS+storage / 0002 grants（均已应用）
-scripts/db-apply.mjs            # migration 执行器（幂等）
+worker/index.ts                     # Hono：/api/health + requireUser/requireAdmin + CORS
+                                    #   + /api/admin/storage/delete（精确路径删）
+                                    #   + /api/downloads/image/:id（302）+ /api/downloads/zip（流式 store ZIP + CRC32）
+wrangler.toml                       # routes 必须在 [section] 前！（见第三节坑 6）
+worker/.dev.vars                    # 本地 Worker 变量（含 service key），已 gitignore
+supabase/migrations/                # 0001→0005 全部已应用（见第四节各 Phase 明细）
+scripts/db-apply.mjs                # migration 执行器（幂等，读 .env DATABASE_URL）
 ```
+
+**Query Layer 分层（Phase 6 起）**：`UI → features/search → search_assets() RPC → published_assets 视图 → RLS`。新增按日期/语言/图片数/热门等检索能力时，扩 `search_assets` 或加同类 SECURITY INVOKER RPC，**不要在页面里各写一套查询**。
