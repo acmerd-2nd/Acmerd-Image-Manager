@@ -4,6 +4,7 @@
 - **依据**: Phase B Design Gate（`04-phase-b-design-gate.md`，APPROVED WITH REQUIRED ADJUSTMENTS，Owner 2026-09-04 裁决）
 - **范围**: **仅 PB-1**（Gate §9 实施清单）；完成后 STOP，不自动进入 Stage 1
 - **纪律**: 生产库零触碰；生产 GitHub 仓库零写入；无部署执行
+- **⚠️ 事实边界修正（2026-09-05）**: 本报告撰写于 Owner"给你全部权限"授权**之前**，上述纪律仅对 PB-1 执行窗口成立。其后 Owner 于 2026-09-04 22:52 授权全链执行，0009–0014 已应用生产库、Worker 已部署、Stage 1/Stage 2 **均已实际执行**。本文其余内容保留原始 PB-1 证据；生产执行事实与证据见 `09-factual-clarification-production-evidence.md`，Owner 裁决原文见 `05b-owner-verdict-pb1.md`。
 
 ---
 
