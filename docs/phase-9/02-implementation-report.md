@@ -62,5 +62,13 @@
 Phase 9 提交（0008 + 前端 + 文档）；规划文档不入库；测试数据隔离库自动 DROP。
 
 ## 六、Gate G9 状态
-**6/7 类 CONFIRMED；第④类"响应式运行时截图"因环境无布局 surface + 未授权 playwright 而受限**，已用代码级审查替代并如实标注。
-→ 待 Owner 就第④类定夺：(A) 批准一次性 `playwright` devDep 补三视口截图，或 (B) 接受代码级响应式审查为 G9 充分证据。**在此之前不宣布 G9 PASS**（遵循"全 CONFIRMED 才 PASS"）。
+**6/7 类 CONFIRMED；第④类"响应式运行时截图"因环境无布局 surface + 未授权 playwright 而受限**，已用代码级审查作为**辅助证据**并如实标注。
+
+### Owner 裁决（2026-09-03）：选 C —— 换环境补真实运行时证据
+- **不引入 Playwright、不降低证据标准**；代码级响应式审查**不得升级为运行时响应式 PASS**。
+- **G9 = PENDING（6/7 CONFIRMED）**，在此之前**不宣布 PASS**。
+- 后续在**能提供真实浏览器运行时截图/视口的 QA 环境**中，**仅补第④类**：三视口 **Desktop / Tablet / Mobile** × 关键页 **Home / Search / Asset Detail / Admin Console**，重点记录**横向溢出、导航、Grid、表格、Lightbox、操作区域**是否正常。
+- **不重跑**已通过的 DB / Search / 性能 / 安全测试。
+- 补齐后由 Agent 直接输出 **G9 Closure Report** → 宣布 G9 PASS。
+
+> 待办移交：本 Phase 9 代码/迁移/部署均已完成并入库，唯一悬置项是上述运行时截图。接手 Agent 到可截图环境后，只需补这一类证据并出 Closure Report，勿重复其余工作。

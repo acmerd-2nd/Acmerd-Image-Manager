@@ -1,10 +1,10 @@
 # 🔄 HANDOVER — ACMERD Image Manager 交接文档
 
-> **最后更新**: 2026-09-03（Phase 9 实施完成）
-> **当前状态**: Phase 0-8 ✅ 全 CLOSED（G1–G8 PASS）· **Phase 9 已实施并部署，Gate G9 六类 CONFIRMED、第七类"响应式运行时截图"待 Owner 定夺（见下）**
-> **当前 HEAD**: `1fd95b3`（Phase 9）= origin/main，工作树干净
+> **最后更新**: 2026-09-03（Phase 9 实施完成；Owner 裁决 G9 = 选项 C）
+> **当前状态**: Phase 0-8 ✅ 全 CLOSED（G1–G8 PASS）· **Phase 9 已实施并部署，Gate G9 = PENDING（6/7 CONFIRMED）**
+> **当前 HEAD**: `1fd95b3`（Phase 9）+ 文档 commit = origin/main，工作树干净
 > **线上**: https://image.acmerd.com 运行中（bundle `index-BthmGVpj.js`，`/api/health` 200；0008 已上生产）
-> **G9 待决**: 本环境浏览器 MCP 无布局 surface（`innerWidth=0`、截图被拒），且按零依赖纪律未引入 playwright → 响应式仅有代码级审查证据。请 Owner 选 (A) 批准一次性 playwright devDep 补三视口截图，或 (B) 接受代码级响应式审查为 G9 充分证据。**未定夺前不宣布 G9 PASS。**
+> **G9 唯一剩余项（Owner 选 C）**：本环境浏览器 MCP 无布局 surface（`innerWidth=0`、截图被拒），且**不引入 Playwright、不降低证据标准**。代码级响应式审查仅作**辅助证据**，**不得升级为运行时响应式 PASS**。→ 待进入**能提供真实浏览器运行时截图/视口的 QA 环境**后，**仅补做三视口响应式证据**（Desktop / Tablet / Mobile，覆盖 Home / Search / Asset Detail / Admin Console，重点记录横向溢出·导航·Grid·表格·Lightbox·操作区），补齐后直接出 **G9 Closure Report**。**不重跑已通过的 DB / Search / 性能 / 安全测试。** 在此之前**不得宣布 G9 PASS**。
 > **新 Agent 请先读「第零节 · 接手清单」，再按「第六节 · 当前唯一待办」开工**
 
 ---
