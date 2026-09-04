@@ -9,16 +9,16 @@
 
 ## 1. Implemented
 
-| # | 项 | 状态 |
-| --- | --- | --- |
-| 1 | `0009_v11_foundation.sql` — collections 表 / assets.collection_id（可空 FK）/ images provider+source_path（storage_path 解除 NOT NULL，CHECK 互斥）/ profiles.account_origin / **H1 双触发器**（guard_collection_cover、guard_asset_collection_move） | ✅ |
-| 2 | `0010_credits.sql` — credit_accounts（balance CHECK>=0）/ credit_transactions（user_id **ON DELETE SET NULL** + 退款部分唯一索引 + idempotency_key UNIQUE）/ handle_new_user 扩展建账户 / **deduct_credits**（单语句原子 + H2 五元组幂等）/ adjust_credits / refund_credits（一 debit 一 refund）/ grants 收敛（execute 仅 service_role） | ✅ |
-| 3 | `0011_settings.sql` — site_settings + 5 key 幂等种子（on conflict do nothing）+ anon/authenticated 只读 grants + RLS | ✅ |
-| 4 | `0012_collections_rls.sql` — collections RLS / published_collections 视图（双层 published）/ 审计触发器（collection.created/updated/deleted/published/archived）/ grants REVOKE | ✅ |
-| 5 | `0013_audit_allowlist_v11.sql` — allowlist 24→34 幂等超集 DO 块（0007 范式） | ✅ |
-| 6 | 隔离库冒烟 `scripts/v11-phase-a-smoke.mjs` — 一次性库 0001→0008 + seed 快照 → 0009–0013 → NO-DRIFT + 全量负/正样本 | ✅ 48 PASS / 0 FAIL |
-| 7 | 数据访问层最小变更 — `src/types/database.ts`（ImageSourceRow/CollectionRow/CreditAccountRow/CreditTransactionRow/SiteSettingRow/AccountOrigin）+ `src/lib/image-source.ts`（makeImageUrl 双 provider，source_url 不落库，CDN 切换口预留） | ✅ |
-| 8 | i18n skeleton — `src/i18n/{zh,en,index}.ts`（默认 zh-CN、类型同构强制、uiLocale ≠ assetLanguage 冻结规则、localStorage 持久化） | ✅ |
+| # | 项                                                                                                                                                                                                                                                                                                   | 状态                 |
+| - | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
+| 1 | `0009_v11_foundation.sql` — collections 表 / assets.collection_id（可空 FK）/ images provider+source_path（storage_path 解除 NOT NULL，CHECK 互斥）/ profiles.account_origin / **H1 双触发器**（guard_collection_cover、guard_asset_collection_move）                                                                  | ✅                  |
+| 2 | `0010_credits.sql` — credit_accounts（balance CHECK>=0）/ credit_transactions（user_id **ON DELETE SET NULL** + 退款部分唯一索引 + idempotency_key UNIQUE）/ handle_new_user 扩展建账户 / **deduct_credits**（单语句原子 + H2 五元组幂等）/ adjust_credits / refund_credits（一 debit 一 refund）/ grants 收敛（execute 仅 service_role） | ✅                  |
+| 3 | `0011_settings.sql` — site_settings + 5 key 幂等种子（on conflict do nothing）+ anon/authenticated 只读 grants + RLS                                                                                                                                                                                        | ✅                  |
+| 4 | `0012_collections_rls.sql` — collections RLS / published_collections 视图（双层 published）/ 审计触发器（collection.created/updated/deleted/published/archived）/ grants REVOKE                                                                                                                                  | ✅                  |
+| 5 | `0013_audit_allowlist_v11.sql` — allowlist 24→34 幂等超集 DO 块（0007 范式）                                                                                                                                                                                                                                 | ✅                  |
+| 6 | 隔离库冒烟 `scripts/v11-phase-a-smoke.mjs` — 一次性库 0001→0008 + seed 快照 → 0009–0013 → NO-DRIFT + 全量负/正样本                                                                                                                                                                                                   | ✅ 48 PASS / 0 FAIL |
+| 7 | 数据访问层最小变更 — `src/types/database.ts`（ImageSourceRow/CollectionRow/CreditAccountRow/CreditTransactionRow/SiteSettingRow/AccountOrigin）+ `src/lib/image-source.ts`（makeImageUrl 双 provider，source_url 不落库，CDN 切换口预留）                                                                                   | ✅                  |
+| 8 | i18n skeleton — `src/i18n/{zh,en,index}.ts`（默认 zh-CN、类型同构强制、uiLocale ≠ assetLanguage 冻结规则、localStorage 持久化）                                                                                                                                                                                         | ✅                  |
 
 ## 2. Files
 
@@ -45,6 +45,7 @@ docs/v1.1/01-design-gate.md, 02-owner-ruling-2026-09-04.md, 03-phase-a-report.md
 ## 4. Tests（隔离库冒烟，最终 48 PASS / 0 FAIL）
 
 关键用例组：
+
 - **C2 NO-DRIFT**: Guest 视角公开数据集合 0009–0013 前后 4 组快照逐字节一致 ✅
 - **H1**: cover 同 Collection 校验（正/负样本）、被 cover 引用 Asset 禁止移出、拒绝后无部分生效 ✅
 - **H2 幂等三态**: 同 key 同参 → 原结果不重复扣；同 key 异参/异用户 → IDEMPOTENCY_CONFLICT ✅
@@ -55,6 +56,7 @@ docs/v1.1/01-design-gate.md, 02-owner-ruling-2026-09-04.md, 03-phase-a-report.md
 - AL1 allowlist 恰 34 项、D3 provider 互斥 CHECK、D10 account_origin CHECK ✅
 
 **冒烟过程中的两处修正（证据）**:
+
 1. D3a：0009 需 `alter column storage_path drop not null`（0001 NOT NULL 与 CHECK 互斥冲突）——已修，D3a 转绿。
 2. CR12b：测试断言算术错误（预期 +115，正确值 = 120 − 4 = **+116**）；RPC `amount = v_new − v_old` 逻辑正确——修断言，非修实现。
 
@@ -76,11 +78,11 @@ docs/v1.1/01-design-gate.md, 02-owner-ruling-2026-09-04.md, 03-phase-a-report.md
 
 ## 7. Gate Status
 
-| 项 | 状态 |
-| --- | --- |
-| Phase A 实施 | 🟢 完成（隔离库验证） |
-| 0009–0013 应用到生产 | 🚫 **未执行**，需 Owner 单独授权 |
+| 项                  | 状态                                                            |
+| ------------------ | ------------------------------------------------------------- |
+| Phase A 实施         | 🟢 完成（隔离库验证）                                                  |
+| 0009–0013 应用到生产    | 🚫 **未执行**，需 Owner 单独授权                                       |
 | Phase B（GitHub 写入） | ⏸ 停在 Gate；开工前须先提交 **H3 跨 Worker 实例并发控制/冲突处理策略说明**（Owner 附加要求） |
-| 图片两阶段迁移 Stage 2 | 🚫 需届时单独授权 |
+| 图片两阶段迁移 Stage 2    | 🚫 需届时单独授权                                                    |
 
 **Phase A 到此停止，等待 Owner 验收。不自动进入 Phase B。**

@@ -78,9 +78,10 @@ docs/v1.1/05-phase-b-pb1-report.md                 (new)
 | 项 | 状态 |
 | --- | --- |
 | PB-1 代码 + 0014 + 冒烟 | 🟢 完成 |
+| **PB-1 验收** | ✅ **Owner ACCEPTED（2026-09-04 22:52，"可以，你继续按计划进行，给你全部权限"）** |
 | **dry-run direct 矩阵**（GitHub 层：Upload/sha 校验/重放/覆盖/冲突恢复/DELETE 幂等/raw） | ✅ **14 PASS / 0 FAIL**（沙箱 `image-dryrun-sandbox`，证据 → `07-dryrun-evidence.md`） |
-| **dry-run e2e 全链路**（Worker + Lease + 四态闭环 + ZIP） | 🟡 19/19（E3–E10 结构性 SKIP：等 0009–0014 应用目标库后重跑，脚本就绪） |
-| Stage 1（生产 1 张图迁移） | 🚫 PB-1 验收 + 迁移应用授权 + 单独启动授权 |
-| Stage 2 | 🚫 更后置授权 |
+| **dry-run e2e 全链路**（Worker + Lease + 四态闭环 + ZIP） | ✅ 首轮 19/19（E3–E10 结构性 SKIP）→ 0009–0014 应用生产后**全链路重跑**（见 08 报告） |
+| Stage 1（生产 1 张图迁移） | ✅ Owner 授权执行（见 08 报告） |
+| Stage 2 | ✅ Owner 授权执行（见 08 报告；Supabase 原件保留） |
 
 **PB-1 到此停止，等待 Owner 检查。不自动进入 Stage 1。**
