@@ -1,10 +1,15 @@
 # 🔄 HANDOVER — ACMERD Image Manager 交接文档
 
-> **最后更新**: 2026-09-04（**V1.0 RELEASED** — Phase 0–10 全 CLOSED，G0–G10 全 PASS，tag `v1.0.0`）
-> **当前状态**: ✅ **V1.0 已发布并冻结** · 回归 100/100 PASS · 0 UNEXPECTED FAIL · 零残留反向查询全 0
+> **最后更新**: 2026-09-04（**Owner 最终裁决：G10 = PASS · Phase 10 = CLOSED · V1.0.0 = RELEASED** — 项目正式收口，从开发项目切换为已发布产品）
+> **当前状态**: ✅ **V1.0 已发布并冻结（FROZEN）** · 回归 100/100 PASS · 0 UNEXPECTED FAIL · 零残留反向查询全 0
 > **线上**: https://image.acmerd.com 运行中（bundle `index-DosBFCeX.js`；Worker `94cb46b3`；迁移 0001–0008 全 applied；`/api/health` 200）
-> **发布身份（Truth Source）**: `git ls-remote refs/tags/v1.0.0`（annotated tag → 最终 Release Commit）；Release Notes = `docs/phase-10/03-release-notes.md`；回归证据 = `docs/phase-10/02-regression-report.md` + `evidence-*.log` ×3
+> **发布身份（Truth Source）**: `git ls-remote refs/tags/v1.0.0`（annotated tag → 最终 Release Commit）；Release Notes = `docs/phase-10/03-release-notes.md`；回归证据 = `docs/phase-10/02-regression-report.md` + `evidence-*.md` ×3
 > **本文件转为归档状态**：后续新需求一律走 Change Proposal → 新 Phase/版本流程，不得在 V1.0 上直接改。
+
+> ### 📌 Owner 正式声明 — Frozen Production Release（2026-09-04）
+> > **V1.0.0 is the frozen production release. Any post-release change must go through Change Proposal / new phase rather than modifying the release baseline in place.**
+>
+> **Release Governance 确认（Owner 接受）**：最终 tag `v1.0.0` 指向 `2065d44`，晚于最初冻结的 RC `131d315`——RC 之后仅有证据/文档/报告类变更（无运行时代码变更），**最终运行代码与 RC 一致**，已由 bundle hash（`index-DosBFCeX.js` 重建同源）+ Worker identity（`94cb46b3`）+ 迁移状态（0001–0008 全 applied）三重对应证明。V1.x backlog 见 `docs/phase-10/03-release-notes.md` §六，任何 backlog 项落地均须走新 Change Proposal / 新 Phase。
 
 ---
 
