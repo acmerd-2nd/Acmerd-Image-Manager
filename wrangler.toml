@@ -21,8 +21,8 @@ SUPABASE_PUBLISHABLE_KEY = "sb_publishable_NcRTArTwZopEQAH6gb3LJw_VPXCgEG5"
 # GITHUB_TOKEN 一律 wrangler secret put（绝不写进本文件，Gate §12 红线）。
 # dry-run 阶段 Owner 将 OWNER/REPO 指向独立 private 演练仓库（Gate Q5 裁决）；
 # 全矩阵通过后改指向生产仓库，代码零变更。
-GITHUB_IMAGES_OWNER = ""
-GITHUB_IMAGES_REPO = ""
+GITHUB_IMAGES_OWNER = "acmerd-2nd"
+GITHUB_IMAGES_REPO = "-Photo-Acmerd-Image-Manager"
 GITHUB_IMAGES_BRANCH = "main"
 
 # 对账 sweeper（Gate §3）：每 10 分钟收敛 uploading/failed/deleting 崩溃窗口

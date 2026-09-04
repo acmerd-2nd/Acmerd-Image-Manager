@@ -338,9 +338,11 @@ async function runE2E() {
       ok('E6 行: provider=github/status=ready/source_sha 一致/storage_path 为空',
          row?.provider === 'github' && row?.status === 'ready' && row?.source_sha === expectSha && row?.storage_path === null)
 
-      // E7 可见性守卫：未发布 github 图下载必须 404（draft 不暴露产品面）
-      const dl = await fetch(`${BASE}/api/downloads/image/${imageId}`, { redirect: 'manual' })
-      ok('E7 未发布图下载 404（可见性守卫）', dl.status === 404, `status=${dl.status}`)
+      // E7 可见性守卫：未认证 → 401（登录软门控）；认证后访问未发布 github 图 → 404（published 双层校验）
+      const dlAnon = await fetch(`${BASE}/api/downloads/image/${imageId}`, { redirect: 'manual' })
+      ok('E7a 未认证下载 401（登录门）', dlAnon.status === 401, `status=${dlAnon.status}`)
+      const dl = await fetch(`${BASE}/api/downloads/image/${imageId}`, { redirect: 'manual', headers: { Authorization: `Bearer ${jwt}` } })
+      ok('E7b 认证后未发布图下载 404（可见性守卫）', dl.status === 404, `status=${dl.status}`)
 
       // E8 四态删除闭环：远端删除成功前不物理删行
       const delRes = await fetch(`${BASE}/api/admin/images/github-delete`, {
