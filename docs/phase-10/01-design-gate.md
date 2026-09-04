@@ -133,3 +133,23 @@ Additional release constraints（Owner 补充，直接并入本 Phase，不重�
 ```
 
 **批准人**：Owner · **批准日期**：2026-09-04 · **状态**：APPROVED，进入 Full Regression。
+
+---
+
+## 8. G10 最终裁决与收口记录（Owner，2026-09-04）
+
+**G10 = PASS。Phase 10 = CLOSED。V1.0.0 = RELEASED。** Owner 未发现任何阻断发布事项，完整闭环达成：
+
+```text
+Phase 0–9 Build the System → Phase 10 Prove the System
+R1–R6 全量回归 + I1–I4 不变量复验
+→ 100/100 PASS（R6 32/32 · L-A 28/28 · L-C 40/40 · Unexpected Failure 0）
+→ Release Commit → v1.0.0 → 线上健康终检 7/7
+```
+
+- **Reset Password 处理获认可**：Register ✅ / Login ✅ / Session ✅ / Logout ✅ / Reset Password N/A——未因进入 Release 违反"不新增功能"原则。
+- **V1.x backlog 作为发布档案长期记录**（不阻塞 v1.0.0，后续走新 Change Proposal / Phase）：密码找回、单图硬下载门控、更进一步下载安全策略 / keyset、Wrangler Workers Routes 权限。
+- **Release Governance 确认（已成立）**：最终 tag `v1.0.0` 指向 `2065d44`，而非最初冻结的 RC `131d315`——**允许**，因 RC 之后仅证据/文档/报告等非运行时代码变更；最终运行代码与 RC 一致，由 bundle hash（`index-DosBFCeX.js` 重建同源）+ Worker identity（`94cb46b3`）+ 迁移状态（0001–0008）对应证明，Owner 接受此发布链。
+
+**收口声明（Owner 原文）**：
+> V1.0.0 is the frozen production release. Any post-release change must go through Change Proposal / new phase rather than modifying the release baseline in place.

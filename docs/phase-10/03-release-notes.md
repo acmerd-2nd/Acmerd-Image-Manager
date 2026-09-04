@@ -59,4 +59,11 @@
 
 ## 六、V1.x Backlog 候选（非承诺）
 
-密码找回（Reset Password）；Storage 对象缓存策略存量补齐（D5 可选项）；硬门控/私有桶评估（D5b/5c）；keyset 分页；Admin 移动端 Drawer 化导航。
+Owner 于 V1.0 收口裁决中明确保留的长期记录（**不影响 v1.0.0；任何一项落地必须走新 Change Proposal / 新 Phase，禁止在 V1.0 冻结基线上热修**）：
+
+1. **密码找回（Reset Password）** — V1.0 明确 N/A（"Reset Password is not included in V1.0."），未实现不临时补开发。
+2. **单图硬下载门控 / 更进一步下载安全策略** — D5b/D5c 私有桶/硬门控评估的延续。
+3. **keyset 分页** — 万级数据量前 OFFSET 可接受，届时评估（已记录为边界，不预建）。
+4. **Wrangler Workers Routes 权限** — 运维治理项：Cloudflare API Token 缺 Workers Routes 读权限导致 `wrangler deploy` 末尾 routes 同步告警（cosmetic，域名绑定不受影响；根治需在 Cloudflare 侧补 Token 权限）。
+
+其他既有候选：Storage 对象缓存策略存量补齐（D5 可选项）；Admin 移动端 Drawer 化导航。
