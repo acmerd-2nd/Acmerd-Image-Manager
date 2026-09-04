@@ -1,11 +1,19 @@
 # 🔄 HANDOVER — ACMERD Image Manager 交接文档
 
-> **最后更新**: 2026-09-04（G9 Closure：第④类响应式运行时证据已补齐，含 DEF-9-1 发现→修复→复验；G9 = PASS）
-> **当前状态**: Phase 0-9 ✅ 全 CLOSED（G1–G9 PASS）· **下一步 = Phase 10 Production Release（严格"全量回归+发布"，无新功能）**
-> **当前 HEAD**: 见 `git log`（G9 closure commit）；工作树仅故意未入库项（`.workbuddy/` + 两份中文规划文档）
-> **线上**: https://image.acmerd.com 运行中（**bundle `index-DosBFCeX.js`**，含 DEF-9-1 修复：AdminLayout `min-w-0`；0001–0008 已上生产，`/api/health` 200）
-> **G9 关闭依据**: `docs/phase-9/03-g9-closure-report.md`（三视口 × 全关键页运行时截图 + 客观溢出数值 + Lightbox 交互实测；证据在 `docs/phase-9/evidence/responsive/` 27 张）。执行环境为真实 Chromium（agent-browser），未引入 Playwright、未降低证据标准；期间发现 Admin Users/Audit Logs 在 Tablet/Mobile 的页面级横向溢出（flex 子项缺 `min-w-0`），单类名修复并完成 本地→生产 四步验证链。
-> **新 Agent 请先读「第零节 · 接手清单」，再按「第六节 · 当前待办」开工**
+> **最后更新**: 2026-09-04（**V1.0 RELEASED** — Phase 0–10 全 CLOSED，G0–G10 全 PASS，tag `v1.0.0`）
+> **当前状态**: ✅ **V1.0 已发布并冻结** · 回归 100/100 PASS · 0 UNEXPECTED FAIL · 零残留反向查询全 0
+> **线上**: https://image.acmerd.com 运行中（bundle `index-DosBFCeX.js`；Worker `94cb46b3`；迁移 0001–0008 全 applied；`/api/health` 200）
+> **发布身份（Truth Source）**: `git ls-remote refs/tags/v1.0.0`（annotated tag → 最终 Release Commit）；Release Notes = `docs/phase-10/03-release-notes.md`；回归证据 = `docs/phase-10/02-regression-report.md` + `evidence-*.log` ×3
+> **本文件转为归档状态**：后续新需求一律走 Change Proposal → 新 Phase/版本流程，不得在 V1.0 上直接改。
+
+---
+
+## 零、V1.0 后接手须知（归档版）
+
+1. **项目已发布**：Phase 0–10 全部 CLOSED。六铁律不变：两份中文规划文档 + `.workbuddy/` 不入库；Service Role Key 只进 Worker Secret/本地脚本；改设计先交 Change Proposal；未提供证据不宣布 PASS。
+2. **发布身份核验**：`git ls-remote https://github.com/acmerd-2nd/Acmerd-Image-Manager.git refs/tags/v1.0.0`；bundle = `index-DosBFCeX.js`；Worker = `94cb46b3-c7b4-4c1c-878a-8e1aeb686d27`；DB = 0001–0008。
+3. **冻结基础设施（永久）**：published_assets / is_admin() / RLS / audit allowlist(24) / disabled 门禁 / 双层可见性——任何变更走 Change Proposal + 新 migration。
+4. **V1.x Backlog 候选**见 `docs/phase-10/03-release-notes.md` §六。
 
 ---
 
