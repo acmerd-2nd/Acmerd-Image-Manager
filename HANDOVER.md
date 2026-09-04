@@ -1,10 +1,16 @@
 # 🔄 HANDOVER — ACMERD Image Manager 交接文档
 
-> **最后更新**: 2026-09-04（**Owner 最终裁决：G10 = PASS · Phase 10 = CLOSED · V1.0.0 = RELEASED** — 项目正式收口，从开发项目切换为已发布产品）
-> **当前状态**: ✅ **V1.0 已发布并冻结（FROZEN）** · 回归 100/100 PASS · 0 UNEXPECTED FAIL · 零残留反向查询全 0
-> **线上**: https://image.acmerd.com 运行中（bundle `index-DosBFCeX.js`；Worker `94cb46b3`；迁移 0001–0008 全 applied；`/api/health` 200）
+> **最后更新**: 2026-09-04 晚（**V1.1 Change Proposal 执行中**：Design Gate Rev B ✅ → Phase A ✅ CLOSED → PB-1 ✅ 实施完毕待验收；V1.0 冻结基线不受影响）
+> **当前状态**: ✅ **V1.0 已发布并冻结（FROZEN）** · 🟡 **V1.1 Phase B PB-1 待 Owner 验收**（生产库/生产仓库/部署零触碰）
+> **线上**: https://image.acmerd.com 运行中（bundle `index-DosBFCeX.js`；Worker `94cb46b3`；迁移 0001–0008 全 applied；`/api/health` 200）——**线上仍为 V1.0.0，V1.1 任何变更均未部署**
 > **发布身份（Truth Source）**: `git ls-remote refs/tags/v1.0.0`（annotated tag → 最终 Release Commit）；Release Notes = `docs/phase-10/03-release-notes.md`；回归证据 = `docs/phase-10/02-regression-report.md` + `evidence-*.md` ×3
 > **本文件转为归档状态**：后续新需求一律走 Change Proposal → 新 Phase/版本流程，不得在 V1.0 上直接改。
+
+> ### 🟡 V1.1 进行中（2026-09-04）— 新 Agent 必读
+> - **Gate 链**（`docs/v1.1/`，全部 Owner 签署）：`01` Design Gate **Rev B APPROVED**（D1–D12 + H1–H3 硬约束）→ `03` Phase A 报告 → **Phase A CLOSED**（Owner 验收）→ `04` Phase B Design Gate **APPROVED**（含两处必改已落位：UUID 路径冻结 `assets/{asset-uuid}/{langCode}/{filename}`、删除四态 `uploading/ready/failed/deleting`）→ `05` PB-1 报告（**待验收**）。
+> - **已落地（未部署）**：migrations 0009–0014（隔离库验证：Phase A 48/48 + Phase B 19/19，重放幂等）；Worker GitHub 客户端/上传/删除/下载/sweeper；前端 provider-aware 接线 + i18n skeleton。typecheck 全绿。
+> - **冻结不变量**（任何后续阶段不得推翻）：H2 Credits 幂等三态（同 key 同参→原结果 / 异参→409）、一 debit 一 refund、ledger `ON DELETE SET NULL`、Credits 定价语义（Single=单价 / ZIP=N×单张价 / Package=固定）、`makeImageUrl` 唯一 URL 出口、GITHUB_TOKEN 仅 Worker Secret、无 Worker 图片代理、`/asset/:slug` 永久兼容。
+> - **下一步（全部需 Owner 动作，Agent 不得自行推进）**：① 验收 PB-1；② provision `GITHUB_TOKEN` secret + 演练仓库 vars + 部署授权 → 跑 `scripts/v11-phase-b-dryrun.mjs` 全矩阵；③ Stage 1 授权 → `scripts/v11-stage1-migrate.mjs`（dry-run 计划已生成：`docs/v1.1/06-stage1-migration-report.md`，1 张图 896.2 KB）；④ Stage 2 更后置单独授权。
 
 > ### 📌 Owner 正式声明 — Frozen Production Release（2026-09-04）
 > > **V1.0.0 is the frozen production release. Any post-release change must go through Change Proposal / new phase rather than modifying the release baseline in place.**
