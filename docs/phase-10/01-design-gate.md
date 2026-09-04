@@ -97,3 +97,39 @@ Phase 10 = **V1.0 发布阶段：全量回归验证 + 发布**。规划原文「
 - 生产 E2E 造数用真实 Supabase Auth 注册一次性用户（`e2e10-` 前缀邮箱）→ finally 按 phase7 范式清理（auth.users + profiles 级联断言零残留）。
 - 下载回归消耗真实流量/对象读取，量级极小（1 asset / ≤30 图 ZIP 上限内）。
 - Cover/Publish 守卫互斥语义在隔离库造数验证，不动生产真实 asset。
+
+---
+
+## 7. Owner 裁决（已落档 · 2026-09-04）
+
+```text
+Phase 10 Design Gate APPROVED. D1–D5 全部批准。进入 Full Regression。
+
+D1 = 1a 三层混合验证（隔离库写路径 / 生产负样本 / 生产 E2E）。
+     生产写操作严格限于一次性测试实体；finally 清理 + 零残留断言必须保留；
+     测试数据必须带明显前缀，回归结束后反向查询确认 0 残留（不只是"删除 API 返回成功"）。
+
+D2 = 2a agent-browser（真实 Chromium），不引入 Playwright，工具链保持稳定。
+
+D3 = 3a Reset Password = N/A，不补开发；回归矩阵记 N/A；
+     Release Notes 明示 "Reset Password is not included in V1.0."
+
+D4 = 4a 完整执行 release commit → annotated v1.0.0 tag → push tag →
+     git ls-remote → release notes → production health check。
+     v1.0.0 必须指向最终 Release Commit（若回归期间出现 DEF-10-x 最小修复：
+     修复 → 局部验证 → 受影响套件重跑 → 最终 release commit → tag；不得先 tag 再修）。
+
+D5 = 批准 R1–R6 + I1–I4 全量回归矩阵。
+     负样本使用 FAIL-EXPECTED 分类，不计为失败；
+     结果分类 = PASS / FAIL-EXPECTED / N/A / UNEXPECTED FAIL，仅最后一种阻塞发布。
+
+Additional release constraints（Owner 补充，直接并入本 Phase，不重开 Gate）：
+1. 正式回归前定义并冻结 Release Candidate / Release Commit（所有回归针对同一 commit/bundle）。
+2. 发布证据记录完整 Release Manifest：Git SHA、前端 bundle hash、Worker 部署身份、迁移状态。
+3. 生产健康验证必须覆盖 /api/health、Home、/search、/asset/:slug、/login、/admin（admin session），
+   并核验线上 bundle hash == Release Commit 对应构建产物。
+4. 回归中发现真实缺陷 → DEF-10-x 编号 → 精准最小修复 → 局部验证 → 受影响套件重跑；禁止顺手重构。
+5. 全部证据归档且最终 release commit 冻结前，不得宣布 V1.0。
+```
+
+**批准人**：Owner · **批准日期**：2026-09-04 · **状态**：APPROVED，进入 Full Regression。
