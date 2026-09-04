@@ -169,9 +169,11 @@ React 18 + TS + Vite + Tailwind + shadcn 风格 UI；Hono Worker + `[assets]` SP
 
 ---
 
-## 六、当前待办：Phase 10 — Production Release（G9 已于 2026-09-04 关闭）
+## 六、当前待办：Phase 10 — Production Release（Design Gate 已提交，PENDING OWNER REVIEW）
 
 **状态**：Phase 9 全部完成。G9 第④类响应式运行时证据已于 2026-09-04 在真实 Chromium QA 环境补齐，期间发现并修复 DEF-9-1（Admin Users/Audit Logs 在 Tablet/Mobile 页面级横向溢出，根因 `AdminLayout.tsx` flex 子项缺 `min-w-0`；属已批准 D9 范围的精准最小修复）。**G9 = PASS（7/7 CONFIRMED）**，依据 `docs/phase-9/03-g9-closure-report.md`。生产已运行修复版 bundle `index-DosBFCeX.js`。
+
+**Phase 10 Design Gate 已落档**：`docs/phase-10/01-design-gate.md`（D1 三层混合回归环境 / D2 复用 agent-browser / D3 Reset Password=N/A / D4 V1.0 发布形态 / D5 六套回归矩阵与 G10 判据）。**等待 Owner 逐项裁决（D1–D5）后才执行回归与发布，严禁未批准先实施。**
 
 ### Phase 10 进入条件与范围纪律（Owner 明示）
 - ~~进入 Phase 10 前须先关闭 G9~~ ✅ G9 已 PASS，条件满足。
