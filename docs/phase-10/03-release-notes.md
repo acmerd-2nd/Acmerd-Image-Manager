@@ -42,7 +42,20 @@
 | 前端 bundle | `index-DosBFCeX.js`（与生产 HTML 引用一致，重建 hash 同源） |
 | Worker 版本 | `94cb46b3-c7b4-4c1c-878a-8e1aeb686d27` |
 | DB 迁移 | 0001–0008 全部 applied（幂等全 skip） |
-| 回归证据 | `docs/phase-10/02-regression-report.md`（100/100 PASS · 0 UNEXPECTED FAIL）+ `evidence-*.log` 三份 |
+| 回归证据 | `docs/phase-10/02-regression-report.md`（100/100 PASS · 0 UNEXPECTED FAIL）+ `evidence-*.md` 三份 |
+
+## 五A、发布后生产健康终检（2026-09-04，实测）
+
+| 目标 | 结果 |
+| --- | --- |
+| /api/health | 200 ✅ |
+| / （Home） | 200 ✅ |
+| /search | 200 ✅ |
+| /asset/ecosonique | 200 ✅ |
+| /login | 200 ✅ |
+| /admin 维度（admin session → /api/admin/users、/api/admin/stats） | 200 / 200 ✅ |
+| 线上 bundle 身份 | `index-DosBFCeX.js` == Release Manifest ✅ |
+| tag Truth Source | `ls-remote refs/tags/v1.0.0` → 解引用 commit = main HEAD ✅ |
 
 ## 六、V1.x Backlog 候选（非承诺）
 
