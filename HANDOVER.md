@@ -1,11 +1,11 @@
 # 🔄 HANDOVER — ACMERD Image Manager 交接文档
 
-> **最后更新**: 2026-09-03（Phase 9 实施完成；Owner 裁决 G9 = 选项 C）
-> **当前状态**: Phase 0-8 ✅ 全 CLOSED（G1–G8 PASS）· **Phase 9 已实施并部署，Gate G9 = PENDING（6/7 CONFIRMED）**
-> **当前 HEAD**: `1fd95b3`（Phase 9）+ 文档 commit = origin/main，工作树干净
-> **线上**: https://image.acmerd.com 运行中（bundle `index-BthmGVpj.js`，`/api/health` 200；0008 已上生产）
-> **G9 唯一剩余项（Owner 选 C）**：本环境浏览器 MCP 无布局 surface（`innerWidth=0`、截图被拒），且**不引入 Playwright、不降低证据标准**。代码级响应式审查仅作**辅助证据**，**不得升级为运行时响应式 PASS**。→ 待进入**能提供真实浏览器运行时截图/视口的 QA 环境**后，**仅补做三视口响应式证据**（Desktop / Tablet / Mobile，覆盖 Home / Search / Asset Detail / Admin Console，重点记录横向溢出·导航·Grid·表格·Lightbox·操作区），补齐后直接出 **G9 Closure Report**。**不重跑已通过的 DB / Search / 性能 / 安全测试。** 在此之前**不得宣布 G9 PASS**。
-> **新 Agent 请先读「第零节 · 接手清单」，再按「第六节 · 当前唯一待办」开工**
+> **最后更新**: 2026-09-04（G9 Closure：第④类响应式运行时证据已补齐，含 DEF-9-1 发现→修复→复验；G9 = PASS）
+> **当前状态**: Phase 0-9 ✅ 全 CLOSED（G1–G9 PASS）· **下一步 = Phase 10 Production Release（严格"全量回归+发布"，无新功能）**
+> **当前 HEAD**: 见 `git log`（G9 closure commit）；工作树仅故意未入库项（`.workbuddy/` + 两份中文规划文档）
+> **线上**: https://image.acmerd.com 运行中（**bundle `index-DosBFCeX.js`**，含 DEF-9-1 修复：AdminLayout `min-w-0`；0001–0008 已上生产，`/api/health` 200）
+> **G9 关闭依据**: `docs/phase-9/03-g9-closure-report.md`（三视口 × 全关键页运行时截图 + 客观溢出数值 + Lightbox 交互实测；证据在 `docs/phase-9/evidence/responsive/` 27 张）。执行环境为真实 Chromium（agent-browser），未引入 Playwright、未降低证据标准；期间发现 Admin Users/Audit Logs 在 Tablet/Mobile 的页面级横向溢出（flex 子项缺 `min-w-0`），单类名修复并完成 本地→生产 四步验证链。
+> **新 Agent 请先读「第零节 · 接手清单」，再按「第六节 · 当前待办」开工**
 
 ---
 
@@ -169,27 +169,21 @@ React 18 + TS + Vite + Tailwind + shadcn 风格 UI；Hono Worker + `[assets]` SP
 
 ---
 
-## 六、当前唯一待办：Phase 9 已实施并部署，Gate G9 = PENDING（仅差响应式运行时证据）
+## 六、当前待办：Phase 10 — Production Release（G9 已于 2026-09-04 关闭）
 
-**状态**：Owner 已批准 Phase 9 Design Gate（APPROVED WITH REQUIRED ADJUSTMENTS，D1–D10 裁决见 `docs/phase-9/01-design-gate.md` §7），实现**已完成、已部署、已上生产**（0008 + 前端 + `e8bedc9`/`b737f26` 等 commit）。**Gate G9 = PENDING（6/7 类 CONFIRMED）**，Owner 就第④类**选 C**（见下）。
+**状态**：Phase 9 全部完成。G9 第④类响应式运行时证据已于 2026-09-04 在真实 Chromium QA 环境补齐，期间发现并修复 DEF-9-1（Admin Users/Audit Logs 在 Tablet/Mobile 页面级横向溢出，根因 `AdminLayout.tsx` flex 子项缺 `min-w-0`；属已批准 D9 范围的精准最小修复）。**G9 = PASS（7/7 CONFIRMED）**，依据 `docs/phase-9/03-g9-closure-report.md`。生产已运行修复版 bundle `index-DosBFCeX.js`。
 
-### 已完成（勿重做）
-- **0008**：`_search_assets_core` → 薄壳 `search_assets`（契约零破坏）→ `search_assets_paged`（total over() + LIMIT/OFFSET）。生产已应用。
-- **前端**：路由级 React.lazy（Auth→Guard→Lazy 保持）；Home/Search/AdminAssets 数字分页（`?page`）；`makeImageSrc` render/image 缩略（封面 640×480 / 详情 640×640，下载链路不变）；upload `cacheControl immutable`；ToastProvider / CardSkeleton / Lightbox；Admin 溢出 `overflow-x-auto`（既有确认）；`design-system.md` 基线。
-- **证据已 CONFIRMED（6/7）**：① 实际 SQL ② 隔离库 15/15（I1a/I1b/I2/I2a/I3/I4 + D1 边界）③ 前端构建 ⑤ UX 状态回归 ⑥ 生产应用+线上抽验 6/6 ⑦ 性能 Baseline→Compare（入口 −7.9% gzip）。
+### Phase 10 进入条件与范围纪律（Owner 明示）
+- ~~进入 Phase 10 前须先关闭 G9~~ ✅ G9 已 PASS，条件满足。
+- **Phase 10 严格是"全量回归验证 + 发布"，不得塞新功能**（总纲定义：无新功能）。
 
-### 唯一剩余项（Owner 选 C）—— 你（下一个 Agent）的动作
-本环境浏览器 MCP 无布局 surface（`innerWidth=0`、截图被拒），且**不引入 Playwright、不降低证据标准**。代码级响应式审查仅作**辅助证据**，**不得升级为运行时 PASS**。
-→ **进入能提供真实浏览器运行时截图/视口的 QA 环境后，仅补第④类**：三视口 **Desktop / Tablet / Mobile** × 关键页 **Home / Search / Asset Detail / Admin Console**，重点记录**横向溢出、导航、Grid、Admin 表格、Lightbox、操作区、移动端滚动/遮挡**是否正常。
-→ **不重跑**已通过的 DB / Search / Security / Download / Performance baseline 证据。
-→ 补齐后直接输出 **`docs/phase-9/03-g9-closure-report.md`** 并宣布 **G9 PASS**。**在此之前不得宣布 G9 PASS。**
-
-### 之后：Phase 10 — Production Release（范围纪律，Owner 明示）
-Phase 9 虽名为 "UX & Performance"，但**性能基础设施已基本补齐**（Code Splitting / 缩略图 Transform / 分页 / Immutable Cache / Skeleton / Lightbox / Toast）。
-→ **Phase 10 应严格是"全量回归验证 + 发布"，不得在最后一刻塞新功能**（总纲定义：无新功能）。进入 Phase 10 前须先关闭 G9。
-
-### 关键不变量（已由隔离库证明，Phase 10 回归时复用）
+### Phase 10 回归时复用的不变量（已由隔离库/线上证明）
 I1a/I1b `search_assets` 契约零破坏；I2/I2a 分页并集=全量且顺序一致；I3 Guest 集合 NO-DRIFT；I4 RLS/allowlist24/disabled 门禁不漂移。published_assets / is_admin() / RLS / audit / disabled = **冻结基础设施**。
+
+### 补充 QA 环境经验（2026-09-04，供 Phase 10 复用）
+- 本会话使用 agent-browser（真实 Chromium）作为 QA 浏览器：`agent-browser set viewport W H` + `open` + `eval` + `screenshot` **必须在同一 Bash 命令链内执行**——守护进程会在调用间随机重置标签页/视口/登录态（曾致 2 张空白截图与登录丢失，识别后已用防御模式规避）。
+- Admin 登录态采证：`.env` 的 `ADMIN_EMAIL/ADMIN_PASSWORD` + `input[type=email]/input[type=password]` 选择器登录；Admin 页面**只读查看零变更操作**。
+- 溢出判定范式：`document.documentElement.scrollWidth vs clientWidth` + 逐元素 `getBoundingClientRect` 定位溢出源（DEF-9-1 即由此范式定位）。
 
 ---
 
