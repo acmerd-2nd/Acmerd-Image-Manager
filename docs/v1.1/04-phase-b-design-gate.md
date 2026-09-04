@@ -1,7 +1,7 @@
 # V1.1 Phase B Design Gate — GitHub Image Repository & Credits/Download Integration
 
 - **日期**: 2026-09-04
-- **状态**: 🟡 **PENDING OWNER REVIEW**（Phase B 开工前置 Gate，Owner 明确要求单独审批）
+- **状态**: ✅ **APPROVED WITH REQUIRED ADJUSTMENTS**（Owner 2026-09-04 裁决；两处必改 + Q1–Q5 全部落位，见 §10/§12）
 - **前置**: Phase A = CLOSED（Owner 验收通过，见 §0）；Design Gate Rev B（01）继续有效，本文件只做 Phase B 增量裁决，不推翻 Rev B 任何结论。
 - **纪律**: 本 Gate 为纯文档；在 Owner 批准前零代码改动、零生产库触碰、零图片上传。
 
@@ -72,29 +72,32 @@ returning owner_id;
 
 **问题**：GitHub PUT ✅ → DB INSERT ❌ → GitHub 有文件、DB 无记录 = 孤儿对象。
 
-**裁决建议：DB 先行 pending 态 + 单向状态机 + 对账清扫，补偿动作是"收敛到一致"，而不是笼统"整体失败"。**
+**裁决建议（Rev 2，并入 Owner 必改）：DB 先行 pending 态 + 单向状态机 + 对账清扫 + 删除半边闭环，补偿动作是"收敛到一致"，而不是笼统"整体失败"。**
 
-新增 `images.status` 列（0014）：`uploading | ready | failed`（存量行一次性置 ready；公开视图/下载路径一律过滤 `status='ready'`——pending 行对外不存在，符合 H3"DB 不落成功态"）。
+新增 `images.status` 列（0014）：**`uploading | ready | failed | deleting` 四态**（Owner 裁决 Q3；存量行一次性置 ready；公开视图/下载路径一律只出 `status='ready'`——其余三态对外不存在，符合 H3"DB 不落成功态"）。
 
 ```
-[1] 抢租约
-[2] INSERT images(provider='github', status='uploading', source_path, file_size, …)
-[3] PUT GitHub Contents API
-    ├─ 失败（网络/4xx/5xx 重试穷尽）
-    │     → UPDATE images SET status='failed'（保留行作审计，公开不可见）
-    │     → 释放租约 → 返回失败。GitHub 侧无对象（PUT 本身没成功）→ 无孤儿
-    └─ 成功 → [4] UPDATE images SET status='ready' → [5] 释放租约
-崩溃窗口（[3] 成功后、[4] 前进程死亡）:
-    → 行停留在 uploading，租约 120s 过期
-    → 对账清扫（下节）收敛
+上传: [1] 抢租约
+      [2] INSERT images(provider='github', status='uploading', source_sha=本地预期 git blob sha, …)
+      [3] PUT GitHub Contents API
+          ├─ 失败（网络/4xx/5xx 重试穷尽）→ status='failed'（保留行作审计，公开不可见）→ 释放租约 → 返回失败
+          │     （GitHub 侧无对象 → 无孤儿）
+          └─ 成功且 response.content.sha === source_sha → [4] status='ready' → [5] 释放租约
+      崩溃窗口（[3] 成功后、[4] 前进程死亡）→ 行停留 uploading，租约 120s 过期 → sweeper 收敛
+
+删除（Owner 必改：DB 行在远端删除成功前绝不物理删除）:
+      ready → status='deleting'（公开即刻不可见）
+            → GitHub DELETE（先 GET 取 sha）
+            ├─ 成功（或 404 = 目标态已达）→ DELETE images 行（触发 image.deleted 审计）
+            └─ 失败 → 行保留在 'deleting'（公开不可见）→ sweeper 重试
+      崩溃窗口 → 行停留 deleting，租约过期 → sweeper 收敛
 ```
 
-**对账清扫（reconciliation sweeper）**——Worker scheduled handler（cron，如每 10 分钟）：
-1. 取 `status='uploading'` 且租约已过期的行；
-2. GET GitHub 该 path：存在且 sha 与 DB 记录一致 → 置 `ready`（上传实际已成功）；
-3. 不存在 → 置 `failed`（PUT 实际未完成）；
-4. `status='failed'` 但 GitHub GET 发现对象存在（罕见：PUT 成功但更新失败前崩溃）→ **补偿删除**该 GitHub 文件（幂等，见 §4），删完保持 failed；
-5. 每次动作写审计（复用 allowlist，如需扩展 action 在 0014 一并加）。
+**对账清扫（reconciliation sweeper）**——Worker scheduled handler（cron，每 10 分钟，单轮 ≤10 行、GitHub 子请求有界）：
+1. `uploading` 且租约已过期：GET GitHub 该 path——`content.sha === source_sha` → 置 `ready`；不存在 → 置 `failed`。
+2. `failed` 但 GET 发现对象存在：sha 一致 → 实际已成功，置 `ready`；sha 不一致 → **补偿删除**该 GitHub 文件（幂等），删完保持 failed。
+3. `deleting` 且租约已过期：GET 取 sha → DELETE → 成功或 404 → 物理 DELETE DB 行；失败 → 保留 deleting 下轮再试。
+4. 每次动作写审计（0014 幂等扩展 allowlist：`github.upload.failed / github.upload.recovered / github.delete.retry / github.orphan.purged`）。
 
 **要点**：任何时刻系统状态都是"可判定的"——pending 行 + 租约过期 = 必有 sweeper 收敛路径；不会出现永久性 DB/GitHub 互相矛盾且无人处理的状态。
 
@@ -145,7 +148,7 @@ Phase A 已落 `src/lib/image-source.ts`，Phase B 接线 + 冻结兼容承诺�
 
 沿用 Rev B 两阶段，补强校验与对账闭环：
 
-1. **复制**：逐图 GET Supabase Storage（现生产仅 1 张图，天然低风险演练）→ 以原始字节 PUT GitHub（路径约定 `{asset-slug}/{lang}/{filename}`，0014 前先在 Gate 确认，见 §10）。
+1. **复制**：逐图 GET Supabase Storage（现生产仅 1 张图，天然低风险演练）→ 以原始字节 PUT GitHub（**冻结规范（Owner 裁决）：`assets/{asset-uuid}/{langCode}/{file}`，例如 `assets/7d4c.../en/01-product.webp`；不用 slug——slug 是内容命名/URL 标识，UUID 是存储 identity，两者解耦**）。
 2. **校验（双 hash）**：
    - 计算 GitHub API 返回的 **git blob sha**（`sha1("blob {len}\0" + content)` 本地重算比对）；
    - 字节级 sha256 源/目标比对；
@@ -159,7 +162,7 @@ Phase A 已落 `src/lib/image-source.ts`，Phase B 接线 + 冻结兼容承诺�
 
 | # | 项 | 说明 |
 | --- | --- | --- |
-| 1 | `0014_phase_b_github.sql` | github_write_leases + images.status（uploading/ready/failed，存量置 ready）+ 相关 RLS/grants + 审计 action 扩展（幂等超集，0013 范式） |
+| 1 | `0014_phase_b_github.sql` | github_write_leases + claim/release RPC + images.status（**uploading/ready/failed/deleting**，存量置 ready）+ images.source_sha + 公开可见性收敛（RLS select 策略与 published_assets 视图只出 ready，全 ready 数据下零漂移）+ 审计 action 扩展（幂等超集，0013 范式） |
 | 2 | Worker GitHub 客户端 | lease 抢占 → pending 行 → PUT → finalize；§5 重试矩阵；Token 仅 Worker Secret |
 | 3 | Worker sweeper | scheduled handler 对账（§3） |
 | 4 | 下载接线 | §7 表格；ZIP 混 provider 支持 |
@@ -169,17 +172,30 @@ Phase A 已落 `src/lib/image-source.ts`，Phase B 接线 + 冻结兼容承诺�
 
 完成后 **STOP → Owner 检查**，才进入 Stage 1。
 
-## §10 留给 Owner 的开放决策（PB-1 批准时一并裁决）
+## §10 Q1–Q5 裁决结果（Owner，2026-09-04，全部落位）
 
-| # | 问题 | 建议 |
+| # | 决策 | 裁决 |
 | --- | --- | --- |
-| Q1 | GitHub 目标分支 | 直接提交生产分支（租约已串行）vs 独立 `images` 分支。建议：直接 main，路径 `{asset-slug}/{lang}/{filename}`，减少同步层 |
-| Q2 | 租约 TTL | 建议 120s（Worker CPU 限额内上传 + 充裕缓冲） |
-| Q3 | images.status 命名 | 建议 `uploading/ready/failed`；公开视图只出 ready |
-| Q4 | CDN 切换口时机 | V1.1 保持 raw 默认（D4-b 既有裁决），仅留 `VITE_GITHUB_IMAGE_CDN_BASE` 空口 |
-| Q5 | dry-run 仓库 | 建议单独私有/公开演练仓库，全矩阵验证后再指向生产仓库 |
+| Q1 | GitHub 目标分支/路径 | ✅ 生产仓库 `main` 直接提交；**路径冻结为 `assets/{asset-uuid}/{langCode}/{filename}`**，不建独立 images branch，不用 slug |
+| Q2 | 租约 TTL | ✅ 120s；TTL 定位为"异常恢复窗口"，非操作时限保证 |
+| Q3 | images.status | ✅ **四态 uploading/ready/failed/deleting**；公开只出 ready；删除流程见 §3（远端删除成功前不物理删 DB 行） |
+| Q4 | CDN 切换口 | ✅ V1.1 保持 raw 默认；仅保留 `VITE_GITHUB_IMAGE_CDN_BASE` 环境级空口，不做代理/不上 R2 |
+| Q5 | dry-run 仓库 | ✅ 独立 private dry-run repository 先行；全矩阵（Upload→409/422→Retry→Delete→Lease→Sweeper→HEAD→ZIP）通过后才指向生产 Image Repository |
+
+附加冻结（Owner 裁决）：PB-1 普通上传的"成功"判定 = HTTP 2xx **且** `response.content.sha === 本地预期 git blob sha`（Stage 1 迁移再做完整双 hash 对账）；租约粒度 `al:{asset_language_id}` 接受（同语言并发上传串行，简单可靠优先）。
 
 ## §11 非目标与 Gate 状态
 
 - **不做**：Stage 1/2 迁移执行、生产仓库写入、生产 DB 变更、Credits 计费语义调整、R2/S3。
-- **状态**: 🟡 PENDING OWNER REVIEW。批准（含 §10 Q1–Q5 裁决）后才允许 PB-1 实施清单开工。
+- **状态**: ✅ **APPROVED WITH REQUIRED ADJUSTMENTS**（两处必改已并入：UUID 路径规范、删除四态闭环；Q1–Q5 全部落位）。PB-1 实施清单（§9）获准开工；**完成后 STOP 提交 PB-1 证据/收口报告，不自动进入 Stage 1**。dry-run 全矩阵验证需要 Owner 提供 GITHUB_TOKEN（Worker Secret）与演练仓库后再执行。
+
+## §12 Owner 裁决记录（2026-09-04）
+
+**Phase B Design Gate APPROVED with two required implementation adjustments.**
+
+1. **路径规范冲突修正（必改）**：Gate 原稿 §8 出现 `assets/{asset-uuid}/...` 与 `{asset-slug}/...` 两套并存。裁决：**统一 `assets/{asset-uuid}/{langCode}/{filename}`**——slug 是稳定 URL 标识，UUID 适合底层存储 identity，存储层不与内容命名耦合。已改 §8。
+2. **GitHub Delete 状态一致性（必改）**：DB 行在 GitHub DELETE 成功前**绝不物理删除**；状态机扩为 `uploading | ready | failed | deleting`；`ready → deleting（公开不可见）→ GitHub DELETE → 成功/404 → 删 DB 行`；失败保留 deleting 供 reconciliation/sweeper 重试。已改 §3/§9/§10。这是 H3 删除半边的闭环，不是推翻 H3。
+
+冻结不变量（Phase B 全程继承）：H2 credits 幂等与原子性；Single/ZIP/Package 定价语义（Single Image Cost / N × ZIP Per-image Cost / Package Download Cost，不因换仓库重定义）；provider-aware 下载；`makeImageUrl()` 唯一图片来源出口；GITHUB_TOKEN 仅 Worker Secret；无 Worker 图片代理；无 Owner 单独授权不做 Stage 2。
+
+执行边界：**仅 PB-1**。PB-1 完成 → STOP → 提交证据/收口报告 → 等 Owner 检查后才可启动 Stage 1。

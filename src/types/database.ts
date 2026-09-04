@@ -39,11 +39,11 @@ export interface ImageRow {
   asset_language_id: string
   filename: string
   /**
-   * V1.0 UI 契约：现有读取路径只会见到 provider='supabase_storage' 行（storage_path 恒非空）。
-   * V1.1 双 provider 事实模型见 ImageSourceRow + makeImageUrl（src/lib/image-source.ts）；
-   * provider 感知的 UI 切换在 Phase C 进行。
+   * V1.1 PB-1 起为 provider 感知真值：supabase_storage 行非空（V1.0 语义），
+   * github 行恒 null（source_path 承载，DB CHECK 互斥）。
+   * URL 一律经 toPublicUrl/imageSrcOf/makeImageUrl 计算，禁止直接拼 storage_path。
    */
-  storage_path: string
+  storage_path: string | null
   provider: ImageProvider
   source_path: string | null
   mime_type: string | null

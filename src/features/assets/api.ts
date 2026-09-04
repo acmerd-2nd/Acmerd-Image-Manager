@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase/client'
+import { makeImageUrl } from '@/lib/image-source'
 import type {
   AssetLanguageRow,
   AssetRow,
@@ -173,9 +174,30 @@ export async function getPublishedAssetBySlug(slug: string): Promise<PublishedAs
 
 // ---------------- 封面公开 URL ----------------
 
-/** storage_path 形如 images/{asset}/{lang}/{file}，含 bucket 名；公开 URL 需去掉第一段 */
-export function toPublicUrl(storagePath: string): string {
-  const withoutBucket = storagePath.split('/').slice(1).join('/')
+/**
+ * Provider-aware 展示 URL（V1.1 PB-1；makeImageUrl 为唯一出口，Gate §12）。
+ * supabase_storage → 沿用 Supabase render 变换（V1.0 行为逐字节兼容）；
+ * github → raw/CDN 直链（无服务端变换）。
+ */
+export function imageSrcOf(
+  image: Pick<ImageRow, 'provider' | 'storage_path' | 'source_path'>,
+  variant: ImageVariant,
+): string {
+  if (image.provider === 'github') {
+    return makeImageUrl(image) ?? ''
+  }
+  return makeImageSrc(image.storage_path ?? '', variant)
+}
+
+/**
+ * 原图公开 URL（Lightbox/Admin 编辑器预览）。
+ * supabase_storage → Storage public URL；github → raw/CDN 直链。
+ */
+export function toPublicUrl(image: Pick<ImageRow, 'provider' | 'storage_path' | 'source_path'>): string {
+  if (image.provider === 'github') {
+    return makeImageUrl(image) ?? ''
+  }
+  const withoutBucket = (image.storage_path ?? '').split('/').slice(1).join('/')
   const { data } = supabase.storage.from('images').getPublicUrl(withoutBucket)
   return data.publicUrl
 }
@@ -209,11 +231,11 @@ export async function getCoverUrls(imageIds: string[]): Promise<Map<string, stri
   if (imageIds.length === 0) return map
   const { data, error } = await supabase
     .from('images')
-    .select('id, storage_path')
+    .select('id, provider, storage_path, source_path')
     .in('id', imageIds)
   if (error) throw new Error(error.message)
-  for (const row of (data ?? []) as Array<{ id: string; storage_path: string }>) {
-    map.set(row.id, makeImageSrc(row.storage_path, THUMB_COVER))
+  for (const row of (data ?? []) as Array<Pick<ImageRow, 'id' | 'provider' | 'storage_path' | 'source_path'>>) {
+    map.set(row.id, imageSrcOf(row, THUMB_COVER))
   }
   return map
 }

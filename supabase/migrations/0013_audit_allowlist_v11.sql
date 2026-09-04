@@ -16,6 +16,30 @@
 
 do $$
 begin
+  -- 防窄化守卫（0014 重放场景）：存量行存在 34 项之外的动作（如后续迁移的
+  -- github.* 系列）时跳过重建，避免重放链在中间态收窄 CHECK 而失败。
+  if exists (
+    select 1 from public.audit_logs
+    where action not in (
+      'asset.created','asset.updated','asset.deleted','asset.published','asset.unpublished',
+      'asset.archived','asset.restored',
+      'image.uploaded','image.updated','image.deleted',
+      'tag.created','tag.updated','tag.deleted',
+      'asset.tag_added','asset.tag_removed',
+      'asset_language.created','asset_language.updated','asset_language.deleted',
+      'asset_language.published','asset_language.unpublished',
+      'user.role_changed','user.disabled','user.enabled',
+      'download_source.updated',
+      'collection.created','collection.updated','collection.deleted',
+      'collection.published','collection.archived',
+      'credits.adjusted','credits.unlimited_changed',
+      'user.provisioned','user.deleted',
+      'settings.updated'
+    )
+  ) then
+    raise notice '0013 allowlist rebuild skipped: existing actions beyond the 34-item set';
+    return;
+  end if;
   alter table public.audit_logs drop constraint if exists audit_logs_action_allowlist;
   alter table public.audit_logs
     add constraint audit_logs_action_allowlist

@@ -112,7 +112,8 @@ alter default privileges in schema public grant all on functions to anon, authen
 const MIG_DIR = join(root, 'supabase', 'migrations')
 const MIG_ALL = readdirSync(MIG_DIR).filter(f => f.endsWith('.sql')).sort()
 const MIG_BASE = MIG_ALL.filter(f => f < '0009')
-const MIG_V11  = MIG_ALL.filter(f => f >= '0009')
+// Phase A 范围钉死 0009–0013（0014 起属 Phase B，由 v11-phase-b-smoke.mjs 覆盖）
+const MIG_V11  = MIG_ALL.filter(f => f >= '0009' && f < '0014')
 
 let mainC = null, dbC = null
 try {

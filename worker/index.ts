@@ -1,4 +1,16 @@
 import { Hono } from 'hono'
+import {
+  GithubError,
+  claimLease,
+  computeGitBlobSha,
+  ghConfig,
+  ghDeleteFile,
+  ghGetMeta,
+  ghPutFile,
+  githubRawUrl,
+  releaseLease,
+  withNetworkRetry,
+} from './github'
 
 export interface Env {
   SUPABASE_URL: string
@@ -6,6 +18,13 @@ export interface Env {
   /** 仅存于 Worker Secret，绝不进入前端 bundle（总纲铁律） */
   SUPABASE_SERVICE_ROLE_KEY?: string
   ASSETS: Fetcher
+  // ---- V1.1 Phase B (PB-1) GitHub Image Repository ----
+  /** 仅存于 Worker Secret（Gate §12 冻结红线） */
+  GITHUB_TOKEN?: string
+  /** dry-run 演练期 Owner 将 vars 指向演练仓库；生产切换 = 改 vars，代码零变更 */
+  GITHUB_IMAGES_OWNER?: string
+  GITHUB_IMAGES_REPO?: string
+  GITHUB_IMAGES_BRANCH?: string
 }
 
 const app = new Hono<{ Bindings: Env }>()
@@ -172,13 +191,16 @@ app.get('/api/downloads/image/:imageId', async (c) => {
   // service role 查图片 + 其语言/资产发布状态（双层可见性铁律）
   // 注意：images→asset_languages→assets 均为多对一，embed 返回对象（非数组）
   const res = await fetch(
-    `${c.env.SUPABASE_URL}/rest/v1/images?id=eq.${imageId}&select=id,storage_path,filename,asset_languages!inner(status,assets!inner(status))`,
+    `${c.env.SUPABASE_URL}/rest/v1/images?id=eq.${imageId}&select=id,provider,storage_path,source_path,status,filename,asset_languages!inner(status,assets!inner(status))`,
     { headers: svc(c.env) },
   )
   if (!res.ok) return c.json({ error: { code: 'internal', message: 'Lookup failed' } }, 500)
   const rows = (await res.json()) as Array<{
     id: string
-    storage_path: string
+    provider: string
+    storage_path: string | null
+    source_path: string | null
+    status: string
     filename: string
     asset_languages: { status: string; assets: { status: string } }
   }>
@@ -187,8 +209,20 @@ app.get('/api/downloads/image/:imageId', async (c) => {
   if (!img || !lang || lang.status !== 'published' || lang.assets?.status !== 'published') {
     return c.json({ error: { code: 'not_found', message: 'Image not available' } }, 404)
   }
+  // 四态可见性（0014）：非 ready 行对外不存在（uploading/failed/deleting 一律 404）
+  if (img.status !== 'ready') {
+    return c.json({ error: { code: 'not_found', message: 'Image not available' } }, 404)
+  }
 
-  const relative = img.storage_path.split('/').slice(1).join('/')
+  if (img.provider === 'github') {
+    const cfg = ghConfig(c.env)
+    if (!cfg || !img.source_path) {
+      return c.json({ error: { code: 'internal', message: 'GitHub source not configured' } }, 502)
+    }
+    return c.redirect(githubRawUrl(cfg, img.source_path), 302)
+  }
+
+  const relative = (img.storage_path ?? '').split('/').slice(1).join('/')
   const publicUrl = `${c.env.SUPABASE_URL}/storage/v1/object/public/images/${relative}`
   return c.redirect(publicUrl, 302)
 })
@@ -248,17 +282,19 @@ app.post('/api/downloads/zip', async (c) => {
     return c.json({ error: { code: 'not_found', message: 'Language not available' } }, 404)
   }
 
-  // 2. 取图片行，强制全部属于该语言（跨语言混选拒绝）
+  // 2. 取图片行，强制全部属于该语言（跨语言混选拒绝）；只出 ready（0014 四态）
   const inList = (imageIds as string[]).map((x) => `"${x}"`).join(',')
   const imgRes = await fetch(
-    `${c.env.SUPABASE_URL}/rest/v1/images?select=id,filename,storage_path,file_size,sort_order&id=in.(${inList})&asset_language_id=eq.${langId}`,
+    `${c.env.SUPABASE_URL}/rest/v1/images?select=id,filename,provider,storage_path,source_path,file_size,sort_order&id=in.(${inList})&asset_language_id=eq.${langId}&status=eq.ready`,
     { headers: svc(c.env) },
   )
   if (!imgRes.ok) return c.json({ error: { code: 'internal', message: 'Lookup failed' } }, 500)
   const files = (await imgRes.json()) as Array<{
     id: string
     filename: string
-    storage_path: string
+    provider: string
+    storage_path: string | null
+    source_path: string | null
     file_size: number | null
     sort_order: number
   }>
@@ -311,18 +347,34 @@ app.post('/api/downloads/zip', async (c) => {
 
 // ===========================================================================
 // ZIP 构建（store 模式，不压缩；每文件缓冲 ≤15MB 计算 CRC32 后写出）
+// PB-1: preflight/fetch 按 provider 分流（supabase = Storage；github = raw URL）
 // ===========================================================================
-async function preflightHead(env: Env, files: { storage_path: string }[], concurrency: number) {
+interface ZipFile {
+  filename: string
+  provider: string
+  storage_path: string | null
+  source_path: string | null
+}
+
+/** provider-aware 公开可取 URL（preflight HEAD 与流式 GET 共用） */
+function objectUrl(env: Env, f: ZipFile): string {
+  if (f.provider === 'github') {
+    const cfg = ghConfig(env)
+    if (!cfg || !f.source_path) throw new Error('GitHub source not configured')
+    return githubRawUrl(cfg, f.source_path)
+  }
+  const relative = (f.storage_path ?? '').split('/').slice(1).join('/')
+  return `${env.SUPABASE_URL}/storage/v1/object/public/images/${relative}`
+}
+
+async function preflightHead(env: Env, files: ZipFile[], concurrency: number) {
   let cursor = 0
   let failed = false
   async function worker() {
     while (cursor < files.length && !failed) {
       const f = files[cursor++]
-      const relative = f.storage_path.split('/').slice(1).join('/')
       try {
-        const r = await fetch(`${env.SUPABASE_URL}/storage/v1/object/public/images/${relative}`, {
-          method: 'HEAD',
-        })
+        const r = await fetch(objectUrl(env, f), { method: 'HEAD' })
         if (!r.ok) failed = true
       } catch {
         failed = true
@@ -398,16 +450,13 @@ function buildZipStream(env: Env, files: ZipFile[], concurrency: number): Readab
   })
 }
 
-interface ZipFile {
-  filename: string
-  storage_path: string
-}
-
 async function fetchObjectBytes(env: Env, f: ZipFile): Promise<Uint8Array> {
-  const relative = f.storage_path.split('/').slice(1).join('/')
-  const r = await fetch(`${env.SUPABASE_URL}/storage/v1/object/images/${relative}`, {
-    headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY!, Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY!}` },
-  })
+  const url = objectUrl(env, f)
+  const r = f.provider === 'github'
+    ? await fetch(url)
+    : await fetch(url.replace('/object/public/', '/object/'), {
+        headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY!, Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY!}` },
+      })
   if (!r.ok || !r.body) throw new Error(`object read failed: ${r.status}`)
   return new Uint8Array(await r.arrayBuffer())
 }
@@ -561,6 +610,340 @@ app.post('/api/admin/storage/delete', async (c) => {
   }
   return c.json({ deleted: true, objects: relativePaths.length })
 })
+
+// ===========================================================================
+// V1.1 Phase B (PB-1) — GitHub Image Repository（Gate 04 APPROVED 裁决实现）
+//   状态机（0014 四态）:
+//     上传: lease → INSERT(uploading) → PUT → sha 校验 → ready
+//           失败 → failed（保留行，公开不可见）→ 释放租约
+//           崩溃窗口 → sweeper 收敛
+//     删除: ready → deleting（公开不可见）→ GitHub DELETE → 删 DB 行
+//           失败 → 保留 deleting → sweeper 重试（DB 行在远端删除成功前绝不物理删除）
+//   不变量: GITHUB_TOKEN 仅 Secret；路径 assets/{asset-uuid}/{langCode}/{file}；
+//           单次操作 GitHub 子请求 ≤8；H2 Credits 语义零变更。
+// ===========================================================================
+const GITHUB_MIME_EXT: Record<string, string> = {
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+}
+const GITHUB_MAX_FILE_SIZE = 15 * 1024 * 1024
+
+function githubNotConfigured(c: { json: (b: unknown, s: 503) => Response }) {
+  return c.json({ error: { code: 'github_not_configured', message: 'GitHub image repository is not configured' } }, 503)
+}
+
+function mapGithubError(e: unknown): { status: 502 | 429; code: string; message: string } {
+  if (e instanceof GithubError) {
+    if (e.code === 'GITHUB_RATE_LIMITED') return { status: 429, code: 'github_rate_limited', message: 'GitHub rate limit exhausted, try later' }
+    if (e.code === 'GITHUB_AUTH_FAILED') return { status: 502, code: 'github_auth_failed', message: 'GitHub token rejected' }
+    if (e.code === 'GITHUB_PATH_CONFLICT') return { status: 502, code: 'github_path_conflict', message: 'GitHub path conflict with different content' }
+    return { status: 502, code: 'github_error', message: 'GitHub operation failed' }
+  }
+  return { status: 502, code: 'github_error', message: 'GitHub operation failed' }
+}
+
+/** 审计直写（service_role；actor 可为空系统动作） */
+async function writeAudit(env: Env, action: string, targetType: string, targetId: string, actorId: string | null, metadata: Record<string, unknown>): Promise<void> {
+  try {
+    await fetch(`${env.SUPABASE_URL}/rest/v1/audit_logs`, {
+      method: 'POST',
+      headers: svc(env),
+      body: JSON.stringify({ actor_id: actorId, action, target_type: targetType, target_id: targetId, metadata }),
+    })
+  } catch (e) {
+    console.error('audit write failed:', action, e)
+  }
+}
+
+interface ImageRowSvc {
+  id: string
+  asset_language_id: string
+  provider: string
+  status: string
+  source_path: string | null
+  source_sha: string | null
+}
+
+// ---------------------------------------------------------------------------
+// POST /api/admin/images/github-upload —— multipart(file, asset_language_id)
+// ---------------------------------------------------------------------------
+app.post('/api/admin/images/github-upload', async (c) => {
+  const auth = await requireAdmin(c)
+  if (!auth.ok) return c.json({ error: authErrBody(auth) }, auth.status)
+
+  const cfg = ghConfig(c.env)
+  if (!cfg) return githubNotConfigured(c)
+
+  let form: FormData
+  try {
+    form = await c.req.formData()
+  } catch {
+    return c.json({ error: { code: 'bad_request', message: 'multipart/form-data body required' } }, 400)
+  }
+  const file = form.get('file')
+  const langId = form.get('asset_language_id')
+  if (!(file instanceof File)) {
+    return c.json({ error: { code: 'bad_request', message: 'file field required' } }, 400)
+  }
+  if (typeof langId !== 'string' || !UUID_RE.test(langId)) {
+    return c.json({ error: { code: 'bad_request', message: 'asset_language_id must be a uuid' } }, 400)
+  }
+  if (!GITHUB_MIME_EXT[file.type]) {
+    return c.json({ error: { code: 'bad_request', message: `Unsupported type: ${file.type} (JPEG/PNG/WebP only)` } }, 400)
+  }
+  if (file.size > GITHUB_MAX_FILE_SIZE) {
+    return c.json({ error: { code: 'bad_request', message: 'File too large (max 15 MB)' } }, 413)
+  }
+
+  // 语言行校验（含 asset 归属）
+  const langRes = await fetch(
+    `${c.env.SUPABASE_URL}/rest/v1/asset_languages?id=eq.${langId}&select=id,asset_id,language_code,assets(status)`,
+    { headers: svc(c.env) },
+  )
+  if (!langRes.ok) return c.json({ error: { code: 'internal', message: 'Lookup failed' } }, 500)
+  const langRows = (await langRes.json()) as Array<{ id: string; asset_id: string; language_code: string; assets: { status: string } | null }>
+  const lang = langRows[0]
+  if (!lang) return c.json({ error: { code: 'not_found', message: 'Language not found' } }, 404)
+
+  // 同语言既有图张数 → 序号（任意状态都计入，避免覆盖/乱序）
+  const seqRes = await fetch(
+    `${c.env.SUPABASE_URL}/rest/v1/images?select=sort_order&asset_language_id=eq.${langId}&order=sort_order.desc&limit=1`,
+    { headers: svc(c.env) },
+  )
+  if (!seqRes.ok) return c.json({ error: { code: 'internal', message: 'Lookup failed' } }, 500)
+  const seqRows = (await seqRes.json()) as Array<{ sort_order: number }>
+  const seq = (seqRows[0]?.sort_order ?? 0) + 1
+
+  // 路径冻结（Owner Q1 裁决）: assets/{asset-uuid}/{langCode}/{filename}
+  const filename = `${String(seq).padStart(2, '0')}-${crypto.randomUUID().slice(0, 8)}.${GITHUB_MIME_EXT[file.type]}`
+  const sourcePath = `assets/${lang.asset_id}/${lang.language_code}/${filename}`
+
+  const ownerId = crypto.randomUUID()
+  const resourceKey = `al:${langId}`
+  const headers = svc(c.env)
+  let insertedId: string | null = null
+
+  try {
+    // [1] 抢租约（跨 isolate 串行）
+    const leased = await claimLease(c.env, headers, resourceKey, ownerId)
+    if (!leased) {
+      return c.json({ error: { code: 'lease_busy', message: 'Another upload/delete is in progress for this language' } }, 409)
+    }
+
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer())
+      const expectedSha = await computeGitBlobSha(bytes)
+
+      // [2] DB 先行 pending 态（H3：DB 不落成功态；公开视图只出 ready）
+      const insRes = await fetch(`${c.env.SUPABASE_URL}/rest/v1/images`, {
+        method: 'POST',
+        headers: { ...headers, Prefer: 'return=representation' },
+        body: JSON.stringify({
+          asset_language_id: langId,
+          filename: file.name || filename,
+          provider: 'github',
+          storage_path: null,
+          source_path: sourcePath,
+          source_sha: expectedSha,
+          mime_type: file.type,
+          file_size: file.size,
+          sort_order: seq,
+          status: 'uploading',
+        }),
+      })
+      if (!insRes.ok) throw new Error(`image row insert failed: ${insRes.status}`)
+      const inserted = (await insRes.json()) as Array<{ id: string }>
+      insertedId = inserted[0]?.id ?? null
+
+      // [3] GitHub PUT（重试矩阵见 github.ts；成功判定 = 2xx 且 sha 一致）
+      await withNetworkRetry(() => ghPutFile(cfg, sourcePath, bytes, expectedSha))
+
+      // [4] finalize → ready
+      if (insertedId) {
+        const upd = await fetch(`${c.env.SUPABASE_URL}/rest/v1/images?id=eq.${insertedId}`, {
+          method: 'PATCH',
+          headers,
+          body: JSON.stringify({ status: 'ready' }),
+        })
+        if (!upd.ok) throw new Error(`finalize update failed: ${upd.status}`) // 崩溃窗口 → sweeper 收敛
+      }
+      return c.json({ ok: true, image_id: insertedId, source_path: sourcePath, status: 'ready' })
+    } catch (e) {
+      // 失败路径: 行 → failed（公开不可见，保留审计）；PUT 已落盘的矛盾态交 sweeper
+      if (insertedId) {
+        await fetch(`${c.env.SUPABASE_URL}/rest/v1/images?id=eq.${insertedId}`, {
+          method: 'PATCH',
+          headers,
+          body: JSON.stringify({ status: 'failed' }),
+        }).catch(() => {})
+        await writeAudit(c.env, 'github.upload.failed', 'images', insertedId, auth.userId, {
+          source_path: sourcePath,
+          error: e instanceof Error ? e.message : String(e),
+        })
+      }
+      const mapped = mapGithubError(e)
+      return c.json({ error: { code: mapped.code, message: mapped.message } }, mapped.status)
+    }
+  } finally {
+    await releaseLease(c.env, headers, resourceKey, ownerId).catch(() => {})
+  }
+})
+
+// ---------------------------------------------------------------------------
+// POST /api/admin/images/github-delete —— {imageId}
+//   Owner 必改闭环: 远端删除成功前绝不物理删 DB 行（ready → deleting → DELETE → 删行）
+// ---------------------------------------------------------------------------
+app.post('/api/admin/images/github-delete', async (c) => {
+  const auth = await requireAdmin(c)
+  if (!auth.ok) return c.json({ error: authErrBody(auth) }, auth.status)
+
+  const cfg = ghConfig(c.env)
+  if (!cfg) return githubNotConfigured(c)
+
+  let body: { imageId?: unknown }
+  try {
+    body = await c.req.json<{ imageId?: unknown }>()
+  } catch {
+    return c.json({ error: { code: 'bad_request', message: 'Invalid JSON body' } }, 400)
+  }
+  const imageId = body.imageId
+  if (typeof imageId !== 'string' || !UUID_RE.test(imageId)) {
+    return c.json({ error: { code: 'bad_request', message: 'imageId must be a uuid' } }, 400)
+  }
+
+  const rowRes = await fetch(
+    `${c.env.SUPABASE_URL}/rest/v1/images?id=eq.${imageId}&select=id,asset_language_id,provider,status,source_path,source_sha`,
+    { headers: svc(c.env) },
+  )
+  if (!rowRes.ok) return c.json({ error: { code: 'internal', message: 'Lookup failed' } }, 500)
+  const rows = (await rowRes.json()) as ImageRowSvc[]
+  const img = rows[0]
+  if (!img || img.provider !== 'github' || !img.source_path) {
+    return c.json({ error: { code: 'not_found', message: 'GitHub image not found' } }, 404)
+  }
+  if (img.status === 'uploading') {
+    return c.json({ error: { code: 'upload_in_progress', message: 'Image is still uploading; retry later or wait for sweeper' } }, 409)
+  }
+  if (img.status !== 'ready' && img.status !== 'deleting') {
+    return c.json({ error: { code: 'not_deletable', message: `Image status is ${img.status}; nothing to delete` } }, 409)
+  }
+
+  const ownerId = crypto.randomUUID()
+  const resourceKey = `al:${img.asset_language_id}`
+  const headers = svc(c.env)
+
+  const leased = await claimLease(c.env, headers, resourceKey, ownerId)
+  if (!leased) {
+    return c.json({ error: { code: 'lease_busy', message: 'Another upload/delete is in progress for this language' } }, 409)
+  }
+
+  try {
+    // ready → deleting（公开即刻不可见）
+    if (img.status === 'ready') {
+      const patch = await fetch(`${c.env.SUPABASE_URL}/rest/v1/images?id=eq.${imageId}`, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({ status: 'deleting' }),
+      })
+      if (!patch.ok) return c.json({ error: { code: 'internal', message: 'Status update failed' } }, 500)
+    }
+
+    try {
+      await withNetworkRetry(() => ghDeleteFile(cfg, img.source_path!))
+      // 远端成功（或 404=目标态已达）→ 物理删 DB 行（触发 image.deleted 审计）
+      const del = await fetch(`${c.env.SUPABASE_URL}/rest/v1/images?id=eq.${imageId}`, {
+        method: 'DELETE',
+        headers,
+      })
+      if (!del.ok) {
+        // 远端已删但行未删 → sweeper 下轮 404 路径收敛
+        await writeAudit(c.env, 'github.delete.retry', 'images', imageId, auth.userId, { stage: 'db_delete_failed', status: del.status })
+        return c.json({ error: { code: 'internal', message: 'Row deletion failed; sweeper will reconcile' } }, 502)
+      }
+      return c.json({ ok: true, deleted: true })
+    } catch (e) {
+      // 远端失败 → 保留 deleting 行，sweeper 重试（H3 删除半边闭环）
+      await writeAudit(c.env, 'github.delete.retry', 'images', imageId, auth.userId, {
+        source_path: img.source_path,
+        error: e instanceof Error ? e.message : String(e),
+      })
+      const mapped = mapGithubError(e)
+      return c.json({ error: { code: mapped.code, message: mapped.message } }, mapped.status)
+    }
+  } finally {
+    await releaseLease(c.env, headers, resourceKey, ownerId).catch(() => {})
+  }
+})
+
+// ===========================================================================
+// Scheduled sweeper（Gate §3 对账清扫；cron 每 10 分钟，单轮 ≤10 行）
+//   uploading: GET sha === source_sha → ready / 404 → failed
+//   failed:    sha 一致 → ready；sha 不一致 → 补偿删除远端（orphan.purged）
+//   deleting:  远端 DELETE 成功/404 → 物理删 DB 行
+// ===========================================================================
+async function reconcileSweeper(event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+  const cfg = ghConfig(env)
+  if (!cfg) return
+  const headers = svc(env)
+
+  const res = await fetch(
+    `${env.SUPABASE_URL}/rest/v1/images?select=id,asset_language_id,provider,status,source_path,source_sha&status=in.(uploading,failed,deleting)&limit=10`,
+    { headers },
+  )
+  if (!res.ok) return
+  const rows = (await res.json()) as ImageRowSvc[]
+
+  ctx.waitUntil(
+    (async () => {
+      for (const img of rows) {
+        if (img.provider !== 'github' || !img.source_path) continue
+        const resourceKey = `al:${img.asset_language_id}`
+        const ownerId = crypto.randomUUID()
+        let leased = false
+        try {
+          leased = await claimLease(env, headers, resourceKey, ownerId, 60)
+          if (!leased) continue
+          const meta = await ghGetMeta(cfg, img.source_path).catch(() => undefined)
+          const patch = (status: string) =>
+            fetch(`${env.SUPABASE_URL}/rest/v1/images?id=eq.${img.id}`, { method: 'PATCH', headers, body: JSON.stringify({ status }) })
+
+          if (img.status === 'uploading' || img.status === 'failed') {
+            if (meta && img.source_sha && meta.sha === img.source_sha) {
+              await patch('ready')
+              await writeAudit(env, 'github.upload.recovered', 'images', img.id, null, { source_path: img.source_path, from: img.status })
+            } else if (img.status === 'uploading' && !meta) {
+              await patch('failed')
+              await writeAudit(env, 'github.upload.failed', 'images', img.id, null, { source_path: img.source_path, stage: 'sweeper_not_found' })
+            } else if (img.status === 'failed' && meta) {
+              // sha 不一致（或未知 sha）→ 补偿删除矛盾对象
+              await ghDeleteFile(cfg, img.source_path)
+              await writeAudit(env, 'github.orphan.purged', 'images', img.id, null, { source_path: img.source_path })
+            }
+          } else if (img.status === 'deleting') {
+            if (!meta) {
+              // 远端已不存在 → 目标态已达 → 物理删行
+              await fetch(`${env.SUPABASE_URL}/rest/v1/images?id=eq.${img.id}`, { method: 'DELETE', headers })
+              await writeAudit(env, 'github.delete.retry', 'images', img.id, null, { source_path: img.source_path, result: 'remote_absent_row_deleted' })
+            } else {
+              try {
+                await ghDeleteFile(cfg, img.source_path)
+                await fetch(`${env.SUPABASE_URL}/rest/v1/images?id=eq.${img.id}`, { method: 'DELETE', headers })
+                await writeAudit(env, 'github.delete.retry', 'images', img.id, null, { source_path: img.source_path, result: 'deleted' })
+              } catch {
+                await writeAudit(env, 'github.delete.retry', 'images', img.id, null, { source_path: img.source_path, result: 'remote_delete_failed' })
+              }
+            }
+          }
+        } catch (e) {
+          console.error('sweeper row failed:', img.id, e)
+        } finally {
+          if (leased) await releaseLease(env, headers, resourceKey, ownerId).catch(() => {})
+        }
+      }
+    })(),
+  )
+}
 
 // ===========================================================================
 // Phase 7 Admin Console —— 4 个新端点
@@ -834,4 +1217,8 @@ app.onError((err, c) => {
 // 非 /api 请求交给静态资源层（未命中资源时按 SPA 规则返回 index.html）
 app.all('*', (c) => c.env.ASSETS.fetch(c.req.raw))
 
-export default app
+// PB-1: fetch + scheduled（对账 sweeper，cron 见 wrangler.toml [triggers]）
+export default {
+  fetch: app.fetch,
+  scheduled: reconcileSweeper,
+}

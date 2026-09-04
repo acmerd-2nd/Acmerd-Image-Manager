@@ -11,7 +11,6 @@ import type {
 } from '@/types/database'
 import { LANGUAGE_CODES, LANGUAGE_LABELS } from '@/types/database'
 import {
-  createImageRow,
   createLanguage,
   deleteAsset,
   deleteImageRow,
@@ -25,6 +24,7 @@ import {
   transitionAsset,
   updateAsset,
 } from '@/features/assets/api'
+import { deleteGithubImage, uploadImageGithub } from '@/features/assets/github'
 import {
   addAssetTag,
   createTag,
@@ -32,7 +32,7 @@ import {
   listTags,
   removeAssetTag,
 } from '@/features/tags/api'
-import { ALLOWED_MIME, MAX_FILE_SIZE, deleteStoragePaths, uploadImage } from '@/features/assets/storage'
+import { ALLOWED_MIME, MAX_FILE_SIZE, deleteStoragePaths } from '@/features/assets/storage'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -163,9 +163,19 @@ export function AdminAssetEditorPage() {
 
   const doDelete = () =>
     run(async () => {
-      const paths = images.map((i) => i.storage_path)
+      // V1.1 PB-1: GitHub 行必须先经 Worker 四态闭环删远端（DB 级联前删，
+      // 否则行没了 sweeper 无法追踪远端对象）；supabase 行维持原兜底。
+      const githubImgs = images.filter((i) => i.provider === 'github')
+      for (const img of githubImgs) {
+        await deleteGithubImage(img.id).catch(() => {
+          setNotice(`GitHub 对象清理未完成（${img.filename}），sweeper 将继续收敛`)
+        })
+      }
+      const storagePaths = images
+        .filter((i) => i.provider !== 'github' && i.storage_path)
+        .map((i) => i.storage_path as string)
       await deleteAsset(asset.id)
-      await deleteStoragePaths(paths).catch(() => {
+      await deleteStoragePaths(storagePaths).catch(() => {
         // 孤儿对象仅告警（列表页已有同款兜底）
       })
       navigate('/admin/assets')
@@ -203,34 +213,19 @@ export function AdminAssetEditorPage() {
     try {
       const langRow = languages.find((l) => l.language_code === lang)
       if (!langRow) throw new Error('语言不存在')
-      const existing = imagesOf(langRow.id)
-      let seq = existing.length
-      const uploadedPaths: string[] = []
+      const fileList = Array.from(files ?? [])
+      let count = 0
 
-      for (const file of Array.from(files)) {
+      for (const file of fileList) {
         if (file.size > MAX_FILE_SIZE) throw new Error(`文件过大：${file.name}（上限 15 MB）`)
         if (!ALLOWED_MIME.includes(file.type as (typeof ALLOWED_MIME)[number])) {
           throw new Error(`不支持的格式：${file.name}（仅 JPEG/PNG/WebP）`)
         }
-        seq += 1
-        const path = await uploadImage(asset.id, lang, seq, file)
-        uploadedPaths.push(path)
-        try {
-          await createImageRow({
-            asset_language_id: langRow.id,
-            filename: file.name,
-            storage_path: path,
-            mime_type: file.type,
-            file_size: file.size,
-            sort_order: seq,
-          })
-        } catch (rowErr) {
-          // DB 行失败 → 立即清理已传对象，防孤儿
-          await deleteStoragePaths([path]).catch(() => {})
-          throw rowErr
-        }
+        // V1.1 PB-1: 经 Worker 上传 GitHub（租约串行 + pending 态 + sha 校验 + ready）
+        await uploadImageGithub(langRow.id, file)
+        count += 1
       }
-      setNotice(`已上传 ${uploadedPaths.length} 张图到 ${LANGUAGE_LABELS[lang]}`)
+      setNotice(`已上传 ${count} 张图到 ${LANGUAGE_LABELS[lang]}`)
       await reload()
     } catch (e) {
       setActionError(e instanceof Error ? e.message : String(e))
@@ -250,10 +245,26 @@ export function AdminAssetEditorPage() {
 
   const removeImage = (img: ImageRow) =>
     run(async () => {
+      if (img.provider === 'github') {
+        // 四态闭环：远端删除成功才物理删行；远端失败保留 deleting 由 sweeper 收敛
+        try {
+          await deleteGithubImage(img.id)
+        } catch (e) {
+          if ((e as Error & { code?: string }).code === 'not_deletable') {
+            await deleteImageRow(img.id) // failed 等无远端对象态 → 仅清行
+          } else {
+            setNotice(`远端删除失败，图片已隐藏，sweeper 将继续重试`)
+          }
+          return
+        }
+        return
+      }
       await deleteImageRow(img.id) // 先删行（触发 image.deleted 审计；若为封面 FK 自动置 null）
-      await deleteStoragePaths([img.storage_path]).catch((e) => {
-        setNotice(`图片记录已删，但存储对象清理失败：${e instanceof Error ? e.message : String(e)}`)
-      })
+      if (img.storage_path) {
+        await deleteStoragePaths([img.storage_path]).catch((e) => {
+          setNotice(`图片记录已删，但存储对象清理失败：${e instanceof Error ? e.message : String(e)}`)
+        })
+      }
     })
 
   const setCover = (img: ImageRow) =>
@@ -512,7 +523,7 @@ export function AdminAssetEditorPage() {
                   {imgs.map((img, idx) => (
                     <div key={img.id} className="space-y-1 rounded border p-1">
                       <div className="relative aspect-square overflow-hidden rounded bg-muted">
-                        <img src={toPublicUrl(img.storage_path)} alt={img.filename} className="h-full w-full object-cover" />
+                        <img src={toPublicUrl(img)} alt={img.filename} className="h-full w-full object-cover" />
                         {asset.cover_image_id === img.id && (
                           <span className="absolute left-1 top-1 rounded bg-primary px-1 text-[10px] text-primary-foreground">
                             Cover

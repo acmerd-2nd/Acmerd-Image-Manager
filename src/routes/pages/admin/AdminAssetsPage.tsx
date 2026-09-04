@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { Plus } from 'lucide-react'
 import type { AssetRow, AssetStatus } from '@/types/database'
 import { deleteAsset, getCoverUrls, listAllAssetsPaged, listImages, transitionAsset } from '@/features/assets/api'
+import { deleteGithubImage } from '@/features/assets/github'
 import { deleteStoragePaths } from '@/features/assets/storage'
 import { useAuth } from '@/features/auth/AuthProvider'
 import { Badge } from '@/components/ui/badge'
@@ -81,8 +82,16 @@ export function AdminAssetsPage() {
     try {
       // 收集精确 storage_path（目录级前缀删除不可靠，见 storage.ts 注释）
       const imgs = await listImages(asset.id)
+      // V1.1 PB-1: GitHub 行先经 Worker 四态闭环删远端（级联前，sweeper 可追踪）
+      for (const img of imgs.filter((i) => i.provider === 'github')) {
+        await deleteGithubImage(img.id).catch(() => {
+          setError(`GitHub 对象清理未完成（${img.filename}），sweeper 将继续收敛`)
+        })
+      }
       await deleteAsset(asset.id) // DB 行级联 + asset.deleted 审计
-      await deleteStoragePaths(imgs.map((i) => i.storage_path)).catch((e) => {
+      await deleteStoragePaths(
+        imgs.filter((i) => i.provider !== 'github' && i.storage_path).map((i) => i.storage_path as string),
+      ).catch((e) => {
         setError(`已删除数据，但存储清理失败：${e instanceof Error ? e.message : String(e)}`)
       })
       setConfirmDelete(null)

@@ -3,9 +3,9 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Check, Download, DownloadCloud, Image as ImageIcon, ListChecks, Lock, Tag as TagIcon } from 'lucide-react'
 import {
   getPublishedAssetBySlug,
+  imageSrcOf,
   listImagesByLanguage,
   listPublishedLanguages,
-  makeImageSrc,
   THUMB_GRID,
 } from '@/features/assets/api'
 import { listAssetTags } from '@/features/tags/api'
@@ -311,7 +311,7 @@ export function AssetDetailPage() {
                       aria-label={`Preview ${img.filename}`}
                     >
                       <img
-                        src={makeImageSrc(img.storage_path, THUMB_GRID)}
+                        src={imageSrcOf(img, THUMB_GRID)}
                         alt={img.filename}
                         loading="lazy"
                         className="aspect-square w-full object-cover"

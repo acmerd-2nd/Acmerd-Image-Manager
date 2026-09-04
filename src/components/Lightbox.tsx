@@ -72,7 +72,7 @@ export function Lightbox({
       </div>
       <div className="flex flex-1 items-center justify-center overflow-auto p-4" onClick={(e) => e.stopPropagation()}>
         <img
-          src={toPublicUrl(image.storage_path)}
+          src={toPublicUrl(image)}
           alt={image.filename}
           className="max-h-full max-w-full object-contain"
         />
