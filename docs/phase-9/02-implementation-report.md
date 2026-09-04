@@ -38,7 +38,7 @@
 
 **③ 前端构建** — `typecheck` 绿；`vite build` 成功，产物见 §四性能对比（25+ 独立 chunk）。
 
-**④ 响应式证据** — ⚠️ **受限**：本会话浏览器 MCP 标签页无前台布局 surface（`innerWidth=0`、截图 "Only screenshots from surface are allowed"），且按零依赖纪律未引入 playwright，**无法产出运行时像素/截图**。改以**代码级审查**佐证（客观可核）：
+**④ 响应式证据** — ✅ **已补齐（2026-09-04，见 `03-g9-closure-report.md`）**：真实 Chromium（agent-browser，非 Playwright、零新增依赖）三视口 Desktop 1280 / Tablet 768 / Mobile 390 × Home/Search/Asset Detail/Admin Console 全页运行时截图 + 客观溢出数值 + Lightbox 交互实测。期间发现 DEF-9-1（Admin Users/Audit Logs 在 Tablet/Mobile 页面级横向溢出，根因 `AdminLayout.tsx` flex 子项缺 `min-w-0`）→ 单类名修复（已批准 D9 范围）→ 本地+生产四步验证链 → 生产 bundle `index-DosBFCeX.js`。原代码级审查记录保留如下（历史）：
 - 关键页均用 sm/md/lg 断点；资产网格 `grid-cols-2→sm:3→lg:4`；详情 `lg:grid-cols-[1fr_260px]`（移动下排）
 - Admin 两表 `overflow-x-auto`；AdminLayout 桌面 `hidden md:block` + 移动 chips `md:hidden`
 - 结论：布局按断点响应、无结构性横向溢出。**运行时截图子项待 Owner 定夺**（批准一次性 playwright devDep 出图，或接受代码级审查）。
@@ -62,7 +62,7 @@
 Phase 9 提交（0008 + 前端 + 文档）；规划文档不入库；测试数据隔离库自动 DROP。
 
 ## 六、Gate G9 状态
-**6/7 类 CONFIRMED；第④类"响应式运行时截图"因环境无布局 surface + 未授权 playwright 而受限**，已用代码级审查作为**辅助证据**并如实标注。
+**~~6/7 类 CONFIRMED~~ → G9 = PASS（7/7 CONFIRMED，2026-09-04 关闭）**：第④类运行时证据已由 `03-g9-closure-report.md` 补齐（含 DEF-9-1 发现与修复）。以下为历史记录（Owner 裁决选 C 的原始背景）：
 
 ### Owner 裁决（2026-09-03）：选 C —— 换环境补真实运行时证据
 - **不引入 Playwright、不降低证据标准**；代码级响应式审查**不得升级为运行时响应式 PASS**。
