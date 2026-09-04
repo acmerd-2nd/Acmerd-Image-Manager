@@ -45,7 +45,9 @@ export function AdminLayout() {
           </div>
         </div>
       </aside>
-      <div className="flex-1 p-6">
+      {/* min-w-0：允许 flex 子项收缩至内容宽度以下，使页内 overflow-x-auto 容器真正生效，
+          防止宽表格（Users/Audit Logs）在移动/平板视口把溢出转移到页面级（G9 第④类证据发现） */}
+      <div className="min-w-0 flex-1 p-6">
         {/* 移动端简易导航（Phase 9 响应式再完善） */}
         <nav className="mb-4 flex flex-wrap gap-2 md:hidden">
           {items.map(({ to, label }) => (
