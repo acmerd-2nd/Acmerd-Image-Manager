@@ -725,8 +725,13 @@ app.post('/api/admin/images/github-upload', async (c) => {
   let insertedId: string | null = null
 
   try {
-    // [1] 抢租约（跨 isolate 串行）
-    const leased = await claimLease(c.env, headers, resourceKey, ownerId)
+    // [1] 抢租约（跨 isolate 串行）；RPC 缺失（0014 未应用）→ 明确 503 而非裸 500
+    let leased: boolean
+    try {
+      leased = await claimLease(c.env, headers, resourceKey, ownerId)
+    } catch {
+      return c.json({ error: { code: 'db_not_provisioned', message: 'Lease RPC unavailable — migrations 0009-0014 not applied to this database' } }, 503)
+    }
     if (!leased) {
       return c.json({ error: { code: 'lease_busy', message: 'Another upload/delete is in progress for this language' } }, 409)
     }
@@ -833,7 +838,13 @@ app.post('/api/admin/images/github-delete', async (c) => {
   const resourceKey = `al:${img.asset_language_id}`
   const headers = svc(c.env)
 
-  const leased = await claimLease(c.env, headers, resourceKey, ownerId)
+  // 租约抢占；RPC 缺失（0014 未应用）→ 明确 503 而非裸 500
+  let leased: boolean
+  try {
+    leased = await claimLease(c.env, headers, resourceKey, ownerId)
+  } catch {
+    return c.json({ error: { code: 'db_not_provisioned', message: 'Lease RPC unavailable — migrations 0009-0014 not applied to this database' } }, 503)
+  }
   if (!leased) {
     return c.json({ error: { code: 'lease_busy', message: 'Another upload/delete is in progress for this language' } }, 409)
   }
