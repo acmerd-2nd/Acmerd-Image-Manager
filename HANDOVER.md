@@ -169,46 +169,27 @@ React 18 + TS + Vite + Tailwind + shadcn 风格 UI；Hono Worker + `[assets]` SP
 
 ---
 
-## 六、当前唯一待办：Phase 9 — UX & Performance（Design Gate 已交审，等 Owner 裁决）
+## 六、当前唯一待办：Phase 9 已实施并部署，Gate G9 = PENDING（仅差响应式运行时证据）
 
-**状态**：Owner 已裁决 G8 PASS / Phase 8 CLOSED，明确 **Phase 9 先交 Design Gate、不得先写码**。当前 `docs/phase-9/01-design-gate.md`（192 行）已产出并提交评审，**§7 Owner 裁决块待填写**（L175 起）。**尚未写任何实现代码。**
+**状态**：Owner 已批准 Phase 9 Design Gate（APPROVED WITH REQUIRED ADJUSTMENTS，D1–D10 裁决见 `docs/phase-9/01-design-gate.md` §7），实现**已完成、已部署、已上生产**（0008 + 前端 + `e8bedc9`/`b737f26` 等 commit）。**Gate G9 = PENDING（6/7 类 CONFIRMED）**，Owner 就第④类**选 C**（见下）。
 
-### 你（下一个 Agent）接手后的第一动作
-1. 读完本交接后，**通读 `docs/phase-9/01-design-gate.md`**（重点 §3 决策表 D1–D10、§5 不变量 I1–I4、§6 六类证据、§7 裁决块）。
-2. **等 Owner 逐项裁决 D1–D10**（Owner 会在对话里给出，或直接在门禁文档裁决块留言）。
-3. 收到裁决后：**把裁决原文原样落档到 §7**（先读该文件、用 Edit，格式参照 phase-7/phase-8 门禁的做法），再启动 Implementation。
-4. 实施顺序（门禁已定）：**0008 → 隔离库冒烟（I1–I4）→ 前端改造 → 构建/响应式证据 → 生产 0008 + 线上抽验 → Git + Gate G9**。**六类证据全 CONFIRMED 才可宣布 G9 PASS。**
+### 已完成（勿重做）
+- **0008**：`_search_assets_core` → 薄壳 `search_assets`（契约零破坏）→ `search_assets_paged`（total over() + LIMIT/OFFSET）。生产已应用。
+- **前端**：路由级 React.lazy（Auth→Guard→Lazy 保持）；Home/Search/AdminAssets 数字分页（`?page`）；`makeImageSrc` render/image 缩略（封面 640×480 / 详情 640×640，下载链路不变）；upload `cacheControl immutable`；ToastProvider / CardSkeleton / Lightbox；Admin 溢出 `overflow-x-auto`（既有确认）；`design-system.md` 基线。
+- **证据已 CONFIRMED（6/7）**：① 实际 SQL ② 隔离库 15/15（I1a/I1b/I2/I2a/I3/I4 + D1 边界）③ 前端构建 ⑤ UX 状态回归 ⑥ 生产应用+线上抽验 6/6 ⑦ 性能 Baseline→Compare（入口 −7.9% gzip）。
 
-### Phase 9 调研实测结论（写 Gate 前已验证，非猜测）
-- **生产数据极小**（1 asset/1 image/0 tags）→ 分页/大列表是结构性防御；**G9 验收必须隔离库造 30+ 资产、多语言多图**。
-- **Supabase `/storage/v1/render/image` 变换端点实测可用**（40×40 cover → 200 PNG）→ 缩略图免 Worker 代理，仅展示链路加参数。
-- **Storage public 对象响应 `Cache-Control: no-cache`** → 上传时写 `cacheControl:'immutable'`。
-- 三处列表全量无分页：HomePage（published_assets）、SearchPage（`search_assets` RPC **无 LIMIT**）、AdminAssetsPage。
-- `App.tsx` **全静态 import 无 Code Splitting**；无全局 Toast / Skeleton / Lightbox（Detail 页仅局部 toast）；AdminUsersPage **已有数字分页先例**（envelope total + prev/next）可复用；项目**零 UI/数据层运行时依赖**（自维护 shadcn 风格），新增基建须维持零依赖原则。
-- 规划文档内部差异：总纲把 Responsive 放 Phase 10、分阶段放 Phase 9.1 —— 已作为决策面处理（D9 收敛式，见门禁 §3）。
+### 唯一剩余项（Owner 选 C）—— 你（下一个 Agent）的动作
+本环境浏览器 MCP 无布局 surface（`innerWidth=0`、截图被拒），且**不引入 Playwright、不降低证据标准**。代码级响应式审查仅作**辅助证据**，**不得升级为运行时 PASS**。
+→ **进入能提供真实浏览器运行时截图/视口的 QA 环境后，仅补第④类**：三视口 **Desktop / Tablet / Mobile** × 关键页 **Home / Search / Asset Detail / Admin Console**，重点记录**横向溢出、导航、Grid、Admin 表格、Lightbox、操作区、移动端滚动/遮挡**是否正常。
+→ **不重跑**已通过的 DB / Search / Security / Download / Performance baseline 证据。
+→ 补齐后直接输出 **`docs/phase-9/03-g9-closure-report.md`** 并宣布 **G9 PASS**。**在此之前不得宣布 G9 PASS。**
 
-### 决策点速览（推荐项已由主理人给出；最终以 Owner 裁决为准）
-| 决策 | 推荐 | 一句话 |
-| --- | --- | --- |
-| D1 分页形态 | 1a 数字分页 | 复用 AdminUsers 先例，`?page=` 可分享 |
-| D2 实现 | 2a | Home/Admin 走 PostgREST `.range()+count` **零迁移**；Search 抽 `_search_assets_core` + 薄壳 `search_assets`（**无参契约零破坏**）+ 新 `search_assets_paged`（total over()）→ 唯一 DB 触碰面 = `0008_search_pagination.sql` |
-| D3 Code Splitting | 3a React.lazy | 路由级，守卫不动 |
-| D4 缩略图 | 4a transform 两档 | 封面 640×480 / 详情 640×640，端点已实测 |
-| D5 缓存 | 5a upload cacheControl | 新对象 immutable，无新端点 |
-| D6 Toast | 6a 自建 Provider | 零依赖原则 |
-| D7 Lightbox | 7a 自建 overlay | 与选择模式互斥、Esc 关闭 |
-| D8 骨架屏 | 8a CardSkeleton | 替换图片空挡 |
-| D9 响应式+Polish | 9a 收敛式 | Admin 溢出修复（不重构 Drawer）+ Design System 基线文档（不引库） |
-| D10 验收 | 10a 六类证据 | 含响应式截图/人工视口（备选见文档） |
+### 之后：Phase 10 — Production Release（范围纪律，Owner 明示）
+Phase 9 虽名为 "UX & Performance"，但**性能基础设施已基本补齐**（Code Splitting / 缩略图 Transform / 分页 / Immutable Cache / Skeleton / Lightbox / Toast）。
+→ **Phase 10 应严格是"全量回归验证 + 发布"，不得在最后一刻塞新功能**（总纲定义：无新功能）。进入 Phase 10 前须先关闭 G9。
 
-### 四个强制回归不变量（G9 硬门槛，Owner 风格）
-- **I1**：`search_assets` 无参调用结果与 0005 现网实现**逐字节一致**（薄壳重构唯一正确性判据）。
-- **I2**：`search_assets_paged` 任意合法 (page,per_page) 并集 = 全量，与 I1 全量一致（无丢失/重复/新增可见行）。
-- **I3**：0008 前后 Guest 视角公开集合**不漂移**（沿用 Phase 8 快照 A/B 法，快照集与 0007 证据一致）。
-- **I4**：RLS / allowlist 24 / disabled 门禁 / admin RPC 在 0008 隔离库仍通过 Phase 8 抽样（C10 负样本 + is_admin 三态 + last-admin 语义抽样）。
-
-### 后续 Phase（勿跳级）
-Phase 9 UX/性能 → **Phase 10 全量回归发布**（总纲定义，无新功能）。
+### 关键不变量（已由隔离库证明，Phase 10 回归时复用）
+I1a/I1b `search_assets` 契约零破坏；I2/I2a 分页并集=全量且顺序一致；I3 Guest 集合 NO-DRIFT；I4 RLS/allowlist24/disabled 门禁不漂移。published_assets / is_admin() / RLS / audit / disabled = **冻结基础设施**。
 
 ---
 
