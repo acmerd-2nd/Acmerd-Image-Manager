@@ -1906,6 +1906,83 @@ app.patch('/api/admin/settings', async (c) => {
   return c.json({ ok: true, settings: patch })
 })
 
+// ===========================================================================
+// V1.1 PC-5: Registration Gate —— 公开注册入口，服务端 gate registration_enabled
+//   PD-1：Worker 只 gate + 建号，绝不建会话 / 不回传 token；注册成功后前端复用
+//         supabase.auth.signInWithPassword 建立会话（沿用现有登录链路，AuthProvider 零改动）。
+//   PD-3（已批 A）：残余风险——anon key 直连 GoTrue /signup 仍可绕过本 gate；
+//         本轮接受、不硬关（绝对关闭需 GoTrue 侧禁用公开 signup，属生产鉴权配置、单独授权）。
+//   建号走 service_role（仅 Worker 内存）；profiles + user_roles('user') 由 handle_new_user 触发器自动创建。
+// ===========================================================================
+
+interface RegisterBody {
+  email?: unknown
+  password?: unknown
+}
+
+/** 服务端密码规则：与 src/lib/validators.ts validatePassword 保持一致（改一处须同步另一处） */
+function passwordRuleOk(pw: string): boolean {
+  if (pw.length < 8) return false
+  const classes = [/[0-9]/, /[A-Z]/, /[a-z]/].filter((re) => re.test(pw)).length
+  return classes >= 2
+}
+
+app.post('/api/auth/register', async (c) => {
+  let body: RegisterBody
+  try {
+    body = await c.req.json<RegisterBody>()
+  } catch {
+    return c.json({ error: { code: 'bad_request', message: 'Invalid JSON body' } }, 400)
+  }
+
+  const email = typeof body.email === 'string' ? body.email.trim() : ''
+  const password = typeof body.password === 'string' ? body.password : ''
+  if (email.length === 0 || email.length > 256 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return c.json({ error: { code: 'invalid_input', message: 'Invalid email' } }, 400)
+  }
+  if (!passwordRuleOk(password)) {
+    return c.json({ error: { code: 'invalid_input', message: 'Weak password' } }, 400)
+  }
+
+  // gate：实时读 registration_enabled（jsonb boolean）；读失败不放行（fail-closed）
+  let enabled = false
+  try {
+    const res = await fetch(
+      `${c.env.SUPABASE_URL}/rest/v1/site_settings?key=eq.registration_enabled&select=value`,
+      { headers: svc(c.env) },
+    )
+    if (!res.ok) {
+      console.error('register: settings read failed', res.status)
+      return c.json({ error: { code: 'upstream_error', message: 'Settings unavailable' } }, 502)
+    }
+    const rows = (await res.json()) as Array<{ value: unknown }>
+    enabled = rows[0]?.value === true
+  } catch {
+    return c.json({ error: { code: 'upstream_error', message: 'Settings unavailable' } }, 502)
+  }
+  if (!enabled) {
+    return c.json({ error: { code: 'registration_disabled', message: 'Registration is currently unavailable' } }, 403)
+  }
+
+  // 建号（不建会话、不回传 token）；email_confirm:true 沿用 GoTrue 现状（未开邮箱确认 → 注册即登录）
+  try {
+    const cu = await fetch(`${c.env.SUPABASE_URL}/auth/v1/admin/users`, {
+      method: 'POST',
+      headers: svc(c.env),
+      body: JSON.stringify({ email, password, email_confirm: true }),
+    })
+    if (!cu.ok) {
+      // 不区分"邮箱已存在/其它失败"，统一通用错误（防枚举）
+      console.error('register: admin.createUser failed', cu.status)
+      return c.json({ error: { code: 'registration_failed', message: 'Registration failed' } }, 400)
+    }
+    return c.json({ ok: true }, 200)
+  } catch (e) {
+    console.error('register: threw', e)
+    return c.json({ error: { code: 'internal', message: 'Internal server error' } }, 500)
+  }
+})
+
 app.notFound((c) => c.json({ error: { code: 'not_found', message: 'Not found' } }, 404))
 
 app.onError((err, c) => {

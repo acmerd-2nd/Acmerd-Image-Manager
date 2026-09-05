@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { Link, Navigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '@/lib/supabase/client'
 import { useAuth } from '@/features/auth/AuthProvider'
+import { registerViaWorker, RegisterError } from '@/features/auth/api'
 import {
   PASSWORD_MIN_LENGTH,
   sanitizeInternalRedirect,
@@ -16,12 +17,13 @@ import { Spinner } from '@/components/spinner'
 type RegisterPhase = 'form' | 'check-email' | 'signed-in'
 
 /**
- * 注册流程（唯一事实来源是 Supabase Auth 返回值，前端不做任何兜底写入）：
- * - 返回 session        → 邮箱验证已关闭，直接进站
- * - 返回 user 无 session → 邮箱验证开启中，显示"请查收邮件"
- * profiles / user_roles('user') 由数据库触发器 handle_new_user 自动创建，
- * 前端不 INSERT、不 UPDATE —— 见 supabase/migrations/0001_initial_schema.sql
- * （Phase C PC-5 将把注册入口切到 Worker gate；本页先完成 PC-1 i18n 接线）
+ * 注册流程（Phase C PC-5：入口经 Worker gate，前端不建会话）：
+ * - 提交经 POST /api/auth/register（Worker 服务端校验 + gate registration_enabled）；
+ *   开关关闭 → 403 registration_disabled → 保留按钮、点击提示"当前暂未开放注册"。
+ * - 建号成功后复用现有登录链路 supabase.auth.signInWithPassword 建立会话（PD-1 方案 A）：
+ *   成功进站；若随后后端开启邮箱确认导致自动登录失败 → 回落"请查收邮件"页。
+ * profiles / user_roles('user') 由数据库触发器 handle_new_user 自动创建，前端不写。
+ * 残余风险（PD-3 已批 A）：anon key 直连 GoTrue /signup 仍可绕过本 gate，本轮接受、记录在案。
  */
 export function RegisterPage() {
   const [searchParams] = useSearchParams()
@@ -70,23 +72,29 @@ export function RegisterPage() {
     }
 
     setSubmitting(true)
-    const { data, error } = await supabase.auth.signUp({
-      email: email.trim(),
-      password,
-    })
 
-    if (error) {
-      // 不对错误做分类扩散：统一给出安全提示（不泄露邮箱是否已注册）
-      setFieldError(t('auth.registerFailed'))
+    // 1) 经 Worker gate 建号（不建会话、不回传 token）
+    try {
+      await registerViaWorker(email.trim(), password)
+    } catch (err) {
+      // disabled → 提示"暂未开放注册"（保留表单/按钮）；failed → 通用失败（不泄露邮箱是否存在）
+      setFieldError(err instanceof RegisterError && err.kind === 'disabled'
+        ? t('auth.registrationUnavailable')
+        : t('auth.registerFailed'))
       setSubmitting(false)
       return
     }
 
-    // 注册成功 —— 按 Supabase 返回值分支（保留既有行为，不改判断依据）
-    if (data.session) {
-      setPhase('signed-in') // 邮箱验证已关，session 已建立
+    // 2) 复用现有登录链路建立会话（PD-1 方案 A；沿用 GoTrue 现状：邮箱确认关闭即直接进站）
+    const { error: loginErr } = await supabase.auth.signInWithPassword({
+      email: email.trim(),
+      password,
+    })
+    if (loginErr) {
+      // 建号成功但自动登录失败（例如后端随后开启邮箱确认）→ 回落"请查收邮件"页
+      setPhase('check-email')
     } else {
-      setPhase('check-email') // 邮箱验证开启中，等待用户查收邮件
+      setPhase('signed-in') // AuthProvider 已捕获 session → 回跳 next
     }
     setSubmitting(false)
   }
