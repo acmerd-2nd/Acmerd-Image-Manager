@@ -59,12 +59,28 @@ async function waitForDev() {
   return false
 }
 
+async function waitGithubRaw(url, label = 'raw', maxMs = 420000) {
+  const t0 = Date.now()
+  let last = 'none'
+  while (Date.now() - t0 < maxMs) {
+    try {
+      const r = await fetch(url, { method: 'HEAD' })
+      last = String(r.status)
+      if (r.ok) { console.log(`  [diag] ${label} raw HEAD=${r.status} after ${Date.now()-t0}ms`); return true }
+    } catch (e) { last = 'throw:' + e.message }
+    await new Promise((r) => setTimeout(r, 5000))
+  }
+  console.log(`  [diag] ${label} raw NEVER 200 — last=${last} after ${Date.now()-t0}ms`)
+  return false
+}
+
 const runId = 'e2e4' + Date.now().toString(36)
 const hexTs = Date.now().toString(16).padStart(8, '0').slice(-8) // hex-only（UUID_RE 校验）
 const uuidKey = (n) => hexTs + '-0000-4000-8000-' + String(n).padStart(12, '0')
 let createdUserId = null
 let assetId = null
 let imageId = null
+let imageId2 = null
 
 try {
   const devUp = await waitForDev()
@@ -128,6 +144,24 @@ try {
   if (!upRes.ok || !upBody?.image_id) die('测试图上传失败 ' + upRes.status + ': ' + JSON.stringify(upBody).slice(0, 150))
   imageId = upBody.image_id
   ok('W0e 测试图 ready', upBody.status === 'ready', imageId)
+
+  // 第二张图（W6 幂等冲突异参用：与 W7 的 1 图 amount=1 不同 → amount=2 → 409）
+  const form2 = new FormData()
+  form2.append('file', new File([PNG_1PX], runId + 'b.png', { type: 'image/png' }))
+  form2.append('asset_language_id', lang.id)
+  const upRes2 = await fetch(BASE + '/api/admin/images/github-upload', { method: 'POST', headers: { Authorization: adminH.Authorization }, body: form2 })
+  const upBody2 = await upRes2.json().catch(() => ({}))
+  if (!upRes2.ok || !upBody2?.image_id) die('测试图2上传失败 ' + upRes2.status + ': ' + JSON.stringify(upBody2).slice(0, 150))
+  imageId2 = upBody2.image_id
+  ok('W0e2 测试图2 ready', upBody2.status === 'ready', imageId2)
+
+  // GitHub raw 传播等待：W7/W6 ZIP preflight HEAD 需要对象已可取（避免 502 误报）
+  const sp1 = (await (await rest('images?id=eq.' + imageId + '&select=source_path')).json())[0]?.source_path
+  const sp2 = (await (await rest('images?id=eq.' + imageId2 + '&select=source_path')).json())[0]?.source_path
+  const raw1 = 'https://raw.githubusercontent.com/acmerd-2nd/-Photo-Acmerd-Image-Manager/main/assets/' + sp1
+  const raw2 = 'https://raw.githubusercontent.com/acmerd-2nd/-Photo-Acmerd-Image-Manager/main/assets/' + sp2
+  ok('W0f github raw 传播等待 (img1)', await waitGithubRaw(raw1))
+  ok('W0f github raw 传播等待 (img2)', await waitGithubRaw(raw2))
 
   const balanceOf = async () => {
     const r = await rest('credit_accounts?user_id=eq.' + createdUserId + '&select=balance,unlimited')
@@ -203,21 +237,24 @@ try {
   // W6 同 key 异参 → 409
   const w6 = await fetch(BASE + '/api/downloads/zip', {
     method: 'POST', headers: { ...userH, 'X-Idempotency-Key': key2 },
-    body: JSON.stringify({ assetLanguageId: lang.id, imageIds: [imageId, imageId] }),
+    body: JSON.stringify({ assetLanguageId: lang.id, imageIds: [imageId, imageId2] }),
   })
   const w6body = await w6.json().catch(() => ({}))
   if (w6.status !== 409) console.log('[debug] zip w6 body:', JSON.stringify(w6body).slice(0, 300))
   ok('W6 ZIP 同 key 异参 409', w6.status === 409 && w6body?.error?.code === 'idempotency_conflict', 'status=' + w6.status)
 
-  // W8 ZIP 不足（3 < 5×1）
+  // W8 ZIP 不足（balance=0 < cost 1）
+  await fetch(BASE + '/api/admin/users/' + createdUserId + '/credits', {
+    method: 'POST', headers: adminH, body: JSON.stringify({ balance: 0, reason: 'pc4-e2e-insufficient' }),
+  })
   const w8 = await fetch(BASE + '/api/downloads/zip', {
     method: 'POST', headers: userH,
-    body: JSON.stringify({ assetLanguageId: lang.id, imageIds: [imageId, imageId, imageId, imageId, imageId] }),
+    body: JSON.stringify({ assetLanguageId: lang.id, imageIds: [imageId] }),
   })
   const w8body = await w8.json().catch(() => ({}))
   ok('W8 ZIP 不足 402', w8.status === 402 && w8body?.error?.code === 'insufficient_credits', 'status=' + w8.status)
   const b8 = await balanceOf()
-  ok('W8b 余额不变', b8 && b8.bal === 3, 'bal=' + (b8?.bal ?? '?'))
+  ok('W8b 余额不变', b8 && b8.bal === 0, 'bal=' + (b8?.bal ?? '?'))
 
   // W9 Package（admin 造 source → 扣分返回 url → 删 source）
   const srcRes = await rest('download_sources', {
@@ -241,7 +278,7 @@ try {
       ok('W9b 余额扣 15', b9 && b9.bal === 3 - 15 + 15, 'bal=' + (b9?.bal ?? '?') + '（cost=15 时应为 402；此分支仅 cost≤3）')
     } else if (w9.status === 402) {
       ok('W9 Package 402（cost 15 > 余额 3）', w9body?.error?.code === 'insufficient_credits', 'status=402')
-      ok('W9b 余额不变', b9 && b9.bal === 3, 'bal=' + (b9?.bal ?? '?'))
+      ok('W9b 余额不变', b9 && b9.bal === 0, 'bal=' + (b9?.bal ?? '?'))
     } else {
       ok('W9 Package 语义', false, 'unexpected status=' + w9.status)
     }
@@ -258,7 +295,7 @@ try {
   const key4 = uuidKey('000000000004')
   const w10 = await fetch(BASE + '/api/downloads/image/' + imageId, { redirect: 'manual', headers: { ...userH, 'X-Idempotency-Key': key4 } })
   const b10 = await balanceOf()
-  ok('W10 unlimited 302 + 不扣分', w10.status === 302 && b10?.unlimited === true && b10.bal === 4, 'status=' + w10.status + ' bal=' + (b10?.bal ?? '?'))
+  ok('W10 unlimited 302 + 不扣分', w10.status === 302 && b10?.unlimited === true && b10.bal === 0, 'status=' + w10.status + ' bal=' + (b10?.bal ?? '?'))
 
   // W11 admin_adjustment 流水
   const adjTx = await rest('credit_transactions?user_id=eq.' + createdUserId + '&type=eq.admin_adjustment&select=id')
@@ -269,12 +306,16 @@ try {
   // 先把资产回 draft（防清理窗口内产品面可见）——本就脚本专属实体，但守纪律
   await rest('assets?id=eq.' + assetId, { method: 'PATCH', body: JSON.stringify({ status: 'draft' }) })
   // 四态删图（github 对象远端收敛）
-  let delOk = false
+  let delOk = false, delOk2 = false
   try {
     const del = await fetch(BASE + '/api/admin/images/github-delete', { method: 'POST', headers: adminH, body: JSON.stringify({ imageId }) })
     delOk = del.ok
   } catch { delOk = false }
-  ok('W12a github-delete 闭环', delOk)
+  try {
+    const del2 = await fetch(BASE + '/api/admin/images/github-delete', { method: 'POST', headers: adminH, body: JSON.stringify({ imageId: imageId2 }) })
+    delOk2 = del2.ok
+  } catch { delOk2 = false }
+  ok('W12a github-delete 闭环', delOk && delOk2)
   // 删资产（级联语言/残余行）+ 删测试用户（credit_accounts cascade；ledger ON DELETE SET NULL 保留）
   await rest('assets?id=eq.' + assetId, { method: 'DELETE' })
   await fetch(SB + '/auth/v1/admin/users/' + createdUserId, { method: 'DELETE', headers: svcHeaders })
