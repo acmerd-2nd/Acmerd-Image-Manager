@@ -1,12 +1,13 @@
 import { Suspense } from 'react'
 import { NavLink, Link, Outlet } from 'react-router-dom'
-import { FolderOpen, LayoutDashboard, ScrollText, Tags, Users, Database } from 'lucide-react'
+import { FolderOpen, FolderTree, LayoutDashboard, ScrollText, Tags, Users, Database } from 'lucide-react'
 import { useLocale } from '@/i18n'
 import { Spinner } from '@/components/spinner'
 import { cn } from '@/lib/utils'
 
 const items = [
   { to: '/admin/dashboard', labelKey: 'admin.page.dashboard', icon: LayoutDashboard },
+  { to: '/admin/collections', labelKey: 'admin.page.collections', icon: FolderTree },
   { to: '/admin/assets', labelKey: 'admin.page.assets', icon: FolderOpen },
   { to: '/admin/users', labelKey: 'admin.page.users', icon: Users },
   { to: '/admin/tags', labelKey: 'admin.page.tags', icon: Tags },

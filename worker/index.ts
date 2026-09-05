@@ -1218,6 +1218,257 @@ app.get('/api/admin/stats', async (c) => {
   return c.json(stats)
 })
 
+// ===========================================================================
+// V1.1 PC-2: Collections admin endpoints (Gate 10 §3; 0012 + 0013 ready)
+//   写路径统一走 Worker: service_role 单语句原子 + writeAudit(collection.*)
+//   审计 allowlist 已含 collection.created/updated/deleted/published/archived
+// ===========================================================================
+
+interface CollectionCreateBody {
+  name?: unknown
+  slug?: unknown
+  description?: unknown
+}
+
+interface CollectionUpdateBody {
+  name?: unknown
+  slug?: unknown
+  description?: unknown
+  status?: unknown
+}
+
+const SLUG_RE = /^[a-z0-9\u4e00-\u9fff]+(-[a-z0-9\u4e00-\u9fff]+)*$/
+
+async function fetchCollectionRow(env: Env, id: string): Promise<Record<string, unknown> | null> {
+  const res = await fetch(`${env.SUPABASE_URL}/rest/v1/collections?id=eq.${id}&select=*`, {
+    headers: svc(env),
+  })
+  if (!res.ok) return null
+  const rows = (await res.json()) as Array<Record<string, unknown>>
+  return rows[0] ?? null
+}
+
+/** 单语句原子 PATCH（Prefer: return=representation 保证原子读回）；失败返回 null */
+async function patchCollectionRow(
+  env: Env,
+  id: string,
+  patch: Record<string, unknown>,
+): Promise<{ ok: true; row: Record<string, unknown> } | { ok: false; status: number; message: string }> {
+  const res = await fetch(`${env.SUPABASE_URL}/rest/v1/collections?id=eq.${id}`, {
+    method: 'PATCH',
+    headers: { ...svc(env), Prefer: 'return=representation' },
+    body: JSON.stringify(patch),
+  })
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { message?: string } | null
+    return { ok: false, status: res.status, message: body?.message ?? `update failed (${res.status})` }
+  }
+  const rows = (await res.json()) as Array<Record<string, unknown>>
+  if (rows.length === 0) return { ok: false, status: 404, message: 'Collection not found' }
+  return { ok: true, row: rows[0]! }
+}
+
+app.post('/api/admin/collections', async (c) => {
+  const auth = await requireAdmin(c)
+  if (!auth.ok) return c.json({ error: authErrBody(auth) }, auth.status)
+
+  let body: CollectionCreateBody
+  try {
+    body = await c.req.json<CollectionCreateBody>()
+  } catch {
+    return c.json({ error: { code: 'bad_request', message: 'Invalid JSON body' } }, 400)
+  }
+  const name = typeof body.name === 'string' ? body.name.trim() : ''
+  const slug = typeof body.slug === 'string' ? body.slug.trim().toLowerCase() : ''
+  const description = typeof body.description === 'string' ? body.description.trim() : null
+  if (!name) return c.json({ error: { code: 'bad_request', message: 'name is required' } }, 400)
+  if (!slug || !SLUG_RE.test(slug)) {
+    return c.json({ error: { code: 'bad_request', message: 'invalid slug' } }, 400)
+  }
+
+  const res = await fetch(`${c.env.SUPABASE_URL}/rest/v1/collections`, {
+    method: 'POST',
+    headers: { ...svc(c.env), Prefer: 'return=representation' },
+    body: JSON.stringify({ name, slug, description, created_by: auth.userId }),
+  })
+  if (!res.ok) {
+    const errBody = (await res.json().catch(() => null)) as { message?: string; code?: string } | null
+    const dup = res.status === 409 || (errBody?.code === '23505')
+    if (dup) return c.json({ error: { code: 'slug_taken', message: 'Slug already exists' } }, 409)
+    console.error('Collection create failed:', res.status, errBody?.message)
+    return c.json({ error: { code: 'upstream_error', message: 'Collection create failed' } }, 502)
+  }
+  const rows = (await res.json()) as Array<Record<string, unknown>>
+  const row = rows[0]
+  if (!row) return c.json({ error: { code: 'upstream_error', message: 'Collection create failed' } }, 502)
+
+  await writeAudit(c.env, 'collection.created', 'collections', String(row.id), auth.userId, { name, slug })
+  return c.json({ ok: true, collection: row })
+})
+
+app.patch('/api/admin/collections/:collectionId', async (c) => {
+  const auth = await requireAdmin(c)
+  if (!auth.ok) return c.json({ error: authErrBody(auth) }, auth.status)
+
+  const id = c.req.param('collectionId')
+  if (!UUID_RE.test(id)) {
+    return c.json({ error: { code: 'bad_request', message: 'Invalid collection id' } }, 400)
+  }
+
+  let body: CollectionUpdateBody
+  try {
+    body = await c.req.json<CollectionUpdateBody>()
+  } catch {
+    return c.json({ error: { code: 'bad_request', message: 'Invalid JSON body' } }, 400)
+  }
+
+  const patch: Record<string, unknown> = {}
+  if (body.name !== undefined) {
+    const name = typeof body.name === 'string' ? body.name.trim() : ''
+    if (!name) return c.json({ error: { code: 'bad_request', message: 'name cannot be empty' } }, 400)
+    patch.name = name
+  }
+  if (body.slug !== undefined) {
+    const slug = typeof body.slug === 'string' ? body.slug.trim().toLowerCase() : ''
+    if (!slug || !SLUG_RE.test(slug)) {
+      return c.json({ error: { code: 'bad_request', message: 'invalid slug' } }, 400)
+    }
+    patch.slug = slug
+  }
+  if (body.description !== undefined) {
+    patch.description = typeof body.description === 'string' && body.description.trim() ? body.description.trim() : null
+  }
+  if (body.status !== undefined) {
+    if (body.status !== 'draft' && body.status !== 'published' && body.status !== 'archived') {
+      return c.json({ error: { code: 'bad_request', message: 'invalid status' } }, 400)
+    }
+    patch.status = body.status
+  }
+  if (Object.keys(patch).length === 0) {
+    return c.json({ error: { code: 'bad_request', message: 'nothing to update' } }, 400)
+  }
+
+  const before = await fetchCollectionRow(c.env, id)
+  if (!before) return c.json({ error: { code: 'not_found', message: 'Collection not found' } }, 404)
+
+  const mut = await patchCollectionRow(c.env, id, patch)
+  if (!mut.ok) {
+    if (mut.status === 404) return c.json({ error: { code: 'not_found', message: 'Collection not found' } }, 404)
+    if (mut.status === 409 || /duplicate key/.test(mut.message)) {
+      return c.json({ error: { code: 'slug_taken', message: 'Slug already exists' } }, 409)
+    }
+    // cover 完整性触发器拒绝（COLLECTION_COVER_MISMATCH 等）→ 明确 400
+    if (/COLLECTION_COVER|COLLECTION_GUARD/.test(mut.message)) {
+      return c.json({ error: { code: 'collection_guard', message: mut.message } }, 400)
+    }
+    console.error('Collection patch failed:', mut.status, mut.message)
+    return c.json({ error: { code: 'upstream_error', message: 'Collection update failed' } }, 502)
+  }
+
+  // 审计：status 变更记 published/archived（对齐 0012 触发器语义），其余记 updated
+  const statusChanged = typeof patch.status === 'string' && patch.status !== before.status
+  if (statusChanged && (patch.status === 'published' || patch.status === 'archived')) {
+    await writeAudit(c.env, `collection.${patch.status}`, 'collections', id, auth.userId, {
+      from: before.status,
+      to: patch.status,
+    })
+  } else {
+    await writeAudit(c.env, 'collection.updated', 'collections', id, auth.userId, {
+      fields: Object.keys(patch),
+    })
+  }
+  return c.json({ ok: true, collection: mut.row })
+})
+
+app.delete('/api/admin/collections/:collectionId', async (c) => {
+  const auth = await requireAdmin(c)
+  if (!auth.ok) return c.json({ error: authErrBody(auth) }, auth.status)
+
+  const id = c.req.param('collectionId')
+  if (!UUID_RE.test(id)) {
+    return c.json({ error: { code: 'bad_request', message: 'Invalid collection id' } }, 400)
+  }
+
+  const before = await fetchCollectionRow(c.env, id)
+  if (!before) return c.json({ error: { code: 'not_found', message: 'Collection not found' } }, 404)
+
+  // FK assets_collection_fk ON DELETE SET NULL → 资产回归未归组（Q3：不进公域浏览）
+  const del = await fetch(`${c.env.SUPABASE_URL}/rest/v1/collections?id=eq.${id}`, {
+    method: 'DELETE',
+    headers: svc(c.env),
+  })
+  if (!del.ok) {
+    const errBody = (await del.json().catch(() => null)) as { message?: string } | null
+    console.error('Collection delete failed:', del.status, errBody?.message)
+    return c.json({ error: { code: 'upstream_error', message: 'Collection delete failed' } }, 502)
+  }
+
+  await writeAudit(c.env, 'collection.deleted', 'collections', id, auth.userId, {
+    name: before.name,
+    slug: before.slug,
+  })
+  return c.json({ ok: true })
+})
+
+// ---------------------------------------------------------------------------
+// POST /api/admin/collections/assign —— 资产归组/移出（单语句原子）
+//   cover 守卫：被引用为 cover 的资产移出/改判由 DB 触发器拒绝（COLLECTION_COVER_IN_USE）
+// ---------------------------------------------------------------------------
+interface CollectionAssignBody {
+  asset_id?: unknown
+  collection_id?: unknown
+}
+
+app.post('/api/admin/collections/assign', async (c) => {
+  const auth = await requireAdmin(c)
+  if (!auth.ok) return c.json({ error: authErrBody(auth) }, auth.status)
+
+  let body: CollectionAssignBody
+  try {
+    body = await c.req.json<CollectionAssignBody>()
+  } catch {
+    return c.json({ error: { code: 'bad_request', message: 'Invalid JSON body' } }, 400)
+  }
+  const assetId = typeof body.asset_id === 'string' ? body.asset_id : ''
+  if (!UUID_RE.test(assetId)) {
+    return c.json({ error: { code: 'bad_request', message: 'Invalid asset id' } }, 400)
+  }
+  // null = 移出归组（Q3 允许）；字符串 = 目标 collection
+  if (body.collection_id !== null && typeof body.collection_id !== 'string') {
+    return c.json({ error: { code: 'bad_request', message: 'collection_id must be a uuid or null' } }, 400)
+  }
+  const collectionId = typeof body.collection_id === 'string' ? body.collection_id : null
+  if (collectionId !== null && !UUID_RE.test(collectionId)) {
+    return c.json({ error: { code: 'bad_request', message: 'Invalid collection id' } }, 400)
+  }
+
+  const res = await fetch(`${c.env.SUPABASE_URL}/rest/v1/assets?id=eq.${assetId}`, {
+    method: 'PATCH',
+    headers: { ...svc(c.env), Prefer: 'return=representation' },
+    body: JSON.stringify({ collection_id: collectionId }),
+  })
+  if (!res.ok) {
+    const errBody = (await res.json().catch(() => null)) as { message?: string } | null
+    const msg = errBody?.message ?? `assign failed (${res.status})`
+    if (res.status === 409 || /COLLECTION_COVER_IN_USE/.test(msg)) {
+      return c.json({ error: { code: 'collection_guard', message: msg } }, 409)
+    }
+    if (res.status === 404) {
+      return c.json({ error: { code: 'not_found', message: 'Asset not found' } }, 404)
+    }
+    console.error('Collection assign failed:', res.status, msg)
+    return c.json({ error: { code: 'upstream_error', message: 'Collection assign failed' } }, 502)
+  }
+  const rows = (await res.json()) as Array<Record<string, unknown>>
+  if (rows.length === 0) return c.json({ error: { code: 'not_found', message: 'Asset not found' } }, 404)
+
+  await writeAudit(c.env, 'collection.updated', 'collections', collectionId ?? '(ungroup)', auth.userId, {
+    action: collectionId ? 'asset_assigned' : 'asset_removed',
+    asset_id: assetId,
+  })
+  return c.json({ ok: true })
+})
+
 app.notFound((c) => c.json({ error: { code: 'not_found', message: 'Not found' } }, 404))
 
 app.onError((err, c) => {

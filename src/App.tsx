@@ -14,6 +14,9 @@ import { ForbiddenPage, NotFoundPage } from '@/routes/pages/ErrorPages'
 const HomePage = lazy(() => import('@/routes/pages/HomePage').then((m) => ({ default: m.HomePage })))
 const SearchPage = lazy(() => import('@/routes/pages/SearchPage').then((m) => ({ default: m.SearchPage })))
 const AssetDetailPage = lazy(() => import('@/routes/pages/AssetDetailPage').then((m) => ({ default: m.AssetDetailPage })))
+const CollectionDetailPage = lazy(() =>
+  import('@/routes/pages/CollectionDetailPage').then((m) => ({ default: m.CollectionDetailPage })),
+)
 const ProfilePage = lazy(() => import('@/routes/pages/ProfilePage').then((m) => ({ default: m.ProfilePage })))
 
 const AdminDashboardPage = lazy(() => import('@/routes/pages/admin/AdminDashboardPage').then((m) => ({ default: m.AdminDashboardPage })))
@@ -24,6 +27,9 @@ const AdminTagsPage = lazy(() => import('@/routes/pages/admin/AdminTagsPage').th
 const AdminAssetsPage = lazy(() => import('@/routes/pages/admin/AdminAssetsPage').then((m) => ({ default: m.AdminAssetsPage })))
 const AdminAssetNewPage = lazy(() => import('@/routes/pages/admin/AdminAssetNewPage').then((m) => ({ default: m.AdminAssetNewPage })))
 const AdminAssetEditorPage = lazy(() => import('@/routes/pages/admin/AdminAssetEditorPage').then((m) => ({ default: m.AdminAssetEditorPage })))
+const AdminCollectionsPage = lazy(() =>
+  import('@/routes/pages/admin/AdminCollectionsPage').then((m) => ({ default: m.AdminCollectionsPage })),
+)
 
 export default function App() {
   return (
@@ -35,6 +41,7 @@ export default function App() {
             <Route path="/explore" element={<HomePage />} />
             <Route path="/search" element={<SearchPage />} />
             <Route path="/asset/:slug" element={<AssetDetailPage />} />
+            <Route path="/collection/:slug" element={<CollectionDetailPage />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
             <Route
@@ -57,6 +64,7 @@ export default function App() {
             >
               <Route index element={<AdminDashboardPage />} />
               <Route path="dashboard" element={<AdminDashboardPage />} />
+              <Route path="collections" element={<AdminCollectionsPage />} />
               <Route path="assets" element={<AdminAssetsPage />} />
               <Route path="assets/new" element={<AdminAssetNewPage />} />
               <Route path="assets/:id" element={<AdminAssetEditorPage />} />

@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Search } from 'lucide-react'
-import type { AssetCardRow } from '@/types/database'
+import type { AssetCardRow, PublishedCollectionRow } from '@/types/database'
 import { AssetCard } from '@/features/assets/AssetCard'
+import { CollectionCard } from '@/features/collections/CollectionCard'
+import { listPublishedCollections, listPublishedUngroupedAssets } from '@/features/collections/api'
 import { searchAssetsPaged } from '@/features/search/api'
 import { useLocale } from '@/i18n'
 import { Input } from '@/components/ui/input'
@@ -21,10 +23,27 @@ export function HomePage() {
   const [assets, setAssets] = useState<AssetCardRow[] | null>(null)
   const [total, setTotal] = useState(0)
   const [error, setError] = useState<string | null>(null)
+  const [collections, setCollections] = useState<PublishedCollectionRow[] | null>(null)
+  const [uncategorized, setUncategorized] = useState<AssetCardRow[] | null>(null)
+  const [showUncategorized, setShowUncategorized] = useState(false)
 
   useEffect(() => {
     let cancelled = false
     setError(null)
+    listPublishedCollections()
+      .then((rows) => {
+        if (!cancelled) setCollections(rows)
+      })
+      .catch(() => {
+        if (!cancelled) setCollections([])
+      })
+    listPublishedUngroupedAssets()
+      .then((rows) => {
+        if (!cancelled) setUncategorized(rows)
+      })
+      .catch(() => {
+        if (!cancelled) setUncategorized([])
+      })
     searchAssetsPaged('', [], page, PAGE_SIZE)
       .then(({ rows, total: count }) => {
         if (cancelled) return
@@ -72,6 +91,24 @@ export function HomePage() {
         </div>
       </div>
 
+      {/* V1.1 PC-2：首页 = Collection 卡片（Q3：未归组资产折叠在页面底部区） */}
+      {collections === null ? (
+        <div className="mb-10 h-24 animate-pulse rounded-xl bg-muted" />
+      ) : collections.length > 0 ? (
+        <section className="mb-12">
+          <h2 className="mb-4 text-lg font-semibold">{t('collection.featured')}</h2>
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+            {collections.map((col) => (
+              <CollectionCard key={col.id} collection={col} />
+            ))}
+          </div>
+        </section>
+      ) : (
+        <div className="mb-12 rounded-xl border border-dashed py-10 text-center">
+          <p className="text-sm text-muted-foreground">{t('collection.noCollections')}</p>
+        </div>
+      )}
+
       {error ? (
         <div className="rounded-xl border border-destructive/40 bg-destructive/10 p-6 text-center">
           <p className="font-medium text-destructive">{t('home.loadFailed')}</p>
@@ -109,6 +146,34 @@ export function HomePage() {
           </div>
           <Pagination page={page} perPage={PAGE_SIZE} total={total} onPage={setPage} />
         </>
+      )}
+
+      {/* 未归组已发布资产（Q3 裁决：不进主浏览流，折叠于此；有内容才显示） */}
+      {uncategorized !== null && uncategorized.length > 0 && (
+        <section className="mt-14 border-t pt-8">
+          <button
+            type="button"
+            className="flex w-full items-center justify-between text-left"
+            onClick={() => setShowUncategorized((v) => !v)}
+          >
+            <span>
+              <span className="text-lg font-semibold">{t('collection.uncategorizedTitle')}</span>
+              <span className="ml-3 text-sm text-muted-foreground">
+                {t('collection.uncategorizedSubtitle')}
+              </span>
+            </span>
+            <span className="text-sm text-muted-foreground">
+              {showUncategorized ? '−' : '+'} {uncategorized.length}
+            </span>
+          </button>
+          {showUncategorized && (
+            <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+              {uncategorized.map((a) => (
+                <AssetCard key={a.id} asset={a} />
+              ))}
+            </div>
+          )}
+        </section>
       )}
     </div>
   )

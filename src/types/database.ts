@@ -20,6 +20,8 @@ export interface AssetRow {
   description: string | null
   cover_image_id: string | null
   status: AssetStatus
+  /** V1.1 PC-2：所属 Collection（null=未归组；Q3 裁决：未归组不进公域浏览） */
+  collection_id: string | null
   created_by: string | null
   created_at: string
   updated_at: string
