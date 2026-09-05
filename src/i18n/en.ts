@@ -339,9 +339,13 @@ export const en: Dictionary = {
       saveFailed: 'Save failed: {msg}',
       pc6Note: 'Registration toggle and credits cost controls arrive with PC-6.',
       registration: 'Open registration',
+      registrationHint: 'When off, the public sign-up button stays but submissions are rejected server-side (403). Admin-created users are unaffected.',
       singleCost: 'Single image cost',
       zipCostPerImage: 'ZIP per-image cost',
       packageCost: 'Package download cost',
+      priceHint: 'Non-negative integers (0–1000000); changes take effect immediately.',
+      savePrices: 'Save prices',
+      invalidPrice: 'Prices must be non-negative integers (0–1000000)',
       saved: 'Platform settings saved',
     },
     misc: {

@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import { RefreshCw } from 'lucide-react'
-import { getAdminStats, getPlatformSettings, updatePlatformSettings, type AdminStats } from '@/features/admin/api'
+import { getAdminStats, getPlatformSettings, updatePlatformSettings, type AdminStats, type PlatformSettings } from '@/features/admin/api'
 import { LANGUAGE_CODES, LANGUAGE_LABELS, type AssetStatus } from '@/types/database'
 import { useAuth } from '@/features/auth/AuthProvider'
 import { useLocale } from '@/i18n'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Spinner } from '@/components/spinner'
@@ -50,66 +51,185 @@ function StatCard({
   )
 }
 
-/** PC-3：Schedule 导航开关（0011 anon 可读；写走 Worker settings.updated 审计） */
+/** Apple 风格开关（复用既有视觉；PC-6 Part A 抽为局部组件供 Schedule/Registration 两处用） */
+function AppleSwitch({
+  checked,
+  disabled,
+  onChange,
+  ariaLabel,
+}: {
+  checked: boolean
+  disabled?: boolean
+  onChange: () => void
+  ariaLabel: string
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={ariaLabel}
+      disabled={disabled}
+      onClick={onChange}
+      className={cn(
+        'relative h-6 w-11 shrink-0 rounded-full transition-colors',
+        checked ? 'bg-primary' : 'bg-muted-foreground/30',
+        disabled && 'opacity-50',
+      )}
+    >
+      <span
+        className={cn(
+          'absolute top-0.5 h-5 w-5 rounded-full bg-background shadow transition-all',
+          checked ? 'left-[1.375rem]' : 'left-0.5',
+        )}
+      />
+    </button>
+  )
+}
+
+/** PC-6 Part A：Platform Controls —— Schedule + Registration 开关 + 3 个下载价格（复用 /api/admin/settings，零新端点/零 schema） */
 function PlatformControlsCard() {
   const { t } = useLocale()
-  const [scheduleEnabled, setScheduleEnabled] = useState<boolean | null>(null)
-  const [saving, setSaving] = useState(false)
+  const [settings, setSettings] = useState<PlatformSettings | null>(null)
+  const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [saved, setSaved] = useState(false)
+  const [prices, setPrices] = useState<{ single: string; zip: string; package: string }>({
+    single: '',
+    zip: '',
+    package: '',
+  })
 
   useEffect(() => {
     getPlatformSettings()
-      .then((s) => setScheduleEnabled(s.schedule_navigation_enabled))
+      .then((s) => {
+        setSettings(s)
+        setPrices({
+          single: String(s.single_image_download_cost),
+          zip: String(s.zip_download_cost_per_image),
+          package: String(s.package_download_cost),
+        })
+      })
       .catch((e) => setError(e instanceof Error ? e.message : String(e)))
   }, [])
 
-  const toggle = async () => {
-    if (scheduleEnabled === null) return
-    setSaving(true)
+  const apply = async (patch: Partial<PlatformSettings>) => {
+    setBusy(true)
     setError(null)
-    const next = !scheduleEnabled
+    setSaved(false)
     try {
-      await updatePlatformSettings({ schedule_navigation_enabled: next })
-      setScheduleEnabled(next)
+      await updatePlatformSettings(patch)
+      setSettings((prev) => (prev ? { ...prev, ...patch } : prev))
+      setSaved(true)
     } catch (e) {
       setError(t('admin.platform.saveFailed', { msg: e instanceof Error ? e.message : String(e) }))
     }
-    setSaving(false)
+    setBusy(false)
+  }
+
+  const PRICE_FIELDS = [
+    { key: 'single', label: 'admin.platform.singleCost' },
+    { key: 'zip', label: 'admin.platform.zipCostPerImage' },
+    { key: 'package', label: 'admin.platform.packageCost' },
+  ] as const
+
+  const intOk = (s: string) => /^\d+$/.test(s) && Number(s) >= 0 && Number(s) <= 1000000
+
+  const savePrices = async () => {
+    if (!PRICE_FIELDS.every((f) => intOk(prices[f.key]))) {
+      setError(t('admin.platform.invalidPrice'))
+      return
+    }
+    await apply({
+      single_image_download_cost: Number(prices.single),
+      zip_download_cost_per_image: Number(prices.zip),
+      package_download_cost: Number(prices.package),
+    })
+  }
+
+  if (settings === null) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>{t('admin.platform.title')}</CardTitle>
+        </CardHeader>
+        <CardContent className="py-12">
+          {error ? (
+            <p className="text-xs text-destructive">{error}</p>
+          ) : (
+            <div className="flex justify-center">
+              <Spinner className="h-5 w-5" />
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    )
   }
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>{t('admin.platform.title')}</CardTitle>
+        <CardDescription>{t('admin.platform.priceHint')}</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-3">
+      <CardContent className="space-y-4">
         <div className="flex items-center justify-between gap-4">
           <div>
             <div className="text-sm font-medium">{t('admin.platform.scheduleNav')}</div>
             <p className="mt-0.5 text-xs text-muted-foreground">{t('admin.platform.scheduleNavHint')}</p>
           </div>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={scheduleEnabled === true}
-            disabled={saving || scheduleEnabled === null}
-            onClick={toggle}
-            className={cn(
-              'relative h-6 w-11 shrink-0 rounded-full transition-colors',
-              scheduleEnabled ? 'bg-primary' : 'bg-muted-foreground/30',
-              (saving || scheduleEnabled === null) && 'opacity-50',
-            )}
-          >
-            <span
-              className={cn(
-                'absolute top-0.5 h-5 w-5 rounded-full bg-background shadow transition-all',
-                scheduleEnabled ? 'left-[1.375rem]' : 'left-0.5',
-              )}
-            />
-          </button>
+          <AppleSwitch
+            ariaLabel={t('admin.platform.scheduleNav')}
+            checked={settings.schedule_navigation_enabled}
+            disabled={busy}
+            onChange={() => apply({ schedule_navigation_enabled: !settings.schedule_navigation_enabled })}
+          />
         </div>
+
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <div className="text-sm font-medium">{t('admin.platform.registration')}</div>
+            <p className="mt-0.5 text-xs text-muted-foreground">{t('admin.platform.registrationHint')}</p>
+          </div>
+          <AppleSwitch
+            ariaLabel={t('admin.platform.registration')}
+            checked={settings.registration_enabled}
+            disabled={busy}
+            onChange={() => apply({ registration_enabled: !settings.registration_enabled })}
+          />
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-3">
+          {PRICE_FIELDS.map((f) => (
+            <label key={f.key} className="block space-y-1">
+              <span className="text-sm font-medium">{t(f.label)}</span>
+              <Input
+                type="number"
+                min={0}
+                max={1000000}
+                step={1}
+                inputMode="numeric"
+                value={prices[f.key]}
+                disabled={busy}
+                onChange={(e) => {
+                  setPrices((p) => ({ ...p, [f.key]: e.target.value }))
+                  setError(null)
+                  setSaved(false)
+                }}
+              />
+            </label>
+          ))}
+        </div>
+
+        <div className="flex items-center gap-3">
+          <Button size="sm" disabled={busy} onClick={savePrices}>
+            {busy ? <Spinner className="mr-1 h-4 w-4" /> : null}
+            {t('admin.platform.savePrices')}
+          </Button>
+          {saved && <span className="text-xs text-muted-foreground">{t('admin.platform.saved')}</span>}
+        </div>
+
         {error && <p className="text-xs text-destructive">{error}</p>}
-        <p className="text-xs text-muted-foreground">{t('admin.platform.pc6Note')}</p>
       </CardContent>
     </Card>
   )

@@ -341,9 +341,13 @@ export const zh = {
       saveFailed: '保存失败：{msg}',
       pc6Note: '注册开关与积分价格控制将在 PC-6 加入。',
       registration: '开放注册',
+      registrationHint: '关闭后前台注册按钮保留，但提交会被服务端拒绝（403）。管理员建号不受此开关影响。',
       singleCost: '单图下载积分',
       zipCostPerImage: 'ZIP 每图积分',
       packageCost: '资源包下载积分',
+      priceHint: '非负整数（0–1000000）；改价即时生效。',
+      savePrices: '保存价格',
+      invalidPrice: '价格须为非负整数（0–1000000）',
       saved: '平台设置已保存',
     },
     misc: {

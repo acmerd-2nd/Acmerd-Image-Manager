@@ -7,7 +7,7 @@
 快速恢复上下文。每次完成实质步骤后必须更新本文件的对应标记与时间戳。
 状态标记：✅ 完成 | 🟡 进行中/待裁决 | 🔴 未开始/待 Owner | 🚫 禁止/未授权
 
-最后更新：2026-09-06（PC-4 Gate CLOSED；PC-5 Registration Gate ✅ 实现+本地沙箱 8/8 PASS 零残留；进入 PC-6）
+最后更新：2026-09-06（PC-4 CLOSED；PC-5 CLOSED；PC-6 Part A Platform Controls ✅；Part B Seed 待 Owner 在线确认）
 
 ════════════════════════════════════════════════════════════════════
 ■ 当前位置（一句话）
@@ -16,7 +16,7 @@ V1.1 PC-1 i18n ✅ + PC-2 Collection ✅ + PC-3 Schedule ✅ 完成
 （f3fd712/68b706e/9ee0821/f914bbf/90f3428；PC-2 隔离库冒烟 16/16 PASS）。
 当前：PC-4 Credits 接线 ✅ CLOSED —— 沙箱 31/2（2 FAIL=W0f 本地 Node raw 出网受限，非产品缺陷；W7 ZIP 200 反证 raw 可用）经 Owner 裁决豁免关 Gate。Step4 复核 DB 零 e2e4 残留；发现的 1 个 GitHub 孤儿 blob 已按 Owner 授权删除（f0e23399），复核仓库零孤儿、生产真图未触碰。
 当前：PC-5 Registration Gate ✅ —— Worker `POST /api/auth/register`（服务端密码校验 + gate `registration_enabled` + service_role createUser，不建会话/不回传 token）；前端 RegisterPage 改投 Worker 后复用 `signInWithPassword`（PD-1 A）。本地沙箱 8/8 PASS（含 E2E 建号→GoTrue 登录闭环），e2e5 零残留。403 disabled 分支代码级验证（未擅翻生产全局开关做运行时探测）。
-下一步 = PC-6 Platform Controls + Seed 用户（连续实施）。生产功能部署始终单独授权、绝不自动。
+下一步 = PC-6 Part B Seed 用户（demo01–08）——需 Owner 在线给邮箱规范+密码交付方式并授权一次性建生产号后执行；随后 PC-7 集成回归（STOP 终验）。生产功能部署始终单独授权、绝不自动。
 ════════════════════════════════════════════════════════════════════
 ■ 阶段总览
 ════════════════════════════════════════════════════════════════════
@@ -73,7 +73,7 @@ PC-5 Registration Gate        ✅ CLOSED（2026-09-06 本 agent；Worker gate �
     Admin 建用户不受开关影响。前台保留按钮+提示文案。
     ⚠️ 残余风险（Q4 附带裁决点）：GoTrue 公开 signup 端点可被直连绕过，
     绝对关闭需 GoTrue 侧禁用公开 signup。
-PC-6 Platform Controls+Seed   🔴 未开始
+PC-6 Platform Controls+Seed   🟡 Part A ✅（Platform Controls UI：Schedule+Registration 开关 + 3 价格，复用 /api/admin/settings，typecheck/build 绿）；Part B Seed 用户待 Owner 在线确认后一次性建号
     Admin Dashboard 控制区：Schedule 开关、Registration 开关、3 个 cost。
     写路径=Worker admin 端点（service_role update + 审计 settings.updated）。
     Seed 用户 demo01–08：一次性脚本（service_role admin API），
