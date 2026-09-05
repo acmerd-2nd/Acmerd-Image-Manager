@@ -4,6 +4,7 @@ import {
   changeUserRole,
   listAdminUsers,
   setUserDisabled,
+  updateUserCredits,
   type AdminUserSummary,
   type AdminUsersEnvelope,
 } from '@/features/admin/api'
@@ -14,6 +15,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Spinner } from '@/components/spinner'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
+import { Input } from '@/components/ui/input'
 
 const PAGE_SIZE = 20
 
@@ -38,6 +40,10 @@ export function AdminUsersPage() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [confirmTarget, setConfirmTarget] = useState<AdminUserSummary | null>(null)
+  // PC-4：credits 状态（envelope 无此字段，单独按页维护；key=userId）
+  const [creditsMap, setCreditsMap] = useState<Map<string, { balance: number; unlimited: boolean }> | null>(null)
+  const [creditEdit, setCreditEdit] = useState<{ userId: string; value: string } | null>(null)
+  const [creditBusy, setCreditBusy] = useState(false)
 
   const reload = useCallback(async (p: number) => {
     setError(null)
@@ -45,6 +51,26 @@ export function AdminUsersPage() {
       const env = await listAdminUsers({ page: p, perPage: PAGE_SIZE })
       setEnvelope(env)
       setPage(env.page)
+      // PC-4：拉取本页用户 credits（admin RLS 可读 credit_accounts；envelope 无此字段）
+      try {
+        const { supabase } = await import('@/lib/supabase/client')
+        const ids = env.users.map((u) => u.id)
+        if (ids.length > 0) {
+          const { data } = await supabase
+            .from('credit_accounts')
+            .select('user_id, balance, unlimited')
+            .in('user_id', ids)
+          const m = new Map<string, { balance: number; unlimited: boolean }>()
+          for (const row of (data ?? []) as Array<{ user_id: string; balance: string | number; unlimited: boolean }>) {
+            m.set(row.user_id, { balance: Number(row.balance), unlimited: row.unlimited })
+          }
+          setCreditsMap(m)
+        } else {
+          setCreditsMap(new Map())
+        }
+      } catch {
+        setCreditsMap(null) // 读取失败列显示 —
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     }
@@ -96,6 +122,38 @@ export function AdminUsersPage() {
       setError(e instanceof Error ? e.message : String(e))
     }
     setBusy(false)
+  }
+
+  // PC-4：Set Balance（直接设定值语义）+ Unlimited 切换
+  const onCreditSave = async (userId: string) => {
+    if (!creditEdit) return
+    const value = Number(creditEdit.value)
+    if (!Number.isFinite(value) || value < 0) {
+      setError(t('admin.users.setBalanceInvalid'))
+      return
+    }
+    setCreditBusy(true)
+    setError(null)
+    try {
+      await updateUserCredits(userId, { balance: value, reason: 'admin_set_balance' })
+      setCreditEdit(null)
+      await reload(page)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    }
+    setCreditBusy(false)
+  }
+
+  const onToggleUnlimited = async (userId: string, next: boolean) => {
+    setCreditBusy(true)
+    setError(null)
+    try {
+      await updateUserCredits(userId, { unlimited: next, reason: 'admin_toggle_unlimited' })
+      await reload(page)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    }
+    setCreditBusy(false)
   }
 
   const totalPages = Math.max(1, Math.ceil((envelope?.total ?? 0) / PAGE_SIZE))
@@ -160,6 +218,8 @@ export function AdminUsersPage() {
                 <tr className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
                   <th className="px-4 py-3 font-medium">{t('admin.usersPage.colUser')}</th>
                   <th className="px-4 py-3 font-medium">{t('admin.usersPage.colRole')}</th>
+                  <th className="px-4 py-3 font-medium">{t('admin.users.credits')}</th>
+                  <th className="px-4 py-3 font-medium">{t('admin.users.toggleUnlimited')}</th>
                   <th className="px-4 py-3 font-medium">{t('admin.usersPage.colCreated')}</th>
                   <th className="px-4 py-3 font-medium">{t('admin.usersPage.colStatus')}</th>
                   <th className="px-4 py-3 text-right font-medium">{t('admin.usersPage.colActions')}</th>
@@ -194,6 +254,51 @@ export function AdminUsersPage() {
                         <Badge variant={u.role === 'admin' ? 'default' : 'secondary'}>
                           {u.role}
                         </Badge>
+                      </td>
+                      <td className="px-4 py-3">
+                        {creditEdit?.userId === u.id ? (
+                          <div className="flex items-center gap-1">
+                            <Input
+                              className="h-8 w-24"
+                              value={creditEdit.value}
+                              autoFocus
+                              onChange={(e) => setCreditEdit({ userId: u.id, value: e.target.value })}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') onCreditSave(u.id)
+                                if (e.key === 'Escape') setCreditEdit(null)
+                              }}
+                            />
+                            <Button size="sm" disabled={creditBusy} onClick={() => onCreditSave(u.id)}>
+                              {t('common.save')}
+                            </Button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            className="text-sm tabular-nums hover:underline"
+                            title={t('admin.users.setBalance')}
+                            onClick={() =>
+                              setCreditEdit({
+                                userId: u.id,
+                                value: String(creditsMap?.get(u.id)?.balance ?? 0),
+                              })
+                            }
+                          >
+                            {creditsMap?.get(u.id) ? creditsMap.get(u.id)!.balance : '—'}
+                          </button>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <Button
+                          size="sm"
+                          variant={creditsMap?.get(u.id)?.unlimited ? 'default' : 'outline'}
+                          disabled={creditBusy || !creditsMap?.get(u.id)}
+                          onClick={() => onToggleUnlimited(u.id, !creditsMap?.get(u.id)?.unlimited)}
+                        >
+                          {creditsMap?.get(u.id)?.unlimited
+                            ? t('admin.platform.on')
+                            : t('admin.platform.off')}
+                        </Button>
                       </td>
                       <td className="px-4 py-3 text-muted-foreground">{fmtDate(u.created_at)}</td>
                       <td className="px-4 py-3">

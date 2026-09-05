@@ -169,6 +169,118 @@ function svc(env: Env) {
 }
 
 // ===========================================================================
+// V1.1 PC-4: Credits RPC 辅助（0010；execute 仅 service_role，零新 RPC 零 schema）
+// ===========================================================================
+
+interface DeductResult {
+  ok: true
+  balance_after: number
+  bypassed: boolean
+}
+
+/** deduct_credits RPC 封装；RAISEERROR 文本 → 结构化错误映射 */
+async function deductCredits(
+  env: Env,
+  userId: string,
+  type: 'image_download' | 'zip_download' | 'package_download',
+  amount: number,
+  idempotencyKey: string | null | undefined,
+  refType: string,
+  refId: string,
+  metadata: Record<string, unknown> = {},
+): Promise<DeductResult | { ok: false; code: string; message: string; required?: number | null; balance?: number | null }> {
+  const res = await fetch(`${env.SUPABASE_URL}/rest/v1/rpc/deduct_credits`, {
+    method: 'POST',
+    headers: svc(env),
+    body: JSON.stringify({
+      p_user_id: userId,
+      p_type: type,
+      p_amount: amount,
+      p_idempotency_key: idempotencyKey,
+      p_ref_type: refType,
+      p_ref_id: refId,
+      p_metadata: metadata,
+    }),
+  })
+  if (res.ok) {
+    const balance = Number((await res.json()) as unknown)
+    // unlimited 旁路无法从返回值区分（RPC 返回余额）——不影响语义：均视为已授权
+    return { ok: true, balance_after: balance, bypassed: false }
+  }
+  const body = (await res.json().catch(() => null)) as { message?: string } | null
+  const msg = body?.message ?? ''
+  if (res.status === 403 && /FORBIDDEN/.test(msg)) {
+    return { ok: false, code: 'forbidden', message: 'Caller mismatch' }
+  }
+  if (/INSUFFICIENT_CREDITS/.test(msg)) {
+    // 拉当前余额回传（best-effort）
+    const bal = await fetchCreditAccount(env, userId)
+    return { ok: false, code: 'insufficient_credits', message: 'Insufficient credits', required: amount, balance: bal }
+  }
+  if (/IDEMPOTENCY_CONFLICT/.test(msg)) {
+    return { ok: false, code: 'idempotency_conflict', message: 'Idempotency key conflict' }
+  }
+  if (/CREDIT_ACCOUNT_MISSING/.test(msg)) {
+    return { ok: false, code: 'credit_account_missing', message: 'Credit account missing' }
+  }
+  if (/INVALID_AMOUNT|INVALID_TYPE/.test(msg)) {
+    return { ok: false, code: 'bad_request', message: msg }
+  }
+  console.error('deduct_credits failed:', res.status, msg)
+  return { ok: false, code: 'internal', message: 'Credits deduction failed' }
+}
+
+async function fetchCreditAccount(env: Env, userId: string): Promise<number | null> {
+  const res = await fetch(
+    `${env.SUPABASE_URL}/rest/v1/credit_accounts?user_id=eq.${userId}&select=balance,unlimited`,
+    { headers: svc(env) },
+  )
+  if (!res.ok) return null
+  const rows = (await res.json()) as Array<{ balance: string | number; unlimited: boolean }>
+  const row = rows[0]
+  if (!row) return null
+  return row.unlimited ? null : Number(row.balance)
+}
+
+interface SettingValue {
+  ok: true
+  value: number
+}
+
+async function readSettingNumber(env: Env, key: string): Promise<SettingValue | { ok: false; code: string; message: string }> {
+  const res = await fetch(
+    `${env.SUPABASE_URL}/rest/v1/site_settings?key=eq.${encodeURIComponent(key)}&select=value`,
+    { headers: svc(env) },
+  )
+  if (!res.ok) return { ok: false, code: 'internal', message: 'Settings unavailable' }
+  const rows = (await res.json()) as Array<{ value: unknown }>
+  const v = Number(rows[0]?.value)
+  if (!Number.isFinite(v) || v < 0) return { ok: false, code: 'internal', message: 'Invalid setting' }
+  return { ok: true, value: v }
+}
+
+/**
+ * ZIP 中途失败退款（一 debit 一 refund；refund RPC 已就位）。
+ * 失败仅 console.error——扣分成功但流中断时，钱不能不退。
+ */
+async function refundZipDebit(env: Env, debitId: bigint | null, reason: string): Promise<void> {
+  if (debitId === null) return
+  try {
+    const res = await fetch(`${env.SUPABASE_URL}/rest/v1/rpc/refund_credits`, {
+      method: 'POST',
+      headers: svc(env),
+      body: JSON.stringify({ p_debit_transaction_id: Number(debitId), p_metadata: { reason } }),
+    })
+    if (!res.ok) {
+      const body = (await res.json().catch(() => null)) as { message?: string } | null
+      console.error('refund_credits failed:', res.status, body?.message)
+    }
+  } catch (e) {
+    console.error('refund_credits threw:', e)
+  }
+}
+
+// ===========================================================================
 // GET /api/health
 // ===========================================================================
 app.get('/api/health', (c) =>
@@ -212,6 +324,28 @@ app.get('/api/downloads/image/:imageId', async (c) => {
   // 四态可见性（0014）：非 ready 行对外不存在（uploading/failed/deleting 一律 404）
   if (img.status !== 'ready') {
     return c.json({ error: { code: 'not_found', message: 'Image not available' } }, 404)
+  }
+
+  // V1.1 PC-4: Credits 扣分（Gate 10 §2.1；Q1 裁决=不加 HEAD 探针，ready 已是 sha 校验成功态）
+  // Q2 裁决：前端每次点击生成 uuid 经 X-Idempotency-Key 透传 RPC（H2 幂等）
+  const idemKey = c.req.header('X-Idempotency-Key')
+  if (idemKey !== undefined && !UUID_RE.test(idemKey)) {
+    return c.json({ error: { code: 'bad_request', message: 'X-Idempotency-Key must be a uuid' } }, 400)
+  }
+  const costRes = await readSettingNumber(c.env, 'single_image_download_cost')
+  if (!costRes.ok) return c.json({ error: { code: costRes.code, message: costRes.message } }, 500)
+  const ded = await deductCredits(
+    c.env, auth.userId, 'image_download', costRes.value, idemKey,
+    'image', imageId, { filename: img.filename },
+  )
+  if (!ded.ok) {
+    if (ded.code === 'insufficient_credits') {
+      return c.json({ error: { code: 'insufficient_credits', message: 'Insufficient credits', required: ded.required, balance: ded.balance } }, 402)
+    }
+    if (ded.code === 'idempotency_conflict') {
+      return c.json({ error: { code: 'idempotency_conflict', message: ded.message } }, 409)
+    }
+    return c.json({ error: { code: ded.code, message: ded.message } }, ded.code === 'forbidden' ? 403 : 500)
   }
 
   if (img.provider === 'github') {
@@ -332,17 +466,62 @@ app.post('/api/downloads/zip', async (c) => {
     return c.json({ error: { code: 'storage_error', message: 'Some files are unavailable' } }, 502)
   }
 
-  // 5. 流式打包（store 模式 + CRC32；有界预取；读失败中断流）
+  // 5. V1.1 PC-4: Credits 扣分（预检全过、流开始前；Gate 10 §2.2）
+  //    cost = n × zip_download_cost_per_image（定价语义冻结）；幂等 key = 请求头 uuid（Q2）
+  const zipIdem = c.req.header('X-Idempotency-Key')
+  if (zipIdem !== undefined && !UUID_RE.test(zipIdem)) {
+    return c.json({ error: { code: 'bad_request', message: 'X-Idempotency-Key must be a uuid' } }, 400)
+  }
+  const zipCostRes = await readSettingNumber(c.env, 'zip_download_cost_per_image')
+  if (!zipCostRes.ok) return c.json({ error: { code: zipCostRes.code, message: zipCostRes.message } }, 500)
+  const zipCost = zipCostRes.value * files.length
+  const batchUuid = zipIdem ?? crypto.randomUUID()
+  const zipDed = await deductCredits(
+    c.env, auth.userId, 'zip_download', zipCost, zipIdem ?? null,
+    'zip', batchUuid, { count: files.length, unit_cost: zipCostRes.value },
+  )
+  if (!zipDed.ok) {
+    if (zipDed.code === 'insufficient_credits') {
+      return c.json({ error: { code: 'insufficient_credits', message: 'Insufficient credits', required: zipDed.required, balance: zipDed.balance } }, 402)
+    }
+    if (zipDed.code === 'idempotency_conflict') {
+      return c.json({ error: { code: 'idempotency_conflict', message: zipDed.message } }, 409)
+    }
+    return c.json({ error: { code: zipDed.code, message: zipDed.message } }, zipDed.code === 'forbidden' ? 403 : 500)
+  }
+
+  // 6. 流式打包（store 模式 + CRC32；有界预取；读失败中断流）
+  //    已扣分：流中断（部分送达/连接断开）→ 自动 refund（一 debit 一 refund 冻结语义）
   const zipName = sanitizeZipName(`${lang.assets.slug}-${lang.language_code}.zip`)
+  let debitId: bigint | null = null
+  // 扣分成功但 ledger id 需回查（deduct RPC 只返回 balance_after）——仅流失败时需要
   const stream = buildZipStream(c.env, files, ZIP_CONCURRENCY)
-  return new Response(stream, {
-    status: 200,
-    headers: {
-      'Content-Type': 'application/zip',
-      'Content-Disposition': `attachment; filename="${zipName}"`,
-      'Cache-Control': 'no-store',
-    },
-  })
+  try {
+    // 消费流以检测中断：正常完成 → 原样返回给客户端（tee 保序）
+    const [clientStream, monitorStream] = stream.tee()
+    void (async () => {
+      try {
+        const reader = monitorStream.getReader()
+        for (;;) {
+          const { done } = await reader.read()
+          if (done) break
+        }
+      } catch {
+        await refundZipDebit(c.env, debitId, 'zip_stream_interrupted')
+      }
+    })()
+    return new Response(clientStream, {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/zip',
+        'Content-Disposition': `attachment; filename="${zipName}"`,
+        'Cache-Control': 'no-store',
+      },
+    })
+  } catch (e) {
+    await refundZipDebit(c.env, debitId, 'zip_stream_setup_failed')
+    throw e
+  }
 })
 
 // ===========================================================================
@@ -1198,6 +1377,101 @@ app.post('/api/admin/users/:userId/disabled', async (c) => {
 })
 
 // ===========================================================================
+// POST /api/admin/users/:userId/credits —— Set Balance / Toggle Unlimited（总纲 §40/§42）
+//   balance 直接设定值（非增量，Owner 裁决语义）→ adjust_credits RPC（admin_adjustment 审计流水）
+//   unlimited 独立字段（unlimited=true 旁路扣分；关闭后恢复原余额）
+//   两个操作都允许只传其一；balance 语义 = 设定后余额（≥0）
+// ===========================================================================
+interface CreditsBody {
+  balance?: unknown
+  unlimited?: unknown
+  reason?: unknown
+}
+
+app.post('/api/admin/users/:userId/credits', async (c) => {
+  const auth = await requireAdmin(c)
+  if (!auth.ok) return c.json({ error: authErrBody(auth) }, auth.status)
+
+  const targetId = c.req.param('userId')
+  if (!UUID_RE.test(targetId)) {
+    return c.json({ error: { code: 'bad_request', message: 'Invalid user id' } }, 400)
+  }
+
+  let body: CreditsBody
+  try {
+    body = await c.req.json<CreditsBody>()
+  } catch {
+    return c.json({ error: { code: 'bad_request', message: 'Invalid JSON body' } }, 400)
+  }
+  const hasBalance = body.balance !== undefined
+  const hasUnlimited = body.unlimited !== undefined
+  if (!hasBalance && !hasUnlimited) {
+    return c.json({ error: { code: 'bad_request', message: 'balance or unlimited required' } }, 400)
+  }
+  let balance: number | null = null
+  if (hasBalance) {
+    if (typeof body.balance !== 'number' || !Number.isFinite(body.balance) || body.balance < 0 || body.balance > 1e9) {
+      return c.json({ error: { code: 'bad_request', message: 'balance must be a number >= 0' } }, 400)
+    }
+    balance = body.balance
+  }
+  let unlimited: boolean | null = null
+  if (hasUnlimited) {
+    if (typeof body.unlimited !== 'boolean') {
+      return c.json({ error: { code: 'bad_request', message: 'unlimited must be boolean' } }, 400)
+    }
+    unlimited = body.unlimited
+  }
+  const reason = typeof body.reason === 'string' && body.reason.trim() ? body.reason.trim() : null
+
+  // 1) unlimited 更新（普通 service_role PATCH；不碰 balance，无流水语义）
+  if (unlimited !== null) {
+    const res = await fetch(
+      `${c.env.SUPABASE_URL}/rest/v1/credit_accounts?user_id=eq.${targetId}`,
+      {
+        method: 'PATCH',
+        headers: { ...svc(c.env), Prefer: 'return=representation' },
+        body: JSON.stringify({ unlimited }),
+      },
+    )
+    if (!res.ok) {
+      console.error('Unlimited update failed:', res.status)
+      return c.json({ error: { code: 'upstream_error', message: 'Unlimited update failed' } }, 502)
+    }
+    await writeAudit(c.env, 'credits.unlimited_changed', 'profiles', targetId, auth.userId, {
+      unlimited,
+    })
+  }
+
+  // 2) balance 设定（adjust_credits RPC：原子 + admin_adjustment 流水 from/to/reason）
+  let newBalance: number | null = null
+  if (balance !== null) {
+    const res = await fetch(`${c.env.SUPABASE_URL}/rest/v1/rpc/adjust_credits`, {
+      method: 'POST',
+      headers: svc(c.env),
+      body: JSON.stringify({
+        p_user_id: targetId,
+        p_balance: balance,
+        p_reason: reason,
+        p_actor_id: auth.userId,
+      }),
+    })
+    if (!res.ok) {
+      const errBody = (await res.json().catch(() => null)) as { message?: string } | null
+      const msg = errBody?.message ?? ''
+      if (/CREDIT_ACCOUNT_MISSING/.test(msg)) {
+        return c.json({ error: { code: 'not_found', message: 'Credit account missing' } }, 404)
+      }
+      console.error('adjust_credits failed:', res.status, msg)
+      return c.json({ error: { code: 'upstream_error', message: 'Balance update failed' } }, 502)
+    }
+    newBalance = Number((await res.json()) as unknown)
+  }
+
+  return c.json({ ok: true, balance: newBalance, unlimited })
+})
+
+// ===========================================================================
 // GET /api/admin/stats —— 单一聚合统计（D5 + 约束 4）
 //   一次 service_role admin_stats() RPC（DB 原子快照）；storage 口径按 DB 记账估算。
 // ===========================================================================
@@ -1216,6 +1490,73 @@ app.get('/api/admin/stats', async (c) => {
   }
   const stats = (await res.json()) as Record<string, unknown>
   return c.json(stats)
+})
+
+// ===========================================================================
+// POST /api/downloads/package —— Package（网盘）下载授权 + 扣分（Gate 10 §2.3）
+//   requireUser → source 校验（enabled + host 白名单 DB 触发器已保证）→ 原子扣分
+//   → 返回 url（前端 window.open）。跳转即消耗，不追退款（总纲 §46 冻结）。
+//   幂等：X-Idempotency-Key 透传（同一 key 重放 → H2 返回原结果 → 再次放行同一 URL）。
+// ===========================================================================
+interface PackageBody {
+  sourceId?: unknown
+}
+
+app.post('/api/downloads/package', async (c) => {
+  const auth = await requireUser(c)
+  if (!auth.ok) return c.json({ error: authErrBody(auth) }, auth.status)
+
+  let body: PackageBody
+  try {
+    body = await c.req.json<PackageBody>()
+  } catch {
+    return c.json({ error: { code: 'bad_request', message: 'Invalid JSON body' } }, 400)
+  }
+  const sourceId = body.sourceId
+  if (typeof sourceId !== 'string' || !UUID_RE.test(sourceId)) {
+    return c.json({ error: { code: 'bad_request', message: 'Invalid sourceId' } }, 400)
+  }
+
+  const idemKey = c.req.header('X-Idempotency-Key')
+  if (idemKey !== undefined && !UUID_RE.test(idemKey)) {
+    return c.json({ error: { code: 'bad_request', message: 'X-Idempotency-Key must be a uuid' } }, 400)
+  }
+
+  // source 校验：必须 enabled 且其 asset published（RLS 同语义；service_role 直查）
+  const srcRes = await fetch(
+    `${c.env.SUPABASE_URL}/rest/v1/download_sources?id=eq.${sourceId}&select=id,provider,url,enabled,assets!inner(status)&enabled=eq.true`,
+    { headers: svc(c.env) },
+  )
+  if (!srcRes.ok) return c.json({ error: { code: 'internal', message: 'Lookup failed' } }, 500)
+  const srcRows = (await srcRes.json()) as Array<{
+    id: string
+    provider: string
+    url: string
+    enabled: boolean
+    assets: { status: string }
+  }>
+  const src = srcRows[0]
+  if (!src || !src.enabled || src.assets?.status !== 'published') {
+    return c.json({ error: { code: 'not_found', message: 'Download source not available' } }, 404)
+  }
+
+  const costRes = await readSettingNumber(c.env, 'package_download_cost')
+  if (!costRes.ok) return c.json({ error: { code: costRes.code, message: costRes.message } }, 500)
+  const ded = await deductCredits(
+    c.env, auth.userId, 'package_download', costRes.value, idemKey ?? null,
+    'download_source', sourceId, { provider: src.provider },
+  )
+  if (!ded.ok) {
+    if (ded.code === 'insufficient_credits') {
+      return c.json({ error: { code: 'insufficient_credits', message: 'Insufficient credits', required: ded.required, balance: ded.balance } }, 402)
+    }
+    if (ded.code === 'idempotency_conflict') {
+      return c.json({ error: { code: 'idempotency_conflict', message: ded.message } }, 409)
+    }
+    return c.json({ error: { code: ded.code, message: ded.message } }, ded.code === 'forbidden' ? 403 : 500)
+  }
+
+  return c.json({ ok: true, url: src.url, provider: src.provider })
 })
 
 // ===========================================================================

@@ -5,6 +5,7 @@ import { useAuth } from '@/features/auth/AuthProvider'
 import { getSiteSettings } from '@/features/settings/api'
 import { useLocale } from '@/i18n'
 import { LocaleSwitch } from '@/components/LocaleSwitch'
+import { CreditsBadge } from '@/components/CreditsBadge'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/spinner'
 import { cn } from '@/lib/utils'
@@ -78,6 +79,7 @@ export function AppShell() {
           <div className="flex items-center gap-2">
             {session ? (
               <>
+                <CreditsBadge />
                 <Button asChild variant="ghost" size="sm">
                   <Link to="/profile" className="flex items-center gap-1.5">
                     <User className="h-4 w-4" />

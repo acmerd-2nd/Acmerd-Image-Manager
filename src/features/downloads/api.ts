@@ -34,11 +34,19 @@ function filenameFromResponse(res: Response, fallback: string): string {
 export class DownloadError extends Error {
   status: number
   code: string
-  constructor(message: string, status: number, code = 'error') {
+  /** 402 insufficient_credits 时附带（余额预判与提示用） */
+  detail?: { required?: number; balance?: number | null }
+  constructor(message: string, status: number, code = 'error', detail?: { required?: number; balance?: number | null }) {
     super(message)
     this.status = status
     this.code = code
+    this.detail = detail
   }
+}
+
+/** Q2 裁决：每次点击生成 uuid，经 X-Idempotency-Key 透传 RPC（H2 幂等协议） */
+function newIdempotencyKey(): string {
+  return crypto.randomUUID()
 }
 
 /** 单图下载：GET Worker → 跟随 302 → blob → 另存。guest 得 401。 */
@@ -47,9 +55,16 @@ export async function downloadSingleImage(imageId: string, fallbackName: string)
   if (!jwt) throw new DownloadError(t('download.needLogin'), 401, 'unauthorized')
 
   const res = await fetch(`/api/downloads/image/${imageId}`, {
-    headers: { Authorization: `Bearer ${jwt}` },
+    headers: { Authorization: `Bearer ${jwt}`, 'X-Idempotency-Key': newIdempotencyKey() },
   })
   if (res.status === 401) throw new DownloadError(t('download.needLogin'), 401, 'unauthorized')
+  if (res.status === 402) {
+    const body = (await res.json().catch(() => null)) as { error?: { required?: number; balance?: number } } | null
+    throw new DownloadError(t('credits.insufficient'), 402, 'insufficient_credits', {
+      required: body?.error?.required,
+      balance: body?.error?.balance,
+    })
+  }
   if (res.status === 403) {
     const body = (await res.json().catch(() => null)) as { error?: { code?: string } } | null
     if (body?.error?.code === 'account_disabled') {
@@ -75,10 +90,21 @@ export async function downloadZip(
 
   const res = await fetch('/api/downloads/zip', {
     method: 'POST',
-    headers: { Authorization: `Bearer ${jwt}`, 'Content-Type': 'application/json' },
+    headers: {
+      Authorization: `Bearer ${jwt}`,
+      'Content-Type': 'application/json',
+      'X-Idempotency-Key': newIdempotencyKey(),
+    },
     body: JSON.stringify({ assetLanguageId, imageIds }),
   })
   if (res.status === 401) throw new DownloadError(t('download.needLogin'), 401, 'unauthorized')
+  if (res.status === 402) {
+    const body = (await res.json().catch(() => null)) as { error?: { required?: number; balance?: number } } | null
+    throw new DownloadError(t('credits.insufficient'), 402, 'insufficient_credits', {
+      required: body?.error?.required,
+      balance: body?.error?.balance,
+    })
+  }
   if (res.status === 403) {
     const body = (await res.json().catch(() => null)) as { error?: { code?: string } } | null
     if (body?.error?.code === 'account_disabled') {
@@ -99,6 +125,50 @@ export async function downloadZip(
 
   const blob = await res.blob()
   saveBlob(blob, filenameFromResponse(res, fallbackName))
+}
+
+/** PC-4：当前用户积分余额（credit_accounts RLS select own；null = unlimited） */
+export async function fetchMyCredits(): Promise<{ balance: number; unlimited: boolean } | null> {
+  const { data, error } = await supabase
+    .from('credit_accounts')
+    .select('balance, unlimited')
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  if (!data) return null
+  return { balance: Number(data.balance), unlimited: data.unlimited === true }
+}
+
+/** PC-4：Package 跳转前经 Worker 原子扣分；返回 url 供 window.open（跳转即消耗，不退款） */
+export async function authorizePackageDownload(sourceId: string): Promise<{ url: string; provider: string }> {
+  const jwt = await getJwt()
+  if (!jwt) throw new DownloadError(t('download.needLogin'), 401, 'unauthorized')
+  const res = await fetch('/api/downloads/package', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${jwt}`,
+      'Content-Type': 'application/json',
+      'X-Idempotency-Key': newIdempotencyKey(),
+    },
+    body: JSON.stringify({ sourceId }),
+  })
+  if (res.status === 401) throw new DownloadError(t('download.needLogin'), 401, 'unauthorized')
+  if (res.status === 402) {
+    const body = (await res.json().catch(() => null)) as { error?: { required?: number; balance?: number } } | null
+    throw new DownloadError(t('credits.insufficient'), 402, 'insufficient_credits', {
+      required: body?.error?.required,
+      balance: body?.error?.balance,
+    })
+  }
+  if (res.status === 404) throw new DownloadError(t('download.imageUnavailable'), 404, 'not_found')
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { error?: { code?: string; message?: string } } | null
+    if (body?.error?.code === 'idempotency_conflict') {
+      throw new DownloadError(body.error.message ?? 'Conflict', 409, 'idempotency_conflict')
+    }
+    throw new DownloadError(t('download.downloadFailed'), res.status, 'error')
+  }
+  const payload = (await res.json()) as { ok: boolean; url: string; provider: string }
+  return { url: payload.url, provider: payload.provider }
 }
 
 export interface DownloadSourceRow {

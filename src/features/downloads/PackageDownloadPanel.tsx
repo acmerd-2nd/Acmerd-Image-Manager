@@ -1,6 +1,12 @@
 import { useEffect, useState } from 'react'
 import { Download, HardDrive } from 'lucide-react'
-import { fetchDownloadSources, type DownloadSourceRow } from '@/features/downloads/api'
+import {
+  fetchDownloadSources,
+  authorizePackageDownload,
+  DownloadError,
+  type DownloadSourceRow,
+} from '@/features/downloads/api'
+import { getSiteSettings } from '@/features/settings/api'
 import { isSafePackageUrl } from '@/lib/validators'
 import { useLocale } from '@/i18n'
 import { useAuth } from '@/features/auth/AuthProvider'
@@ -26,6 +32,9 @@ export function PackageDownloadPanel({ assetId }: { assetId: string }) {
   const { t } = useLocale()
   const [sources, setSources] = useState<DownloadSourceRow[] | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [cost, setCost] = useState<number | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   // 仅在登录态拉取（guest 由 RLS 返回 0 行，这里也直接不请求，显示登录引导）
   useEffect(() => {
@@ -37,6 +46,13 @@ export function PackageDownloadPanel({ assetId }: { assetId: string }) {
     fetchDownloadSources(assetId).then((rows) => {
       if (!cancelled) setSources(rows.filter((r) => isSafePackageUrl(r.url)))
     })
+    getSiteSettings()
+      .then((st) => {
+        if (!cancelled) setCost(st.package_download_cost)
+      })
+      .catch(() => {
+        if (!cancelled) setCost(15)
+      })
     return () => {
       cancelled = true
     }
@@ -44,6 +60,23 @@ export function PackageDownloadPanel({ assetId }: { assetId: string }) {
 
   const providerLabel = (provider: string) =>
     provider === 'quark' ? t('download.packageQuark') : provider === 'baidu' ? t('download.packageBaidu') : provider
+
+  /** PC-4：先经 Worker 原子扣分授权，成功后打开网盘链接；失败显示 402 余额提示 */
+  const authorizeAndOpen = async (sourceId: string, url: string) => {
+    setBusy(true)
+    setError(null)
+    try {
+      await authorizePackageDownload(sourceId)
+      openExternal(url)
+    } catch (e) {
+      if (e instanceof DownloadError && e.code === 'insufficient_credits') {
+        setError(t('credits.insufficient'))
+      } else {
+        setError(e instanceof Error ? e.message : t('download.downloadFailed'))
+      }
+    }
+    setBusy(false)
+  }
 
   // guest：不显示网盘链接，仅登录引导
   if (!session) {
@@ -66,22 +99,31 @@ export function PackageDownloadPanel({ assetId }: { assetId: string }) {
   // n = 0 → 整块隐藏
   if (sources.length === 0) return null
 
-  // n = 1 → 直接跳转
+  // n = 1 → 直接跳转（先扣分授权）
   if (sources.length === 1) {
     return (
-      <Button className="w-full" onClick={() => openExternal(sources[0].url)}>
-        <Download className="mr-2 h-4 w-4" />
-        {t('download.packageTitle')}
-      </Button>
+      <div className="space-y-1">
+        <Button className="w-full" disabled={busy} onClick={() => authorizeAndOpen(sources[0].id, sources[0].url)}>
+          <Download className="mr-2 h-4 w-4" />
+          {t('download.packageTitle')}
+          {cost !== null && (
+            <span className="ml-2 text-xs opacity-80">{t('credits.packageCost', { n: cost })}</span>
+          )}
+        </Button>
+        {error && <p className="text-xs text-destructive">{error}</p>}
+      </div>
     )
   }
 
   // n = 2 → 选择器
   return (
     <div className="relative">
-      <Button className="w-full" onClick={() => setMenuOpen((v) => !v)}>
+      <Button className="w-full" disabled={busy} onClick={() => setMenuOpen((v) => !v)}>
         <Download className="mr-2 h-4 w-4" />
         {t('download.packageTitle')}
+        {cost !== null && (
+          <span className="ml-2 text-xs opacity-80">{t('credits.packageCost', { n: cost })}</span>
+        )}
       </Button>
       {menuOpen && (
         <div className="absolute z-10 mt-1 w-full rounded-lg border bg-background p-1 shadow-lg">
@@ -93,12 +135,13 @@ export function PackageDownloadPanel({ assetId }: { assetId: string }) {
               className="block w-full rounded px-3 py-2 text-left text-sm hover:bg-accent"
               onClick={() => {
                 setMenuOpen(false)
-                openExternal(s.url)
+                authorizeAndOpen(s.id, s.url)
               }}
             >
               {providerLabel(s.provider)}
             </button>
           ))}
+          {error && <p className="px-3 py-1.5 text-xs text-destructive">{error}</p>}
         </div>
       )}
     </div>

@@ -169,3 +169,14 @@ export async function updatePlatformSettings(
     body: JSON.stringify({ settings: patch }),
   })
 }
+
+/** PC-4：Admin 设定用户余额/无限积分（balance=设定值语义；unlimited 可只传其一） */
+export async function updateUserCredits(
+  userId: string,
+  patch: { balance?: number; unlimited?: boolean; reason?: string },
+): Promise<void> {
+  await request<{ ok: boolean }>(`/api/admin/users/${userId}/credits`, {
+    method: 'POST',
+    body: JSON.stringify(patch),
+  })
+}

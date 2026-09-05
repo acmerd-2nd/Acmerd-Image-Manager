@@ -327,6 +327,7 @@ export const zh = {
       originSeed: '预置',
       originRegistered: '注册',
       setBalance: '设定余额',
+      setBalanceInvalid: '余额必须是非负数字',
       toggleUnlimited: '无限积分',
       lastAdminProtect: '最后一名管理员不可降级或禁用',
     },

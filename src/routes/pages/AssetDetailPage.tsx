@@ -26,6 +26,7 @@ import {
   downloadZip,
 } from '@/features/downloads/api'
 import { PackageDownloadPanel } from '@/features/downloads/PackageDownloadPanel'
+import { getSiteSettings } from '@/features/settings/api'
 import { Lightbox } from '@/components/Lightbox'
 import { useToast } from '@/components/ToastProvider'
 import { Button } from '@/components/ui/button'
@@ -54,6 +55,22 @@ export function AssetDetailPage() {
 
   const [imagesByLang, setImagesByLang] = useState<Record<string, ImageRow[]>>({})
   const [activeLang, setActiveLang] = useState<LanguageCode | null>(null)
+
+  // PC-4：下载成本透出（settings 读，不写死；总纲 §58）
+  const [costs, setCosts] = useState<{ single: number; zipPer: number } | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    getSiteSettings()
+      .then((s) => {
+        if (!cancelled) setCosts({ single: s.single_image_download_cost, zipPer: s.zip_download_cost_per_image })
+      })
+      .catch(() => {
+        if (!cancelled) setCosts({ single: 1, zipPer: 1 })
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   // 下载 UI 状态
   const [selectionMode, setSelectionMode] = useState(false)
@@ -335,7 +352,7 @@ export function AssetDetailPage() {
                         {isSelected && <Check className="h-4 w-4" />}
                       </button>
                     )}
-                    {/* 单图下载（非选择模式时 hover 显示） */}
+                    {/* 单图下载（非选择模式时 hover 显示；成本透出 总纲 §59） */}
                     {!selectionMode && (
                       <button
                         type="button"
@@ -373,6 +390,11 @@ export function AssetDetailPage() {
           <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-3 sm:px-6">
             <span className="text-sm font-medium">
               {t('download.zipSelected', { n: selected.size })}
+            {costs && (
+              <span className="ml-2 text-muted-foreground">
+                · {t('credits.zipCost', { n: selected.size * costs.zipPer })}
+              </span>
+            )}
               {selected.size >= MAX_ZIP && (
                 <span className="ml-2 text-xs text-muted-foreground">
                   {t('download.zipLimitReached', { max: MAX_ZIP })}

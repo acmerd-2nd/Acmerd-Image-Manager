@@ -325,6 +325,7 @@ export const en: Dictionary = {
       originSeed: 'Seed',
       originRegistered: 'Registered',
       setBalance: 'Set balance',
+      setBalanceInvalid: 'Balance must be a non-negative number',
       toggleUnlimited: 'Unlimited credits',
       lastAdminProtect: 'The last admin cannot be demoted or disabled',
     },
