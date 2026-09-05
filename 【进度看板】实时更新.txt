@@ -1,0 +1,150 @@
+╔══════════════════════════════════════════════════════════════════╗
+║          ACMERD IMAGE MANAGER — 进度看板（实时更新）              ║
+╚══════════════════════════════════════════════════════════════════╝
+
+【本文件用途】
+记录现阶段任务目标与实时进度，供后续 Agent 接手或本 Agent 再次接手时
+快速恢复上下文。每次完成实质步骤后必须更新本文件的对应标记与时间戳。
+状态标记：✅ 完成 | 🟡 进行中/待裁决 | 🔴 未开始/待 Owner | 🚫 禁止/未授权
+
+最后更新：2026-09-05 10:15 (GMT+8)
+
+════════════════════════════════════════════════════════════════════
+■ 当前位置（一句话）
+════════════════════════════════════════════════════════════════════
+V1.1 Phase C Design Gate 已提交（docs/v1.1/10-phase-c-design-gate.md，
+commit 124f3c1），🔴 PENDING OWNER REVIEW。Gate 批准前零代码、零生产库、
+零 seed 用户。批准后按 PC-1→PC-7 顺序执行，PC-4 完成后 STOP。
+
+════════════════════════════════════════════════════════════════════
+■ 阶段总览
+════════════════════════════════════════════════════════════════════
+V1.0.0 生产发布           ✅ CLOSED（frozen release，tag 2065d44）
+V1.1 Design Gate Rev B    ✅ APPROVED（01，Owner 2026-09-04）
+V1.1 Phase A（数据层）    ✅ CLOSED（0009–0013，冒烟 48/48）
+V1.1 Phase B Design Gate  ✅ APPROVED（04，两处必改已并入）
+V1.1 PB-1（GitHub 仓储）  ✅ CLOSED（Gate Closure 见 09 号文档）
+V1.1 Stage 1（复制迁移）  ✅ EXECUTED + VERIFIED（生产 1 图已上 GitHub）
+V1.1 Stage 2（切换 github）✅ EXECUTED + 线上验证（6/6 复核 PASS）
+V1.1 Phase C Design Gate  🟡 PENDING OWNER REVIEW（10 号文档）
+V1.1 Phase C 实施         🔴 未开始（等 Gate 批准）
+V1.1 Phase D（迁移/回归） 🔴 未开始
+
+════════════════════════════════════════════════════════════════════
+■ 生产形态快照（2026-09-05 起）
+════════════════════════════════════════════════════════════════════
+- Supabase 迁移 0001–0014 全 applied
+- 生产图 tu1.jpg：provider=github，source_path=assets/5d5449a9-a48c-4123-
+  973b-5e1c37b3a431/en/tu1.jpg，source_sha=7a20f0e8…，status=ready
+- GitHub 图仓库：acmerd-2nd/-Photo-Acmerd-Image-Manager（必须保持 public！
+  切 private 会导致 raw 302 变 404）
+- Worker 线上：image.acmerd.com（GitHub 端点 + sweeper cron */10 已部署）
+- Supabase Storage 原件 01-15822bee.jpg 完整保留
+- 复核脚本：scripts/v11-post-closure-verify.mjs（6 项，read-only，随时重跑）
+
+════════════════════════════════════════════════════════════════════
+■ Phase C 任务目标明细（等 Owner 批准 Gate 后执行）
+════════════════════════════════════════════════════════════════════
+Gate 文档：docs/v1.1/10-phase-c-design-gate.md（含完整设计与 Q1–Q5）
+
+PC-1 i18n 全量接线            🔴 未开始
+    所有文案→i18n key；默认 zh-CN；左上角苹果风中英 Switch；
+    uiLocale(localStorage acmerd.ui.locale) 与 assetLang(?lang=) 完全隔离；
+    切换不刷新页面。不引重型 i18n 框架。
+PC-2 Collection UI            🔴 未开始
+    首页 Collection 卡片 → /collection/:slug → Asset 列表；
+    Admin CRUD + sort_order 排序 + 归档 + 设封面。
+    （RLS 已就位：0012）
+PC-3 Schedule                 🔴 未开始
+    导航"排期"由 site_settings.schedule_navigation_enabled 控制显隐
+    （anon 可读已就位：0011）；页面 Coming Soon；Admin 开关。
+PC-4 Credits 下载扣分接线     🔴 未开始  ← 最高风险项，完成后 STOP
+    Worker 现状 0 处调用 credits RPC（grep 证实）。
+    单图：登录门→published+ready 校验→RPC 扣分→302 raw。
+    ZIP：预检(含 raw HEAD)→扣 n×zip 单价→打包；中途失败自动 refund。
+    Package：跳转即消耗不退款（冻结语义）。
+    全部复用 0010 RPC（H2 幂等 + unlimited 旁路），零新 RPC 零 schema。
+    验证：隔离库+沙箱全矩阵 PASS → STOP → Owner 检查 → 生产部署单独授权。
+    前端：右上角余额 ◉ 42 / ♾；按钮成本透出；不足提示 credits.insufficient。
+PC-5 Registration Gate        🔴 未开始
+    新端点 POST /api/auth/register：check registration_enabled → false 403
+    registration_disabled；true → service_role GoTrue admin.createUser。
+    Admin 建用户不受开关影响。前台保留按钮+提示文案。
+    ⚠️ 残余风险（Q4 附带裁决点）：GoTrue 公开 signup 端点可被直连绕过，
+    绝对关闭需 GoTrue 侧禁用公开 signup。
+PC-6 Platform Controls+Seed   🔴 未开始
+    Admin Dashboard 控制区：Schedule 开关、Registration 开关、3 个 cost。
+    写路径=Worker admin 端点（service_role update + 审计 settings.updated）。
+    Seed 用户 demo01–08：一次性脚本（service_role admin API），
+    account_origin='seed'，credits=0，unlimited=false。
+    🚫 凭据绝不入 Git/chat/文档/记忆——随机密码只写本地一次性文件交 Owner。
+PC-7 集成回归                 🔴 未开始
+    V1.1 全量回归矩阵（含 Phase A 48/48 与 PB e2e 复跑 + zh 全页面走查）。
+    完成后 STOP → Owner 终验。
+
+─── Q1–Q5 待 Owner 裁决（Gate §8）────────────────────────────────
+Q1 单图 302 前是否加 raw HEAD 探针     建议：不加（ready 已含 sha 校验）
+Q2 下载幂等 key 策略                   建议：前端每次点击 uuid 透传 RPC
+Q3 collection_id=null 的 Asset 公域    建议：不进公域，仅 Admin 可见
+Q4 注册邮箱确认                        建议：沿用 GoTrue 现状配置
+Q5 PC-4 验证环境                       建议：沙箱全矩阵→STOP→单独授权
+
+════════════════════════════════════════════════════════════════════
+■ 冻结不变量红线（违反 = 事故，详见 01/04/09 号文档）
+════════════════════════════════════════════════════════════════════
+1. GitHub path 冻结：assets/{asset-uuid}/{langCode}/{filename}，不用 slug
+2. images.status 四态 uploading/ready/failed/deleting；公开查询只看 ready
+3. GitHub write lease：resource_key=al:{asset_language_id}，TTL 120s，
+   Supabase 持久化；⚠️ 长期规则：Contents API 409/422 冲突重试只是异常
+   恢复，绝不可替代 lease
+4. SHA 校验：GitHub response sha == 本地 git blob sha 才进 ready（不信任裸 2xx）
+5. 删除：ready→deleting→GitHub delete→success/404→DB delete；失败留 deleting
+6. makeImageUrl 是唯一 URL 出口；GITHUB_TOKEN 仅 Worker Secret；无图片代理；
+   VITE_GITHUB_IMAGE_CDN_BASE 仅留空口
+7. Credits：H2 幂等三态 + C6 无负余额 + 一 debit 一 refund；
+   定价语义冻结 Single=单价 / ZIP=N×单张价 / Package=固定
+8. 扣分只在服务端原子完成，前端零扣分路径
+9. /asset/:slug 永久兼容；V1.0 语义不推翻
+10. Storage cleanup 🚫 从未授权——Supabase 原件不得删除
+
+════════════════════════════════════════════════════════════════════
+■ 立即待办 / 阻塞项
+════════════════════════════════════════════════════════════════════
+🟡 git push：远端 main 停在 5e74187（V1.0 冻结提交），本地领先 9 个提交
+   （71bb161…124f3c1，含 Phase A/B 全部 + 09 澄清 + 10 Gate）。
+   夜间 GitHub 出口两次挂死（前台 120s 超时 / 后台静默挂起），
+   已改用 lowSpeed 自 abort + 3 次重试后台重推中（2026-09-05 10:15）。
+   成功标志：git fetch 后 FETCH_HEAD == 124f3c1。
+   ⚠️ 本仓库无 upstream tracking，git status 不显示 ahead——
+   必须用 git rev-parse FETCH_HEAD 对比确认。
+🔴 Phase C Gate 等待 Owner 裁决（Q1–Q5 + 总体批准）
+🚫 Storage cleanup（永久等待 Owner 单独授权）
+
+════════════════════════════════════════════════════════════════════
+■ 文档索引（docs/v1.1/）
+════════════════════════════════════════════════════════════════════
+01 V1.1 Design Gate Rev B（APPROVED）
+02 Owner 裁决记录（Phase A 收口）
+03 Phase A 报告（48/48）
+04 Phase B Design Gate（APPROVED，含 Q1–Q5 落位）
+05 PB-1 报告（含事实边界修正注记）
+05b Owner 对 PB-1 的裁决原文
+06 Stage 1 迁移报告（VERIFIED）
+07 dry-run 证据（direct 14/14 + e2e 27/27）
+08 Phase B 收口报告（迁移应用/部署/Stage 1/2 上线）
+09 事实边界澄清 + Production Evidence（PB-1 CLOSED + Stage1/2 EXECUTED）
+10 Phase C Design Gate（🟡 PENDING OWNER REVIEW）← 当前活跃文档
+
+════════════════════════════════════════════════════════════════════
+■ Agent 接手须知（工程纪律，本项目强制）
+════════════════════════════════════════════════════════════════════
+1. Gate 边界即停：每阶段/子阶段完成后 STOP 等 Owner，绝不自动推进
+2. 证据三态严格区分：Owner 已授权 / 已实际执行 / 已部署——不可混写
+   （05 号报告曾因此被打回，教训在 09/05b）
+3. 凭据红线：不出现在 chat、.env 提交、Git、文档、记忆中；只在进程内
+4. node/python 一律走 Bash（本机 PowerShell 拦截外部 exe）；
+   node 用 managed 22.22.2
+5. 生产部署/生产库变更/Stage 类操作必须 Owner 单独授权
+6. 同一文件多处修改禁止并行 Edit 调用（会互相覆盖丢单）
+7. 验证脚本读 .env；输出不得含凭据
+8. 完成实质步骤后：更新本文件 + .workbuddy/memory/ 当日日志
