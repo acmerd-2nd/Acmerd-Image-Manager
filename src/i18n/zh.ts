@@ -333,6 +333,12 @@ export const zh = {
     platform: {
       title: '平台控制',
       scheduleNav: '排期导航',
+      scheduleNavHint: '开启后前台导航显示「排期」入口（页面为 Coming Soon）。',
+      on: '开启',
+      off: '关闭',
+      saving: '保存中…',
+      saveFailed: '保存失败：{msg}',
+      pc6Note: '注册开关与积分价格控制将在 PC-6 加入。',
       registration: '开放注册',
       singleCost: '单图下载积分',
       zipCostPerImage: 'ZIP 每图积分',

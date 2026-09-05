@@ -138,3 +138,34 @@ export async function setUserDisabled(
 export async function getAdminStats(): Promise<AdminStats> {
   return request<AdminStats>('/api/admin/stats')
 }
+
+// ---------------- V1.1 PC-3/PC-6：平台设置（写仅经 Worker；公开读走 0011 anon grants） ----------------
+
+export interface PlatformSettings {
+  registration_enabled: boolean
+  schedule_navigation_enabled: boolean
+  single_image_download_cost: number
+  zip_download_cost_per_image: number
+  package_download_cost: number
+}
+
+export async function getPlatformSettings(): Promise<PlatformSettings> {
+  const payload = await request<{ ok: boolean; settings: Record<string, unknown> }>('/api/admin/settings')
+  const s = payload.settings
+  return {
+    registration_enabled: s.registration_enabled === true,
+    schedule_navigation_enabled: s.schedule_navigation_enabled === true,
+    single_image_download_cost: Number(s.single_image_download_cost ?? 1),
+    zip_download_cost_per_image: Number(s.zip_download_cost_per_image ?? 1),
+    package_download_cost: Number(s.package_download_cost ?? 15),
+  }
+}
+
+export async function updatePlatformSettings(
+  patch: Partial<PlatformSettings>,
+): Promise<void> {
+  await request<{ ok: boolean }>('/api/admin/settings', {
+    method: 'PATCH',
+    body: JSON.stringify({ settings: patch }),
+  })
+}

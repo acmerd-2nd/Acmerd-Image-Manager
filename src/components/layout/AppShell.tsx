@@ -1,7 +1,8 @@
-import { Suspense } from 'react'
-import { NavLink, Link, Outlet, useNavigate } from 'react-router-dom'
+import { Suspense, useEffect, useState } from 'react'
+import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { LogOut, User } from 'lucide-react'
 import { useAuth } from '@/features/auth/AuthProvider'
+import { getSiteSettings } from '@/features/settings/api'
 import { useLocale } from '@/i18n'
 import { LocaleSwitch } from '@/components/LocaleSwitch'
 import { Button } from '@/components/ui/button'
@@ -12,6 +13,22 @@ export function AppShell() {
   const { session, isAdmin, signOut } = useAuth()
   const navigate = useNavigate()
   const { t } = useLocale()
+  const [scheduleEnabled, setScheduleEnabled] = useState(false)
+
+  // V1.1 PC-3：排期导航显隐由 site_settings.schedule_navigation_enabled 控制（anon 可读）
+  useEffect(() => {
+    let cancelled = false
+    getSiteSettings()
+      .then((s) => {
+        if (!cancelled) setScheduleEnabled(s.schedule_navigation_enabled)
+      })
+      .catch(() => {
+        /* 读失败按隐藏处理（默认 false 语义） */
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const handleSignOut = async () => {
     await signOut()
@@ -37,6 +54,14 @@ export function AppShell() {
               <NavLink to="/search" className={({ isActive }) => cn(isActive && 'text-foreground')}>
                 {t('nav.search')}
               </NavLink>
+              {scheduleEnabled && (
+                <NavLink
+                  to="/schedule"
+                  className={({ isActive }) => cn(isActive && 'text-foreground')}
+                >
+                  {t('nav.schedule')}
+                </NavLink>
+              )}
               {isAdmin && (
                 <NavLink
                   to="/admin"

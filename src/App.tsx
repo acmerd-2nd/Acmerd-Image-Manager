@@ -17,6 +17,7 @@ const AssetDetailPage = lazy(() => import('@/routes/pages/AssetDetailPage').then
 const CollectionDetailPage = lazy(() =>
   import('@/routes/pages/CollectionDetailPage').then((m) => ({ default: m.CollectionDetailPage })),
 )
+const SchedulePage = lazy(() => import('@/routes/pages/SchedulePage').then((m) => ({ default: m.SchedulePage })))
 const ProfilePage = lazy(() => import('@/routes/pages/ProfilePage').then((m) => ({ default: m.ProfilePage })))
 
 const AdminDashboardPage = lazy(() => import('@/routes/pages/admin/AdminDashboardPage').then((m) => ({ default: m.AdminDashboardPage })))
@@ -42,6 +43,7 @@ export default function App() {
             <Route path="/search" element={<SearchPage />} />
             <Route path="/asset/:slug" element={<AssetDetailPage />} />
             <Route path="/collection/:slug" element={<CollectionDetailPage />} />
+            <Route path="/schedule" element={<SchedulePage />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
             <Route

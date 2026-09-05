@@ -1469,6 +1469,102 @@ app.post('/api/admin/collections/assign', async (c) => {
   return c.json({ ok: true })
 })
 
+// ===========================================================================
+// V1.1 PC-3/PC-6: Site settings admin endpoints (0011: 写仅 service_role)
+//   GET  /api/admin/settings      —— 全量读取（admin 面板初始化）
+//   PATCH /api/admin/settings     —— 部分更新（仅允许 5 个已知 key；settings.updated 审计）
+//   公开读不经此端点：前端 anon 直读 site_settings（0011 grants）
+// ===========================================================================
+
+const SETTING_KEYS = [
+  'registration_enabled',
+  'schedule_navigation_enabled',
+  'single_image_download_cost',
+  'zip_download_cost_per_image',
+  'package_download_cost',
+] as const
+
+const BOOLEAN_KEYS = new Set(['registration_enabled', 'schedule_navigation_enabled'])
+const NUMBER_KEYS = new Set(['single_image_download_cost', 'zip_download_cost_per_image', 'package_download_cost'])
+
+app.get('/api/admin/settings', async (c) => {
+  const auth = await requireAdmin(c)
+  if (!auth.ok) return c.json({ error: authErrBody(auth) }, auth.status)
+
+  const res = await fetch(`${c.env.SUPABASE_URL}/rest/v1/site_settings?select=key,value`, {
+    headers: svc(c.env),
+  })
+  if (!res.ok) {
+    console.error('Settings read failed:', res.status)
+    return c.json({ error: { code: 'upstream_error', message: 'Settings unavailable' } }, 502)
+  }
+  const rows = (await res.json()) as Array<{ key: string; value: unknown }>
+  const out: Record<string, unknown> = {}
+  for (const r of rows) out[r.key] = r.value
+  return c.json({ ok: true, settings: out })
+})
+
+interface SettingsPatchBody {
+  settings?: unknown
+}
+
+app.patch('/api/admin/settings', async (c) => {
+  const auth = await requireAdmin(c)
+  if (!auth.ok) return c.json({ error: authErrBody(auth) }, auth.status)
+
+  let body: SettingsPatchBody
+  try {
+    body = await c.req.json<SettingsPatchBody>()
+  } catch {
+    return c.json({ error: { code: 'bad_request', message: 'Invalid JSON body' } }, 400)
+  }
+  if (!body.settings || typeof body.settings !== 'object' || Array.isArray(body.settings)) {
+    return c.json({ error: { code: 'bad_request', message: 'settings object required' } }, 400)
+  }
+  const incoming = body.settings as Record<string, unknown>
+
+  // 校验：只允许已知 key；boolean/number 类型按 key 白名单判定；数字须为非负整数
+  const patch: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(incoming)) {
+    if (!(SETTING_KEYS as readonly string[]).includes(k)) {
+      return c.json({ error: { code: 'bad_request', message: `unknown setting key: ${k}` } }, 400)
+    }
+    if (BOOLEAN_KEYS.has(k)) {
+      if (typeof v !== 'boolean') {
+        return c.json({ error: { code: 'bad_request', message: `setting ${k} must be boolean` } }, 400)
+      }
+      patch[k] = v
+    } else if (NUMBER_KEYS.has(k)) {
+      if (typeof v !== 'number' || !Number.isInteger(v) || v < 0 || v > 1000000) {
+        return c.json({ error: { code: 'bad_request', message: `setting ${k} must be a non-negative integer` } }, 400)
+      }
+      patch[k] = v
+    }
+  }
+  if (Object.keys(patch).length === 0) {
+    return c.json({ error: { code: 'bad_request', message: 'no settings to update' } }, 400)
+  }
+
+  // 逐 key PATCH（site_settings 主键 KV；trigger 维护 updated_at；updated_by 由 Worker 落审计记录）
+  for (const [k, v] of Object.entries(patch)) {
+    const res = await fetch(`${c.env.SUPABASE_URL}/rest/v1/site_settings?key=eq.${encodeURIComponent(k)}`, {
+      method: 'PATCH',
+      headers: svc(c.env),
+      body: JSON.stringify({ value: v, updated_by: auth.userId }),
+    })
+    if (!res.ok) {
+      console.error('Settings update failed:', k, res.status)
+      return c.json({ error: { code: 'upstream_error', message: `Settings update failed: ${k}` } }, 502)
+    }
+  }
+
+  await writeAudit(c.env, 'settings.updated', 'site_settings', 'platform', auth.userId, {
+    keys: Object.keys(patch),
+    values: patch,
+  })
+  return c.json({ ok: true, settings: patch })
+})
+
 app.notFound((c) => c.json({ error: { code: 'not_found', message: 'Not found' } }, 404))
 
 app.onError((err, c) => {

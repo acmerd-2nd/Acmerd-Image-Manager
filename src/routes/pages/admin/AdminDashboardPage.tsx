@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { RefreshCw } from 'lucide-react'
-import { getAdminStats, type AdminStats } from '@/features/admin/api'
+import { getAdminStats, getPlatformSettings, updatePlatformSettings, type AdminStats } from '@/features/admin/api'
 import { LANGUAGE_CODES, LANGUAGE_LABELS, type AssetStatus } from '@/types/database'
 import { useAuth } from '@/features/auth/AuthProvider'
 import { useLocale } from '@/i18n'
@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Spinner } from '@/components/spinner'
+import { cn } from '@/lib/utils'
 
 function formatBytes(n: number): string {
   if (!Number.isFinite(n) || n < 0) return '—'
@@ -44,6 +45,71 @@ function StatCard({
         <div className="text-2xl font-semibold">{value}</div>
         {note && <p className="mt-1 text-xs text-muted-foreground">{note}</p>}
         {children}
+      </CardContent>
+    </Card>
+  )
+}
+
+/** PC-3：Schedule 导航开关（0011 anon 可读；写走 Worker settings.updated 审计） */
+function PlatformControlsCard() {
+  const { t } = useLocale()
+  const [scheduleEnabled, setScheduleEnabled] = useState<boolean | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    getPlatformSettings()
+      .then((s) => setScheduleEnabled(s.schedule_navigation_enabled))
+      .catch((e) => setError(e instanceof Error ? e.message : String(e)))
+  }, [])
+
+  const toggle = async () => {
+    if (scheduleEnabled === null) return
+    setSaving(true)
+    setError(null)
+    const next = !scheduleEnabled
+    try {
+      await updatePlatformSettings({ schedule_navigation_enabled: next })
+      setScheduleEnabled(next)
+    } catch (e) {
+      setError(t('admin.platform.saveFailed', { msg: e instanceof Error ? e.message : String(e) }))
+    }
+    setSaving(false)
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{t('admin.platform.title')}</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <div className="text-sm font-medium">{t('admin.platform.scheduleNav')}</div>
+            <p className="mt-0.5 text-xs text-muted-foreground">{t('admin.platform.scheduleNavHint')}</p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={scheduleEnabled === true}
+            disabled={saving || scheduleEnabled === null}
+            onClick={toggle}
+            className={cn(
+              'relative h-6 w-11 shrink-0 rounded-full transition-colors',
+              scheduleEnabled ? 'bg-primary' : 'bg-muted-foreground/30',
+              (saving || scheduleEnabled === null) && 'opacity-50',
+            )}
+          >
+            <span
+              className={cn(
+                'absolute top-0.5 h-5 w-5 rounded-full bg-background shadow transition-all',
+                scheduleEnabled ? 'left-[1.375rem]' : 'left-0.5',
+              )}
+            />
+          </button>
+        </div>
+        {error && <p className="text-xs text-destructive">{error}</p>}
+        <p className="text-xs text-muted-foreground">{t('admin.platform.pc6Note')}</p>
       </CardContent>
     </Card>
   )
@@ -125,6 +191,8 @@ export function AdminDashboardPage() {
               note={t('admin.stat.storageNote')}
             />
           </div>
+
+          <PlatformControlsCard />
 
           <Card>
             <CardHeader>

@@ -331,6 +331,12 @@ export const en: Dictionary = {
     platform: {
       title: 'Platform Controls',
       scheduleNav: 'Schedule navigation',
+      scheduleNavHint: 'When on, the "Schedule" entry appears in the public navigation (page is Coming Soon).',
+      on: 'On',
+      off: 'Off',
+      saving: 'Saving…',
+      saveFailed: 'Save failed: {msg}',
+      pc6Note: 'Registration toggle and credits cost controls arrive with PC-6.',
       registration: 'Open registration',
       singleCost: 'Single image cost',
       zipCostPerImage: 'ZIP per-image cost',
