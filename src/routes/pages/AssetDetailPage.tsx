@@ -10,6 +10,7 @@ import {
 } from '@/features/assets/api'
 import { listAssetTags } from '@/features/tags/api'
 import { parseLanguageCode } from '@/lib/validators'
+import { useLocale } from '@/i18n'
 import type {
   AssetLanguageRow,
   ImageRow,
@@ -44,6 +45,7 @@ export function AssetDetailPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
   const { session } = useAuth()
+  const { t } = useLocale()
 
   const [asset, setAsset] = useState<PublishedAssetRow | null>(null)
   const [languages, setLanguages] = useState<AssetLanguageRow[] | null>(null)
@@ -155,7 +157,7 @@ export function AssetDetailPage() {
 
   const requireLogin = (): boolean => {
     if (!session) {
-      toast.error('请先登录后下载')
+      toast.error(t('download.needLogin'))
       return true
     }
     return false
@@ -167,7 +169,7 @@ export function AssetDetailPage() {
     try {
       await downloadSingleImage(img.id, img.filename)
     } catch (e) {
-      toast.error(e instanceof DownloadError ? e.message : '下载失败')
+      toast.error(e instanceof DownloadError ? e.message : t('download.downloadFailed'))
     }
     setBusy(false)
   }
@@ -187,11 +189,11 @@ export function AssetDetailPage() {
     setBusy(true)
     try {
       await downloadZip(activeLangRow.id, Array.from(selected), `${asset.slug}-${activeLang}.zip`)
-      toast.success(`已打包 ${selected.size} 张`)
+      toast.success(t('download.zipDone', { n: selected.size }))
       setSelected(new Set())
       setSelectionMode(false)
     } catch (e) {
-      toast.error(e instanceof DownloadError ? e.message : '打包失败')
+      toast.error(e instanceof DownloadError ? e.message : t('download.zipFailed'))
     }
     setBusy(false)
   }
@@ -206,21 +208,21 @@ export function AssetDetailPage() {
             <p className="mt-2 max-w-2xl text-muted-foreground">{asset.description}</p>
           )}
           <div className="mt-3 text-xs text-muted-foreground">
-            {asset.image_count} Images · {asset.language_count} Languages
+            {asset.image_count} {t('asset.images')} · {asset.language_count} {t('asset.languages')}
           </div>
 
           {/* 标签（Asset 级，点击跳搜索结果） */}
           {assetTags.length > 0 && (
             <div className="mt-3 flex flex-wrap items-center gap-1.5">
               <TagIcon className="h-3.5 w-3.5 text-muted-foreground" />
-              {assetTags.map((t) => (
+              {assetTags.map((tag) => (
                 <button
-                  key={t.id}
+                  key={tag.id}
                   type="button"
-                  onClick={() => navigate(`/search?tags=${encodeURIComponent(t.slug)}`)}
+                  onClick={() => navigate(`/search?tags=${encodeURIComponent(tag.slug)}`)}
                   className="rounded-full border border-input px-2.5 py-0.5 text-xs transition-colors hover:bg-accent"
                 >
-                  {t.name}
+                  {tag.name}
                 </button>
               ))}
             </div>
@@ -272,11 +274,11 @@ export function AssetDetailPage() {
                 }}
               >
                 <ListChecks className="mr-1 h-4 w-4" />
-                {selectionMode ? 'Cancel selection' : 'Select for ZIP'}
+                {selectionMode ? t('asset.cancelSelection') : t('asset.selectForZip')}
               </Button>
               {!session && (
                 <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                  <Lock className="h-3 w-3" /> 下载需登录
+                  <Lock className="h-3 w-3" /> {t('asset.downloadNeedLogin')}
                 </span>
               )}
             </div>
@@ -289,7 +291,7 @@ export function AssetDetailPage() {
             </div>
           ) : activeImages.length === 0 ? (
             <div className="mt-8 rounded-xl border border-dashed py-16 text-center text-sm text-muted-foreground">
-              该语言暂无图片。
+              {t('asset.noImages')}
             </div>
           ) : (
             <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
@@ -359,7 +361,7 @@ export function AssetDetailPage() {
         <aside className="lg:pt-1">
           <div className="mb-2 flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
             <DownloadCloud className="h-4 w-4" />
-            Package Download
+            {t('download.packageTitle')}
           </div>
           <PackageDownloadPanel assetId={asset.id} />
         </aside>
@@ -370,18 +372,20 @@ export function AssetDetailPage() {
         <div className="fixed inset-x-0 bottom-0 z-30 border-t bg-background/95 backdrop-blur">
           <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-3 sm:px-6">
             <span className="text-sm font-medium">
-              {selected.size} selected
+              {t('download.zipSelected', { n: selected.size })}
               {selected.size >= MAX_ZIP && (
-                <span className="ml-2 text-xs text-muted-foreground">（已达上限 {MAX_ZIP}）</span>
+                <span className="ml-2 text-xs text-muted-foreground">
+                  {t('download.zipLimitReached', { max: MAX_ZIP })}
+                </span>
               )}
             </span>
             <div className="ml-auto flex gap-2">
               <Button size="sm" variant="outline" onClick={() => setSelected(new Set())}>
-                Clear
+                {t('common.clear')}
               </Button>
               <Button size="sm" disabled={busy} onClick={onZipDownload}>
                 {busy ? <Spinner className="h-4 w-4" /> : <Download className="mr-1 h-4 w-4" />}
-                Download Selected
+                {t('download.downloadSelected')}
               </Button>
             </div>
           </div>
@@ -404,10 +408,11 @@ export function AssetDetailPage() {
 }
 
 function NotFoundInline() {
+  const { t } = useLocale()
   return (
     <div className="mx-auto max-w-7xl px-4 py-24 text-center sm:px-6">
-      <h1 className="text-2xl font-semibold">Asset not found</h1>
-      <p className="mt-2 text-muted-foreground">It may be unpublished or does not exist.</p>
+      <h1 className="text-2xl font-semibold">{t('errors.assetNotFound')}</h1>
+      <p className="mt-2 text-muted-foreground">{t('errors.assetNotFoundHint')}</p>
     </div>
   )
 }

@@ -1,11 +1,15 @@
+import { useLocale } from '@/i18n'
 import { Button } from '@/components/ui/button'
 
-/** 轻量确认对话框（V1 自维护，不引入 radix Dialog） */
+/**
+ * 轻量确认对话框（V1 自维护，不引入 radix Dialog）。
+ * 标题/描述/confirmLabel 由调用方传 i18n 文案；Cancel 用 common.cancel。
+ */
 export function ConfirmDialog({
   open,
   title,
   description,
-  confirmLabel = 'Confirm',
+  confirmLabel,
   destructive = false,
   onConfirm,
   onCancel,
@@ -18,6 +22,7 @@ export function ConfirmDialog({
   onConfirm: () => void
   onCancel: () => void
 }) {
+  const { t } = useLocale()
   if (!open) return null
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onCancel}>
@@ -33,10 +38,10 @@ export function ConfirmDialog({
         )}
         <div className="mt-6 flex justify-end gap-2">
           <Button variant="outline" onClick={onCancel}>
-            Cancel
+            {t('common.cancel')}
           </Button>
           <Button variant={destructive ? 'destructive' : 'default'} onClick={onConfirm}>
-            {confirmLabel}
+            {confirmLabel ?? t('common.confirm')}
           </Button>
         </div>
       </div>

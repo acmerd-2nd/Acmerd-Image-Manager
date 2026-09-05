@@ -1,19 +1,21 @@
 import { Suspense } from 'react'
 import { NavLink, Link, Outlet } from 'react-router-dom'
 import { FolderOpen, LayoutDashboard, ScrollText, Tags, Users, Database } from 'lucide-react'
+import { useLocale } from '@/i18n'
 import { Spinner } from '@/components/spinner'
 import { cn } from '@/lib/utils'
 
 const items = [
-  { to: '/admin/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { to: '/admin/assets', label: 'Assets', icon: FolderOpen },
-  { to: '/admin/users', label: 'Users', icon: Users },
-  { to: '/admin/tags', label: 'Tags', icon: Tags },
-  { to: '/admin/storage', label: 'Storage', icon: Database },
-  { to: '/admin/audit-logs', label: 'Audit Logs', icon: ScrollText },
-]
+  { to: '/admin/dashboard', labelKey: 'admin.page.dashboard', icon: LayoutDashboard },
+  { to: '/admin/assets', labelKey: 'admin.page.assets', icon: FolderOpen },
+  { to: '/admin/users', labelKey: 'admin.page.users', icon: Users },
+  { to: '/admin/tags', labelKey: 'admin.page.tags', icon: Tags },
+  { to: '/admin/storage', labelKey: 'admin.page.storage', icon: Database },
+  { to: '/admin/audit-logs', labelKey: 'admin.page.auditLogs', icon: ScrollText },
+] as const
 
 export function AdminLayout() {
+  const { t } = useLocale()
   return (
     <div className="flex min-h-[calc(100vh-3.5rem)]">
       <aside className="hidden w-56 shrink-0 border-r bg-muted/40 md:block">
@@ -22,7 +24,7 @@ export function AdminLayout() {
             Admin Console
           </div>
           <nav className="flex flex-col gap-1">
-            {items.map(({ to, label, icon: Icon }) => (
+            {items.map(({ to, labelKey, icon: Icon }) => (
               <NavLink
                 key={to}
                 to={to}
@@ -34,13 +36,13 @@ export function AdminLayout() {
                 }
               >
                 <Icon className="h-4 w-4" />
-                {label}
+                {t(labelKey)}
               </NavLink>
             ))}
           </nav>
           <div className="mt-auto px-2 text-xs text-muted-foreground">
             <Link to="/" className="hover:underline">
-              ← Back to site
+              {t('admin.backToSite')}
             </Link>
           </div>
         </div>
@@ -50,7 +52,7 @@ export function AdminLayout() {
       <div className="min-w-0 flex-1 p-6">
         {/* 移动端简易导航（Phase 9 响应式再完善） */}
         <nav className="mb-4 flex flex-wrap gap-2 md:hidden">
-          {items.map(({ to, label }) => (
+          {items.map(({ to, labelKey }) => (
             <NavLink
               key={to}
               to={to}
@@ -61,7 +63,7 @@ export function AdminLayout() {
                 )
               }
             >
-              {label}
+              {t(labelKey)}
             </NavLink>
           ))}
         </nav>

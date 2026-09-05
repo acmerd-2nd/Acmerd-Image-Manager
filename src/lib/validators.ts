@@ -6,26 +6,26 @@
 /** 密码规则（Owner 指定）：至少 8 位，且包含 数字 / 大写 / 小写 中的至少两类 */
 export const PASSWORD_MIN_LENGTH = 8
 
+/** 校验失败原因（枚举，文案由 UI i18n 层渲染 —— 规则唯一实现在此，文案就近翻译） */
+export type PasswordFailReason = 'too_short' | 'weak'
+
 export interface PasswordValidation {
   ok: boolean
-  /** 面向用户的中文错误说明；ok 为 true 时为 null */
-  message: string | null
+  /** ok=false 时的失败原因 */
+  reason?: PasswordFailReason
 }
 
 export function validatePassword(password: string): PasswordValidation {
   if (typeof password !== 'string' || password.length < PASSWORD_MIN_LENGTH) {
-    return { ok: false, message: `密码至少 ${PASSWORD_MIN_LENGTH} 位` }
+    return { ok: false, reason: 'too_short' }
   }
 
   const classes = [/[0-9]/, /[A-Z]/, /[a-z]/].filter((re) => re.test(password)).length
   if (classes < 2) {
-    return {
-      ok: false,
-      message: '密码需包含数字、大写字母、小写字母中的至少两类',
-    }
+    return { ok: false, reason: 'weak' }
   }
 
-  return { ok: true, message: null }
+  return { ok: true }
 }
 
 /**

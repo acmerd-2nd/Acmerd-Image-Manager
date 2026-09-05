@@ -1,4 +1,5 @@
 import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { useLocale } from '@/i18n'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
@@ -19,6 +20,7 @@ export function Pagination({
   onPage: (page: number) => void
   className?: string
 }) {
+  const { t } = useLocale()
   const totalPages = Math.max(1, Math.ceil(total / perPage))
   if (total <= perPage) return null // 单页不显示分页条
 
@@ -28,13 +30,13 @@ export function Pagination({
     <div className={cn('flex items-center justify-center gap-2 py-6', className)}>
       <Button size="sm" variant="outline" disabled={page <= 1} onClick={() => go(page - 1)}>
         <ChevronLeft className="h-4 w-4" />
-        Prev
+        {t('pagination.prev')}
       </Button>
       <span className="px-2 text-sm text-muted-foreground">
-        Page {page} / {totalPages} · {total} items
+        {t('pagination.pageOf', { page, total: totalPages, count: total })}
       </span>
       <Button size="sm" variant="outline" disabled={page >= totalPages} onClick={() => go(page + 1)}>
-        Next
+        {t('pagination.next')}
         <ChevronRight className="h-4 w-4" />
       </Button>
     </div>

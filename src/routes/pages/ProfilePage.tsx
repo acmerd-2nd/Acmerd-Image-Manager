@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase/client'
 import { useAuth } from '@/features/auth/AuthProvider'
+import { useLocale } from '@/i18n'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -11,6 +12,7 @@ import { Spinner } from '@/components/spinner'
 export function ProfilePage() {
   const { user, role, signOut } = useAuth()
   const navigate = useNavigate()
+  const { t } = useLocale()
 
   const [displayName, setDisplayName] = useState('')
   const [loadingProfile, setLoadingProfile] = useState(true)
@@ -46,7 +48,7 @@ export function ProfilePage() {
 
     const trimmed = displayName.trim()
     if (trimmed.length > 50) {
-      setSaveError('昵称不能超过 50 个字符')
+      setSaveError(t('auth.displayNameTooLong'))
       setSaving(false)
       return
     }
@@ -57,9 +59,9 @@ export function ProfilePage() {
       .eq('id', user.id)
 
     if (error) {
-      setSaveError(`保存失败：${error.message}`)
+      setSaveError(t('auth.saveFailed', { msg: error.message }))
     } else {
-      setSaveMessage('已保存')
+      setSaveMessage(t('common.saved'))
     }
     setSaving(false)
   }
@@ -74,16 +76,16 @@ export function ProfilePage() {
     <div className="mx-auto w-full max-w-xl px-4 py-12">
       <Card>
         <CardHeader>
-          <CardTitle>Profile</CardTitle>
-          <CardDescription>Your account information</CardDescription>
+          <CardTitle>{t('auth.profileTitle')}</CardTitle>
+          <CardDescription>{t('auth.profileSubtitle')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center justify-between text-sm">
-            <span className="text-muted-foreground">Email</span>
+            <span className="text-muted-foreground">{t('auth.email')}</span>
             <span className="font-medium">{user?.email ?? '—'}</span>
           </div>
           <div className="flex items-center justify-between text-sm">
-            <span className="text-muted-foreground">Role</span>
+            <span className="text-muted-foreground">{t('auth.role')}</span>
             <Badge variant={role === 'admin' ? 'default' : 'secondary'}>{role ?? '…'}</Badge>
           </div>
 
@@ -94,7 +96,7 @@ export function ProfilePage() {
           ) : (
             <form onSubmit={handleSave} className="space-y-2 border-t pt-4">
               <label htmlFor="display-name" className="text-sm font-medium">
-                Display name
+                {t('auth.displayName')}
               </label>
               <div className="flex gap-2">
                 <Input
@@ -102,24 +104,24 @@ export function ProfilePage() {
                   value={displayName}
                   onChange={(e) => setDisplayName(e.target.value)}
                   maxLength={50}
-                  placeholder="Your display name"
+                  placeholder={t('auth.displayName')}
                 />
                 <Button type="submit" disabled={saving}>
-                  {saving ? <Spinner className="h-4 w-4" /> : 'Save'}
+                  {saving ? <Spinner className="h-4 w-4" /> : t('common.save')}
                 </Button>
               </div>
               {saveMessage && <p className="text-xs text-green-600">{saveMessage}</p>}
               {saveError && <p className="text-xs text-destructive">{saveError}</p>}
-              <p className="text-xs text-muted-foreground">最多 50 个字符。</p>
+              <p className="text-xs text-muted-foreground">{t('auth.displayNameHint')}</p>
             </form>
           )}
 
           <div className="flex gap-2 pt-2">
             <Button variant="outline" asChild>
-              <Link to="/">Back to Explore</Link>
+              <Link to="/">{t('auth.backToExplore')}</Link>
             </Button>
             <Button variant="destructive" onClick={handleSignOut}>
-              Logout
+              {t('nav.logout')}
             </Button>
           </div>
         </CardContent>

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Download, HardDrive } from 'lucide-react'
 import { fetchDownloadSources, type DownloadSourceRow } from '@/features/downloads/api'
 import { isSafePackageUrl } from '@/lib/validators'
+import { useLocale } from '@/i18n'
 import { useAuth } from '@/features/auth/AuthProvider'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/spinner'
@@ -12,11 +13,6 @@ import { Spinner } from '@/components/spinner'
  * 规则：0 源隐藏 / 1 源直接跳转 / 2 源弹选择器。
  * URL 仅来自 RLS 过滤后的 DB 记录，且 window.open 前再过 isSafePackageUrl（二次防御）。
  */
-const PROVIDER_LABEL: Record<string, string> = {
-  quark: 'Quark Drive',
-  baidu: 'Baidu Netdisk',
-}
-
 function openExternal(url: string) {
   if (!isSafePackageUrl(url)) {
     console.warn('Blocked unsafe package URL')
@@ -27,6 +23,7 @@ function openExternal(url: string) {
 
 export function PackageDownloadPanel({ assetId }: { assetId: string }) {
   const { session } = useAuth()
+  const { t } = useLocale()
   const [sources, setSources] = useState<DownloadSourceRow[] | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
 
@@ -45,12 +42,15 @@ export function PackageDownloadPanel({ assetId }: { assetId: string }) {
     }
   }, [assetId, session])
 
+  const providerLabel = (provider: string) =>
+    provider === 'quark' ? t('download.packageQuark') : provider === 'baidu' ? t('download.packageBaidu') : provider
+
   // guest：不显示网盘链接，仅登录引导
   if (!session) {
     return (
       <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
         <HardDrive className="mb-1 h-4 w-4" />
-        登录后可获取网盘下载链接。
+        {t('download.packageNeedLogin')}
       </div>
     )
   }
@@ -71,7 +71,7 @@ export function PackageDownloadPanel({ assetId }: { assetId: string }) {
     return (
       <Button className="w-full" onClick={() => openExternal(sources[0].url)}>
         <Download className="mr-2 h-4 w-4" />
-        Download Package
+        {t('download.packageTitle')}
       </Button>
     )
   }
@@ -81,11 +81,11 @@ export function PackageDownloadPanel({ assetId }: { assetId: string }) {
     <div className="relative">
       <Button className="w-full" onClick={() => setMenuOpen((v) => !v)}>
         <Download className="mr-2 h-4 w-4" />
-        Download Package
+        {t('download.packageTitle')}
       </Button>
       {menuOpen && (
         <div className="absolute z-10 mt-1 w-full rounded-lg border bg-background p-1 shadow-lg">
-          <div className="px-3 py-1.5 text-xs text-muted-foreground">Choose a source</div>
+          <div className="px-3 py-1.5 text-xs text-muted-foreground">{t('download.packageChooseSource')}</div>
           {sources.map((s) => (
             <button
               key={s.id}
@@ -96,7 +96,7 @@ export function PackageDownloadPanel({ assetId }: { assetId: string }) {
                 openExternal(s.url)
               }}
             >
-              {PROVIDER_LABEL[s.provider] ?? s.provider}
+              {providerLabel(s.provider)}
             </button>
           ))}
         </div>

@@ -2,7 +2,12 @@ import { useState, type FormEvent } from 'react'
 import { Link, Navigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '@/lib/supabase/client'
 import { useAuth } from '@/features/auth/AuthProvider'
-import { PASSWORD_MIN_LENGTH, sanitizeInternalRedirect, validatePassword } from '@/lib/validators'
+import {
+  PASSWORD_MIN_LENGTH,
+  sanitizeInternalRedirect,
+  validatePassword,
+} from '@/lib/validators'
+import { useLocale } from '@/i18n'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -16,10 +21,12 @@ type RegisterPhase = 'form' | 'check-email' | 'signed-in'
  * - 返回 user 无 session → 邮箱验证开启中，显示"请查收邮件"
  * profiles / user_roles('user') 由数据库触发器 handle_new_user 自动创建，
  * 前端不 INSERT、不 UPDATE —— 见 supabase/migrations/0001_initial_schema.sql
+ * （Phase C PC-5 将把注册入口切到 Worker gate；本页先完成 PC-1 i18n 接线）
  */
 export function RegisterPage() {
   const [searchParams] = useSearchParams()
   const { session, loading } = useAuth()
+  const { t } = useLocale()
 
   const next = sanitizeInternalRedirect(searchParams.get('next')) ?? '/'
 
@@ -33,7 +40,15 @@ export function RegisterPage() {
   // 已登录访问 /register → 回跳
   if (!loading && session) return <Navigate to={next} replace />
 
-  const passwordHint = password ? validatePassword(password).message : null
+  const passwordHint = password
+    ? (() => {
+        const check = validatePassword(password)
+        if (check.ok) return null
+        return check.reason === 'too_short'
+          ? t('auth.pwTooShort', { n: PASSWORD_MIN_LENGTH })
+          : t('auth.pwNeedClasses')
+      })()
+    : null
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
@@ -42,11 +57,15 @@ export function RegisterPage() {
     // 提交前二次校验（输入过程中已有实时提示）
     const pwCheck = validatePassword(password)
     if (!pwCheck.ok) {
-      setFieldError(pwCheck.message)
+      setFieldError(
+        pwCheck.reason === 'too_short'
+          ? t('auth.pwTooShort', { n: PASSWORD_MIN_LENGTH })
+          : t('auth.pwNeedClasses'),
+      )
       return
     }
     if (password !== confirmPassword) {
-      setFieldError('两次输入的密码不一致')
+      setFieldError(t('auth.pwMismatch'))
       return
     }
 
@@ -58,7 +77,7 @@ export function RegisterPage() {
 
     if (error) {
       // 不对错误做分类扩散：统一给出安全提示（不泄露邮箱是否已注册）
-      setFieldError('注册失败，请稍后再试或更换邮箱。')
+      setFieldError(t('auth.registerFailed'))
       setSubmitting(false)
       return
     }
@@ -77,16 +96,15 @@ export function RegisterPage() {
       <div className="mx-auto flex w-full max-w-md flex-col justify-center px-4 py-20">
         <Card>
           <CardHeader className="text-center">
-            <CardTitle>Check your email</CardTitle>
-            <CardDescription>验证邮件已发送</CardDescription>
+            <CardTitle>{t('auth.checkEmailTitle')}</CardTitle>
+            <CardDescription>{t('auth.checkEmailTitle')}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4 text-center text-sm text-muted-foreground">
             <p>
-              我们已向 <span className="font-medium text-foreground">{email.trim()}</span>{' '}
-              发送验证邮件，请查收并点击邮件中的链接完成验证，然后即可登录。
+              {t('auth.checkEmailSent', { email: email.trim() })}
             </p>
             <Button asChild variant="outline" className="w-full">
-              <Link to="/login">前往登录</Link>
+              <Link to="/login">{t('auth.goToLogin')}</Link>
             </Button>
           </CardContent>
         </Card>
@@ -103,14 +121,14 @@ export function RegisterPage() {
     <div className="mx-auto flex w-full max-w-md flex-col justify-center px-4 py-20">
       <Card>
         <CardHeader className="text-center">
-          <CardTitle>Register</CardTitle>
-          <CardDescription>Create an account to download assets.</CardDescription>
+          <CardTitle>{t('auth.registerTitle')}</CardTitle>
+          <CardDescription>{t('auth.registerSubtitle')}</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4" noValidate>
             <div className="space-y-1.5">
               <label htmlFor="register-email" className="text-sm font-medium">
-                Email
+                {t('auth.email')}
               </label>
               <Input
                 id="register-email"
@@ -124,7 +142,7 @@ export function RegisterPage() {
             </div>
             <div className="space-y-1.5">
               <label htmlFor="register-password" className="text-sm font-medium">
-                Password
+                {t('auth.password')}
               </label>
               <Input
                 id="register-password"
@@ -137,13 +155,13 @@ export function RegisterPage() {
               {passwordHint && <p className="text-xs text-destructive">{passwordHint}</p>}
               {!passwordHint && password && (
                 <p className="text-xs text-muted-foreground">
-                  至少 {PASSWORD_MIN_LENGTH} 位，含数字/大写/小写中至少两类 ✓
+                  {t('auth.pwNeedClasses')} ✓
                 </p>
               )}
             </div>
             <div className="space-y-1.5">
               <label htmlFor="register-password-confirm" className="text-sm font-medium">
-                Confirm Password
+                {t('auth.confirmPassword')}
               </label>
               <Input
                 id="register-password-confirm"
@@ -162,17 +180,17 @@ export function RegisterPage() {
             )}
 
             <Button type="submit" className="w-full" disabled={submitting}>
-              {submitting ? <Spinner className="h-4 w-4" /> : 'Create account'}
+              {submitting ? <Spinner className="h-4 w-4" /> : t('auth.registerBtn')}
             </Button>
           </form>
 
           <p className="mt-4 text-center text-sm text-muted-foreground">
-            已有账号？{' '}
+            {t('auth.hasAccount')}{' '}
             <Link
               to={next === '/' ? '/login' : `/login?next=${encodeURIComponent(next)}`}
               className="font-medium text-primary underline-offset-4 hover:underline"
             >
-              Login
+              {t('auth.loginBtn')}
             </Link>
           </p>
         </CardContent>
