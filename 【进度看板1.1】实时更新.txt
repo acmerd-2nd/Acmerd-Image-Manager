@@ -7,15 +7,15 @@
 快速恢复上下文。每次完成实质步骤后必须更新本文件的对应标记与时间戳。
 状态标记：✅ 完成 | 🟡 进行中/待裁决 | 🔴 未开始/待 Owner | 🚫 禁止/未授权
 
-最后更新：2026-09-05（PC-1/2/3 完成 90f3428；PC-4 Credits 接线开工——最高风险项）
+最后更新：2026-09-06（PC-4 沙箱 31/2 经 Owner 裁决：W0f 豁免→Gate CLOSED；GitHub 孤儿 blob 授权删除 f0e23399 复核零孤儿；进入 PC-5）
 
 ════════════════════════════════════════════════════════════════════
 ■ 当前位置（一句话）
 ════════════════════════════════════════════════════════════════════
 V1.1 PC-1 i18n ✅ + PC-2 Collection ✅ + PC-3 Schedule ✅ 完成
 （f3fd712/68b706e/9ee0821/f914bbf/90f3428；PC-2 隔离库冒烟 16/16 PASS）。
-当前：PC-4 Credits 下载扣分接线（最高风险项；0010 RPC 全量复用，零新 RPC 零 schema）。
-完成后隔离库+沙箱全矩阵 PASS → STOP 等 Owner 检查，生产部署单独授权。
+当前：PC-4 Credits 接线 ✅ CLOSED —— 沙箱 31/2（2 FAIL=W0f 本地 Node raw 出网受限，非产品缺陷；W7 ZIP 200 反证 raw 可用）经 Owner 裁决豁免关 Gate。Step4 复核 DB 零 e2e4 残留；发现的 1 个 GitHub 孤儿 blob 已按 Owner 授权删除（f0e23399），复核仓库零孤儿、生产真图未触碰。
+下一步 = 开 PC-5 Registration Gate 设计关卡（先出 Design Gate 等 Owner 批准再执行）。生产功能部署始终单独授权、绝不自动。
 ════════════════════════════════════════════════════════════════════
 ■ 阶段总览
 ════════════════════════════════════════════════════════════════════
@@ -58,13 +58,13 @@ PC-2 Collection UI            ✅ 完成（2026-09-05，f914bbf；隔离库冒�
 PC-3 Schedule                 ✅ 完成（2026-09-05，90f3428；开关显隐 + Coming Soon + Admin 开关）
     导航"排期"由 site_settings.schedule_navigation_enabled 控制显隐
     （anon 可读已就位：0011）；页面 Coming Soon；Admin 开关。
-PC-4 Credits 下载扣分接线     🔴 进行中（本 agent 2026-09-05 开工）  ← 最高风险项，完成后 STOP
+PC-4 Credits 下载扣分接线     ✅ CLOSED（沙箱 31/2；Owner 2026-09-06 裁决 W0f 豁免→Gate 关闭；孤儿已授权删除 f0e23399）
     Worker 现状 0 处调用 credits RPC（grep 证实）。
     单图：登录门→published+ready 校验→RPC 扣分→302 raw。
     ZIP：预检(含 raw HEAD)→扣 n×zip 单价→打包；中途失败自动 refund。
     Package：跳转即消耗不退款（冻结语义）。
     全部复用 0010 RPC（H2 幂等 + unlimited 旁路），零新 RPC 零 schema。
-    验证：隔离库+沙箱全矩阵 PASS → STOP → Owner 检查 → 生产部署单独授权。
+    验证：沙箱 31/2（W0f×2 = 本地 Node raw 出网受限，W7 ZIP 200 反证可用）；隔离库 13/13 系历史 7e89ae7（本环境无本地 Postgres 未伪造重跑）；Step4 DB 零 e2e4 残留 + 1 GitHub 孤儿 blob 待清理。Gate 未关 → STOP 等 Owner 裁决 → 生产部署单独授权。
     前端：右上角余额 ◉ 42 / ♾；按钮成本透出；不足提示 credits.insufficient。
 PC-5 Registration Gate        🔴 未开始
     新端点 POST /api/auth/register：check registration_enabled → false 403
