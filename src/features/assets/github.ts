@@ -1,4 +1,5 @@
 import type { LanguageCode } from '@/types/database'
+import { t } from '@/i18n'
 
 /**
  * V1.1 Phase B (PB-1)：GitHub 图片上传/删除（经 Worker，Gate 04 §9-5）
@@ -12,10 +13,10 @@ export const MAX_FILE_SIZE = 15 * 1024 * 1024
 
 export function validateImageFile(file: File): void {
   if (!ALLOWED_MIME.includes(file.type as (typeof ALLOWED_MIME)[number])) {
-    throw new Error(`不支持的格式：${file.name}（仅 JPEG/PNG/WebP）`)
+    throw new Error(t('download.fileBadFormat', { name: file.name }))
   }
   if (file.size > MAX_FILE_SIZE) {
-    throw new Error(`文件过大：${file.name}（上限 15 MB）`)
+    throw new Error(t('download.fileTooLarge', { name: file.name }))
   }
 }
 
@@ -23,7 +24,7 @@ async function authHeaders(): Promise<Record<string, string>> {
   const { supabase } = await import('@/lib/supabase/client')
   const { data } = await supabase.auth.getSession()
   const jwt = data.session?.access_token
-  if (!jwt) throw new Error('未登录，无法操作图片')
+  if (!jwt) throw new Error(t('download.loginRequired'))
   return { Authorization: `Bearer ${jwt}` }
 }
 
@@ -48,7 +49,7 @@ export async function uploadImageGithub(
     | { ok?: boolean; image_id?: string; source_path?: string; error?: { code?: string; message?: string } }
     | null
   if (!res.ok || !body?.ok || !body.image_id) {
-    throw new Error(body?.error?.message ?? `上传失败（HTTP ${res.status}）`)
+    throw new Error(body?.error?.message ?? t('download.uploadFailed', { status: res.status }))
   }
   return { imageId: body.image_id, sourcePath: body.source_path ?? '' }
 }
@@ -70,7 +71,7 @@ export async function deleteGithubImage(imageId: string): Promise<{ deleted: boo
     | null
   if (!res.ok) {
     // not_deletable（failed 等无远端对象态）→ 调用方可退回行级删除
-    const err = new Error(body?.error?.message ?? `删除失败（HTTP ${res.status}）`) as Error & { code?: string }
+    const err = new Error(body?.error?.message ?? t('download.deleteFailed', { status: res.status })) as Error & { code?: string }
     err.code = body?.error?.code
     throw err
   }

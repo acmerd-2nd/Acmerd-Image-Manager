@@ -3,6 +3,7 @@ import { RefreshCw } from 'lucide-react'
 import { getAdminStats, type AdminStats } from '@/features/admin/api'
 import { LANGUAGE_CODES, LANGUAGE_LABELS, type AssetStatus } from '@/types/database'
 import { useAuth } from '@/features/auth/AuthProvider'
+import { useLocale } from '@/i18n'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -51,6 +52,7 @@ function StatCard({
 /** Dashboard：统计卡 + 语言分布；全部来自一次 getAdminStats()（D5 + 约束 4 单一端点） */
 export function AdminDashboardPage() {
   const { isAdmin } = useAuth()
+  const { t } = useLocale()
   const [stats, setStats] = useState<AdminStats | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -70,7 +72,7 @@ export function AdminDashboardPage() {
     if (isAdmin) reload()
   }, [isAdmin, reload])
 
-  if (!isAdmin) return <p className="text-sm text-destructive">Admin only.</p>
+  if (!isAdmin) return <p className="text-sm text-destructive">{t('admin.adminOnly')}</p>
 
   const langRows = LANGUAGE_CODES.map((code) => ({
     code,
@@ -82,10 +84,10 @@ export function AdminDashboardPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Dashboard</h1>
+        <h1 className="text-xl font-semibold">{t('admin.page.dashboard')}</h1>
         <Button size="sm" variant="outline" disabled={loading} onClick={reload}>
           <RefreshCw className={`mr-1 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
+          {t('admin.refresh')}
         </Button>
       </div>
 
@@ -102,7 +104,7 @@ export function AdminDashboardPage() {
       ) : (
         <>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <StatCard label="Assets" value={String(stats.totalAssets)}>
+            <StatCard label={t('admin.stat.assets')} value={String(stats.totalAssets)}>
               <div className="mt-2 flex flex-wrap gap-1">
                 {ASSET_STATUS_ORDER.map((s) => (
                   <Badge key={s} variant={s === 'published' ? 'default' : 'secondary'}>
@@ -111,23 +113,23 @@ export function AdminDashboardPage() {
                 ))}
               </div>
             </StatCard>
-            <StatCard label="Images" value={String(stats.totalImages)} />
+            <StatCard label={t('admin.stat.images')} value={String(stats.totalImages)} />
             <StatCard
-              label="Users"
+              label={t('admin.stat.users')}
               value={String(stats.totalUsers)}
-              note={`${stats.disabledUsers} disabled`}
+              note={t('admin.stat.disabledNote', { n: stats.disabledUsers })}
             />
             <StatCard
-              label="Storage Used"
+              label={t('admin.stat.storageUsed')}
               value={formatBytes(stats.storageUsedBytes)}
-              note="按数据库记录估算（SUM(images.file_size)），非 Storage 实查"
+              note={t('admin.stat.storageNote')}
             />
           </div>
 
           <Card>
             <CardHeader>
-              <CardTitle>Images by Language</CardTitle>
-              <CardDescription>published 资产语言分布（来自同一统计端点）</CardDescription>
+              <CardTitle>{t('admin.stat.byLanguage')}</CardTitle>
+              <CardDescription>{t('admin.stat.byLanguageDesc')}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               {langRows.map((r) => (
@@ -145,7 +147,7 @@ export function AdminDashboardPage() {
                 </div>
               ))}
               {stats.totalImages === 0 && (
-                <p className="text-sm text-muted-foreground">还没有图片记录。</p>
+                <p className="text-sm text-muted-foreground">{t('admin.stat.noImages')}</p>
               )}
             </CardContent>
           </Card>

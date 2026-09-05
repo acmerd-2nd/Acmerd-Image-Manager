@@ -27,7 +27,7 @@ export function AppShell() {
               <span className="text-sm font-semibold tracking-[0.18em] text-muted-foreground">
                 ACMERD
               </span>
-              <span className="text-lg font-bold tracking-tight">探知</span>
+              <span className="text-lg font-bold tracking-tight">{t('home.brand')}</span>
             </Link>
             <LocaleSwitch className="hidden sm:flex" />
             <nav className="hidden items-center gap-6 text-sm font-medium text-muted-foreground sm:flex">
@@ -90,7 +90,7 @@ export function AppShell() {
 
       <footer className="border-t py-6">
         <div className="mx-auto w-full max-w-7xl px-4 text-center text-xs text-muted-foreground sm:px-6">
-          ACMERD · 探知 — Research · Discover · Create
+          {t('home.footerTagline')}
         </div>
       </footer>
     </div>

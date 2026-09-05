@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase/client'
+import { t } from '@/i18n'
 import type { LanguageCode } from '@/types/database'
 
 /**
@@ -15,10 +16,10 @@ export class FileValidationError extends Error {}
 
 export function validateImageFile(file: File): void {
   if (!ALLOWED_MIME.includes(file.type as (typeof ALLOWED_MIME)[number])) {
-    throw new FileValidationError(`不支持的格式：${file.type || file.name}（仅 JPEG/PNG/WebP）`)
+    throw new FileValidationError(t('download.fileBadFormat', { name: file.type || file.name }))
   }
   if (file.size > MAX_FILE_SIZE) {
-    throw new FileValidationError(`文件过大：${file.name}（上限 15 MB）`)
+    throw new FileValidationError(t('download.fileTooLarge', { name: file.name }))
   }
 }
 
@@ -63,7 +64,7 @@ export async function deleteStoragePaths(paths: string[]): Promise<void> {
   if (paths.length === 0) return
   const { data } = await supabase.auth.getSession()
   const jwt = data.session?.access_token
-  if (!jwt) throw new Error('未登录，无法删除存储对象')
+  if (!jwt) throw new Error(t('download.loginRequired'))
 
   const res = await fetch('/api/admin/storage/delete', {
     method: 'POST',
@@ -76,6 +77,6 @@ export async function deleteStoragePaths(paths: string[]): Promise<void> {
 
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null
-    throw new Error(body?.error?.message ?? `存储删除失败（HTTP ${res.status}）`)
+    throw new Error(body?.error?.message ?? t('download.storageDeleteFailed', { status: res.status }))
   }
 }

@@ -8,6 +8,7 @@ import {
   type AdminUsersEnvelope,
 } from '@/features/admin/api'
 import { useAuth } from '@/features/auth/AuthProvider'
+import { useLocale, t as tStatic } from '@/i18n'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -17,7 +18,7 @@ import { ConfirmDialog } from '@/components/ConfirmDialog'
 const PAGE_SIZE = 20
 
 function displayNameOf(u: AdminUserSummary): string {
-  return u.display_name?.trim() || u.email || '(unnamed)'
+  return u.display_name?.trim() || u.email || tStatic('adminExtra.unnamed')
 }
 
 function initialOf(u: AdminUserSummary): string {
@@ -30,6 +31,7 @@ function fmtDate(s: string | null): string {
 
 /** Users：列表（分页，envelope 驱动）+ 改角色 + 禁用/启用；self 组合置灰 */
 export function AdminUsersPage() {
+  const { t } = useLocale()
   const { isAdmin, user } = useAuth()
   const [envelope, setEnvelope] = useState<AdminUsersEnvelope | null>(null)
   const [page, setPage] = useState(1)
@@ -53,7 +55,7 @@ export function AdminUsersPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAdmin, page])
 
-  if (!isAdmin) return <p className="text-sm text-destructive">Admin only.</p>
+  if (!isAdmin) return <p className="text-sm text-destructive">{t('admin.adminOnly')}</p>
 
   const run = async (fn: () => Promise<unknown>, afterClear?: () => void) => {
     setBusy(true)
@@ -101,7 +103,7 @@ export function AdminUsersPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Users</h1>
+        <h1 className="text-xl font-semibold">{t('admin.page.users')}</h1>
         <div className="flex items-center gap-2">
           <Button
             size="sm"
@@ -110,7 +112,7 @@ export function AdminUsersPage() {
             onClick={() => setPage((p) => Math.max(1, p - 1))}
           >
             <ChevronLeft className="mr-1 h-4 w-4" />
-            Prev
+            {t('pagination.prev')}
           </Button>
           <Button
             size="sm"
@@ -118,20 +120,20 @@ export function AdminUsersPage() {
             disabled={busy || !envelope || page >= totalPages}
             onClick={() => setPage((p) => p + 1)}
           >
-            Next
+            {t('pagination.next')}
             <ChevronRight className="ml-1 h-4 w-4" />
           </Button>
           <Button size="sm" variant="outline" disabled={busy} onClick={() => reload(page)}>
             <RefreshCw className={`mr-1 h-4 w-4 ${busy ? 'animate-spin' : ''}`} />
-            Refresh
+            {t('admin.refresh')}
           </Button>
         </div>
       </div>
 
       <p className="text-sm text-muted-foreground">
         {envelope
-          ? `Page ${envelope.page} / ${totalPages} · 共 ${envelope.total} 位用户`
-          : '加载用户列表…'}
+          ? t('admin.usersPage.pageOf', { page: envelope.page, total: totalPages, count: envelope.total })
+          : t('admin.usersPage.loading')}
       </p>
 
       {error && (
@@ -147,7 +149,7 @@ export function AdminUsersPage() {
       ) : envelope.users.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center text-sm text-muted-foreground">
-            没有匹配的用户。
+            {t('admin.usersPage.noMatching')}
           </CardContent>
         </Card>
       ) : (
@@ -156,11 +158,11 @@ export function AdminUsersPage() {
             <table className="w-full min-w-[820px] text-sm">
               <thead>
                 <tr className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
-                  <th className="px-4 py-3 font-medium">User</th>
-                  <th className="px-4 py-3 font-medium">Role</th>
-                  <th className="px-4 py-3 font-medium">Created</th>
-                  <th className="px-4 py-3 font-medium">Status</th>
-                  <th className="px-4 py-3 text-right font-medium">Actions</th>
+                  <th className="px-4 py-3 font-medium">{t('admin.usersPage.colUser')}</th>
+                  <th className="px-4 py-3 font-medium">{t('admin.usersPage.colRole')}</th>
+                  <th className="px-4 py-3 font-medium">{t('admin.usersPage.colCreated')}</th>
+                  <th className="px-4 py-3 font-medium">{t('admin.usersPage.colStatus')}</th>
+                  <th className="px-4 py-3 text-right font-medium">{t('admin.usersPage.colActions')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -178,7 +180,7 @@ export function AdminUsersPage() {
                               {u.display_name?.trim() || '—'}
                               {self && (
                                 <span className="ml-1.5 text-xs font-normal text-muted-foreground">
-                                  (you)
+                                  {'(' + t('admin.usersPage.you') + ')'}
                                 </span>
                               )}
                             </div>
@@ -197,10 +199,10 @@ export function AdminUsersPage() {
                       <td className="px-4 py-3">
                         {u.disabled ? (
                           <Badge variant="outline" className="text-destructive">
-                            disabled
+                            {t('admin.usersPage.disabled')}
                           </Badge>
                         ) : (
-                          <Badge variant="secondary">active</Badge>
+                          <Badge variant="secondary">{t('admin.usersPage.active')}</Badge>
                         )}
                       </td>
                       <td className="px-4 py-3">
@@ -210,10 +212,10 @@ export function AdminUsersPage() {
                               size="sm"
                               variant="outline"
                               disabled={busy || self}
-                              title={self ? '不能对自己执行降级' : undefined}
+                              title={self ? t('admin.usersPage.selfDemote') : undefined}
                               onClick={() => onDemote(u)}
                             >
-                              Make user
+                              {t('admin.usersPage.makeUser')}
                             </Button>
                           ) : (
                             <Button
@@ -222,7 +224,7 @@ export function AdminUsersPage() {
                               disabled={busy}
                               onClick={() => onMakeAdmin(u)}
                             >
-                              Make admin
+                              {t('admin.usersPage.makeAdmin')}
                             </Button>
                           )}
                           {u.disabled ? (
@@ -230,20 +232,20 @@ export function AdminUsersPage() {
                               size="sm"
                               variant="outline"
                               disabled={busy || self}
-                              title={self ? '不能对自己执行启用' : undefined}
+                              title={self ? t('admin.usersPage.selfEnable') : undefined}
                               onClick={() => onEnable(u)}
                             >
-                              Enable
+                              {t('admin.usersPage.enable')}
                             </Button>
                           ) : (
                             <Button
                               size="sm"
                               variant="destructive"
                               disabled={busy || self}
-                              title={self ? '不能对自己执行禁用' : undefined}
+                              title={self ? t('admin.usersPage.selfDisable') : undefined}
                               onClick={() => setConfirmTarget(u)}
                             >
-                              Disable
+                              {t('admin.usersPage.disable')}
                             </Button>
                           )}
                         </div>
@@ -259,14 +261,10 @@ export function AdminUsersPage() {
 
       <ConfirmDialog
         open={!!confirmTarget}
-        title={`禁用用户「${confirmTarget ? displayNameOf(confirmTarget) : ''}」？`}
+        title={t('admin.usersPage.disableTitle', { name: confirmTarget ? displayNameOf(confirmTarget) : '' })}
         destructive
-        confirmLabel="Disable"
-        description={
-          confirmTarget
-            ? '禁用后该用户将无法访问任何 /api 接口并立即失去管理能力（禁用即时生效；会话撤销为 best-effort）。可随时重新启用。\n\n系统保留的最后一名活跃管理员不可被禁用。'
-            : ''
-        }
+        confirmLabel={t('admin.usersPage.disable')}
+        description={confirmTarget ? t('admin.usersPage.disableBody') : ''}
         onCancel={() => setConfirmTarget(null)}
         onConfirm={onDisableConfirmed}
       />

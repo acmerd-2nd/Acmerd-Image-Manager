@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase/client'
+import { t } from '@/i18n'
 import type { PublishedAssetRow } from '@/types/database'
 
 /**
@@ -17,8 +18,8 @@ export async function searchAssets(q: string, tags: string[]): Promise<Published
   const query = (q ?? '').trim()
   const tagList = Array.from(new Set((tags ?? []).map((t) => t.trim()).filter(Boolean)))
 
-  if (query.length > MAX_QUERY_LEN) throw new SearchValidationError('搜索关键词过长')
-  if (tagList.length > MAX_TAG_FILTERS) throw new SearchValidationError('筛选标签过多')
+  if (query.length > MAX_QUERY_LEN) throw new SearchValidationError(t('errors.queryTooLong'))
+  if (tagList.length > MAX_TAG_FILTERS) throw new SearchValidationError(t('errors.tooManyTags'))
 
   const { data, error } = await supabase.rpc('search_assets', {
     p_q: query || null,
@@ -47,8 +48,8 @@ export async function searchAssetsPaged(
   const query = (q ?? '').trim()
   const tagList = Array.from(new Set((tags ?? []).map((t) => t.trim()).filter(Boolean)))
 
-  if (query.length > MAX_QUERY_LEN) throw new SearchValidationError('搜索关键词过长')
-  if (tagList.length > MAX_TAG_FILTERS) throw new SearchValidationError('筛选标签过多')
+  if (query.length > MAX_QUERY_LEN) throw new SearchValidationError(t('errors.queryTooLong'))
+  if (tagList.length > MAX_TAG_FILTERS) throw new SearchValidationError(t('errors.tooManyTags'))
 
   const { data, error } = await supabase.rpc('search_assets_paged', {
     p_q: query || null,

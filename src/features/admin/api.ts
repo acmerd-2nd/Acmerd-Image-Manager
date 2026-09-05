@@ -1,9 +1,10 @@
 import { supabase } from '@/lib/supabase/client'
+import { t } from '@/i18n'
 
 /**
  * Phase 7 Admin Console —— Worker admin 端点客户端层。
  * 所有请求携带调用者自己的 JWT（Bearer），Worker 二次校验 admin + 未禁用（D2）。
- * 统一解码错误体 `{error:{code,message}}`，把已知错误码转成前端可展示的中文对象。
+ * 统一解码错误体 `{error:{code,message}}`，已知错误码经 i18n 转成本地化提示。
  * 审计读取不走本模块（D4）：admin 登录态经 RLS 直连 audit_logs。
  */
 
@@ -55,25 +56,25 @@ export class AdminApiError extends Error {
   }
 }
 
-/** 已知错误码 → 中文提示（account_disabled / last_admin / forbidden 等需覆盖文案） */
+/** 已知错误码 → 本地化提示（account_disabled / last_admin / forbidden 等需覆盖文案） */
 function toUserMessage(code: string, serverMsg: string | null, status: number): string {
   switch (code) {
     case 'account_disabled':
-      return '账号已被禁用，请联系管理员'
+      return t('admin.api.accountDisabled')
     case 'last_admin':
-      return '系统必须保留至少一名活跃管理员，无法完成该操作'
+      return t('admin.api.lastAdmin')
     case 'forbidden':
-      return '操作被拒绝：不能对自己降级或禁用，或你的管理员权限已失效'
+      return t('admin.api.forbiddenSelf')
     case 'not_found':
-      return '目标用户不存在（可能已被删除）'
+      return t('admin.api.userNotFound')
     case 'bad_request':
-      return '请求参数有误，请刷新后重试'
+      return t('admin.api.badRequest')
     case 'unauthorized':
-      return '登录状态已失效，请重新登录'
+      return t('admin.api.unauthorized')
     case 'upstream_error':
-      return '服务暂时不可用，请稍后重试'
+      return t('admin.api.upstreamError')
     default:
-      return serverMsg?.trim() ? serverMsg : `请求失败（HTTP ${status}）`
+      return serverMsg?.trim() ? serverMsg : t('admin.api.requestFailed', { status })
   }
 }
 
@@ -85,7 +86,7 @@ async function getJwt(): Promise<string | null> {
 /** 统一 fetch Worker admin 端点 + 解码 `{error:{code,message}}` */
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const jwt = await getJwt()
-  if (!jwt) throw new AdminApiError('登录状态已失效，请重新登录', 401, 'unauthorized')
+  if (!jwt) throw new AdminApiError(t('admin.api.unauthorized'), 401, 'unauthorized')
 
   const headers: Record<string, string> = { Authorization: `Bearer ${jwt}` }
   if (init.body) headers['Content-Type'] = 'application/json'

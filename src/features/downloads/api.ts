@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase/client'
+import { t } from '@/i18n'
 
 /**
  * Phase 5 下载通道（三套独立机制的公共客户端层）。
@@ -43,21 +44,21 @@ export class DownloadError extends Error {
 /** 单图下载：GET Worker → 跟随 302 → blob → 另存。guest 得 401。 */
 export async function downloadSingleImage(imageId: string, fallbackName: string): Promise<void> {
   const jwt = await getJwt()
-  if (!jwt) throw new DownloadError('请先登录后下载', 401, 'unauthorized')
+  if (!jwt) throw new DownloadError(t('download.needLogin'), 401, 'unauthorized')
 
   const res = await fetch(`/api/downloads/image/${imageId}`, {
     headers: { Authorization: `Bearer ${jwt}` },
   })
-  if (res.status === 401) throw new DownloadError('请先登录后下载', 401, 'unauthorized')
+  if (res.status === 401) throw new DownloadError(t('download.needLogin'), 401, 'unauthorized')
   if (res.status === 403) {
     const body = (await res.json().catch(() => null)) as { error?: { code?: string } } | null
     if (body?.error?.code === 'account_disabled') {
-      throw new DownloadError('账号已被禁用，请联系管理员', 403, 'account_disabled')
+      throw new DownloadError(t('download.accountDisabled'), 403, 'account_disabled')
     }
-    throw new DownloadError('无权下载', 403, 'forbidden')
+    throw new DownloadError(t('download.forbidden'), 403, 'forbidden')
   }
-  if (res.status === 404) throw new DownloadError('图片不可用', 404, 'not_found')
-  if (!res.ok) throw new DownloadError('下载失败', res.status, 'error')
+  if (res.status === 404) throw new DownloadError(t('download.imageUnavailable'), 404, 'not_found')
+  if (!res.ok) throw new DownloadError(t('download.downloadFailed'), res.status, 'error')
 
   const blob = await res.blob()
   saveBlob(blob, filenameFromResponse(res, fallbackName))
@@ -70,31 +71,31 @@ export async function downloadZip(
   fallbackName: string,
 ): Promise<void> {
   const jwt = await getJwt()
-  if (!jwt) throw new DownloadError('请先登录后下载', 401, 'unauthorized')
+  if (!jwt) throw new DownloadError(t('download.needLogin'), 401, 'unauthorized')
 
   const res = await fetch('/api/downloads/zip', {
     method: 'POST',
     headers: { Authorization: `Bearer ${jwt}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ assetLanguageId, imageIds }),
   })
-  if (res.status === 401) throw new DownloadError('请先登录后下载', 401, 'unauthorized')
+  if (res.status === 401) throw new DownloadError(t('download.needLogin'), 401, 'unauthorized')
   if (res.status === 403) {
     const body = (await res.json().catch(() => null)) as { error?: { code?: string } } | null
     if (body?.error?.code === 'account_disabled') {
-      throw new DownloadError('账号已被禁用，请联系管理员', 403, 'account_disabled')
+      throw new DownloadError(t('download.accountDisabled'), 403, 'account_disabled')
     }
-    throw new DownloadError('无权下载', 403, 'forbidden')
+    throw new DownloadError(t('download.forbidden'), 403, 'forbidden')
   }
-  if (res.status === 404) throw new DownloadError('语言版本不可用', 404, 'not_found')
+  if (res.status === 404) throw new DownloadError(t('download.langUnavailable'), 404, 'not_found')
   if (res.status === 413) {
     const body = await res.json().catch(() => null)
     throw new DownloadError(
-      body?.error?.message ?? '选择过多，请分批下载',
+      body?.error?.message ?? t('download.zipLimitExceeded'),
       413,
       'zip_limit_exceeded',
     )
   }
-  if (!res.ok) throw new DownloadError('打包失败', res.status, 'error')
+  if (!res.ok) throw new DownloadError(t('download.zipFailed'), res.status, 'error')
 
   const blob = await res.blob()
   saveBlob(blob, filenameFromResponse(res, fallbackName))

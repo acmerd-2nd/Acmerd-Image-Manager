@@ -1,11 +1,13 @@
 import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { createAsset, slugify } from '@/features/assets/api'
+import { useLocale } from '@/i18n'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
 /** 新建 Asset：Step 1 基础信息 → 建 draft → 进入编辑器继续上传/封面/发布 */
 export function AdminAssetNewPage() {
+  const { t } = useLocale()
   const navigate = useNavigate()
   const [name, setName] = useState('')
   const [slug, setSlug] = useState('')
@@ -21,11 +23,11 @@ export function AdminAssetNewPage() {
     setError(null)
 
     if (!name.trim()) {
-      setError('请填写 Name')
+      setError(t('admin.editor.nameRequired'))
       return
     }
     if (!/^[a-z0-9\u4e00-\u9fff]+(-[a-z0-9\u4e00-\u9fff]+)*$/.test(effectiveSlug)) {
-      setError('Slug 只能包含小写字母、数字、中文，用连字符分隔')
+      setError(t('admin.editor.slugInvalid'))
       return
     }
 
@@ -39,29 +41,29 @@ export function AdminAssetNewPage() {
       navigate(`/admin/assets/${asset.id}`, { replace: true })
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      setError(msg.includes('duplicate key') ? 'Slug 已被占用，请换一个' : msg)
+      setError(msg.includes('duplicate key') ? t('admin.editor.slugTaken') : msg)
     }
     setSubmitting(false)
   }
 
   return (
     <div className="max-w-xl space-y-4">
-      <h1 className="text-xl font-semibold">New Asset</h1>
+      <h1 className="text-xl font-semibold">{t('admin.newAsset')}</h1>
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="space-y-1.5">
           <label htmlFor="asset-name" className="text-sm font-medium">
-            Name *
+            {t('admin.editor.name')} *
           </label>
           <Input
             id="asset-name"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="e.g. Alpine Landscapes Vol.1"
+            placeholder={t('admin.editor.namePlaceholder')}
           />
         </div>
         <div className="space-y-1.5">
           <label htmlFor="asset-slug" className="text-sm font-medium">
-            Slug（URL 标识，自动生成可改）
+            {t('admin.editor.slug')}
           </label>
           <Input
             id="asset-slug"
@@ -70,12 +72,12 @@ export function AdminAssetNewPage() {
               setSlug(e.target.value.toLowerCase())
               setSlugEdited(true)
             }}
-            placeholder="auto from name"
+            placeholder={t('admin.editor.slugAutoFromName')}
           />
         </div>
         <div className="space-y-1.5">
           <label htmlFor="asset-desc" className="text-sm font-medium">
-            Description
+            {t('admin.editor.description')}
           </label>
           <textarea
             id="asset-desc"
@@ -94,15 +96,15 @@ export function AdminAssetNewPage() {
 
         <div className="flex gap-2">
           <Button type="submit" disabled={submitting || !name.trim()}>
-            {submitting ? '创建中…' : '创建草稿并继续'}
+            {submitting ? t('common.loading') : t('admin.editor.createDraftAndContinue')}
           </Button>
           <Button type="button" variant="outline" onClick={() => navigate('/admin/assets')}>
-            Cancel
+            {t('common.cancel')}
           </Button>
         </div>
       </form>
       <p className="text-xs text-muted-foreground">
-        创建后进入编辑器：上传图片 → 排序 → Set Cover → Publish（Publish 需至少 1 个含图的语言版本）。
+        {t('admin.editor.newPageHint')}
       </p>
     </div>
   )

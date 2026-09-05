@@ -2,19 +2,20 @@ import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase/client'
 import type { AuditLogRow } from '@/types/database'
 import { useAuth } from '@/features/auth/AuthProvider'
+import { useLocale } from '@/i18n'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Spinner } from '@/components/spinner'
 
 const PAGE_SIZE = 50
 
-const FILTERS: Array<{ label: string; prefix: string }> = [
-  { label: 'All', prefix: '' },
-  { label: 'asset.', prefix: 'asset.' },
-  { label: 'image.', prefix: 'image.' },
-  { label: 'tag.', prefix: 'tag.' },
-  { label: 'user.', prefix: 'user.' },
-  { label: 'download_source.', prefix: 'download_source.' },
+const FILTERS: Array<{ labelKey: string; prefix: string }> = [
+  { labelKey: 'admin.all', prefix: '' },
+  { labelKey: 'admin.auditPage.filterAsset', prefix: 'asset.' },
+  { labelKey: 'admin.auditPage.filterImage', prefix: 'image.' },
+  { labelKey: 'admin.auditPage.filterTag', prefix: 'tag.' },
+  { labelKey: 'admin.auditPage.filterUser', prefix: 'user.' },
+  { labelKey: 'admin.auditPage.filterSource', prefix: 'download_source.' },
 ]
 
 function fmtTime(s: string): string {
@@ -24,6 +25,7 @@ function fmtTime(s: string): string {
 /** Audit Logs：admin JWT 直连 audit_logs（RLS is_admin；D4，不新增 Worker 读端点） */
 export function AdminAuditLogsPage() {
   const { isAdmin } = useAuth()
+  const { t } = useLocale()
   const [rows, setRows] = useState<AuditLogRow[] | null>(null)
   const [actors, setActors] = useState<Map<string, string>>(new Map())
   const [filter, setFilter] = useState('')
@@ -42,7 +44,7 @@ export function AdminAuditLogsPage() {
       setActors((prev) => {
         const next = new Map(prev)
         for (const p of (data ?? []) as Array<{ id: string; display_name: string | null }>) {
-          next.set(p.id, p.display_name?.trim() || '(unnamed)')
+          next.set(p.id, p.display_name?.trim() || t('adminExtra.unnamed'))
         }
         return next
       })
@@ -82,12 +84,12 @@ export function AdminAuditLogsPage() {
     }
   }, [isAdmin, fetchPage])
 
-  if (!isAdmin) return <p className="text-sm text-destructive">Admin only.</p>
+  if (!isAdmin) return <p className="text-sm text-destructive">{t('admin.adminOnly')}</p>
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-xl font-semibold">Audit Logs</h1>
+        <h1 className="text-xl font-semibold">{t('admin.page.auditLogs')}</h1>
         <div className="flex flex-wrap items-center gap-1">
           {FILTERS.map((f) => (
             <Button
@@ -96,7 +98,7 @@ export function AdminAuditLogsPage() {
               variant={filter === f.prefix ? 'default' : 'outline'}
               onClick={() => setFilter(f.prefix)}
             >
-              {f.label}
+              {t(f.labelKey)}
             </Button>
           ))}
         </div>
@@ -115,7 +117,7 @@ export function AdminAuditLogsPage() {
       ) : rows.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center text-sm text-muted-foreground">
-            没有审计记录。
+            {t('admin.auditPage.empty')}
           </CardContent>
         </Card>
       ) : (
@@ -124,11 +126,11 @@ export function AdminAuditLogsPage() {
             <table className="w-full min-w-[860px] text-sm">
               <thead>
                 <tr className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
-                  <th className="px-4 py-3 font-medium">Time</th>
-                  <th className="px-4 py-3 font-medium">Actor</th>
-                  <th className="px-4 py-3 font-medium">Action</th>
-                  <th className="px-4 py-3 font-medium">Target</th>
-                  <th className="px-4 py-3 font-medium">Metadata</th>
+                  <th className="px-4 py-3 font-medium">{t('admin.auditPage.colTime')}</th>
+                  <th className="px-4 py-3 font-medium">{t('admin.auditPage.colActor')}</th>
+                  <th className="px-4 py-3 font-medium">{t('admin.auditPage.colAction')}</th>
+                  <th className="px-4 py-3 font-medium">{t('admin.auditPage.colTarget')}</th>
+                  <th className="px-4 py-3 font-medium">{t('admin.auditPage.colMetadata')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -183,7 +185,7 @@ export function AdminAuditLogsPage() {
             onClick={() => fetchPage(rows.length, true)}
           >
             {loading ? <Spinner className="mr-1 h-4 w-4" /> : null}
-            Load more
+            {t('admin.auditPage.loadMore')}
           </Button>
         </div>
       )}

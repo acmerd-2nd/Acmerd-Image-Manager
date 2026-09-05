@@ -33,6 +33,7 @@ import {
   removeAssetTag,
 } from '@/features/tags/api'
 import { ALLOWED_MIME, MAX_FILE_SIZE, deleteStoragePaths } from '@/features/assets/storage'
+import { useLocale } from '@/i18n'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -47,6 +48,7 @@ import { cn } from '@/lib/utils'
  * 排序 V1 用上移/下移（拖拽留待 Phase 9 UX）。
  */
 export function AdminAssetEditorPage() {
+  const { t } = useLocale()
   const { id = '' } = useParams()
   const navigate = useNavigate()
 
@@ -77,7 +79,7 @@ export function AdminAssetEditorPage() {
     try {
       const a = await getAsset(id)
       if (!a) {
-        setLoadError('Asset 不存在或无权访问')
+        setLoadError(t('admin.editor.notExist'))
         return
       }
       setAsset(a)
@@ -140,7 +142,7 @@ export function AdminAssetEditorPage() {
   // ---------- 基础信息 ----------
   const saveBasics = () =>
     run(async () => {
-      if (!name.trim()) throw new Error('Name 不能为空')
+      if (!name.trim()) throw new Error(t('admin.editor.nameRequiredShort'))
       await updateAsset(asset.id, {
         name: name.trim(),
         slug: slug.trim(),
@@ -156,7 +158,7 @@ export function AdminAssetEditorPage() {
         const ok = languages.some(
           (l) => l.status === 'published' && imagesOf(l.id).length > 0,
         )
-        if (!ok) throw new Error('PUBLISH_BLOCKED：需要至少 1 个含图片的 published 语言版本')
+        if (!ok) throw new Error(t('admin.editor.publishBlockedMsg'))
       }
       await transitionAsset(asset.id, to)
     })
@@ -168,7 +170,7 @@ export function AdminAssetEditorPage() {
       const githubImgs = images.filter((i) => i.provider === 'github')
       for (const img of githubImgs) {
         await deleteGithubImage(img.id).catch(() => {
-          setNotice(`GitHub 对象清理未完成（${img.filename}），sweeper 将继续收敛`)
+          setNotice(t('admin.editor.githubCleanupPending', { name: img.filename }))
         })
       }
       const storagePaths = images
@@ -186,7 +188,7 @@ export function AdminAssetEditorPage() {
 
   const removeLanguage = (lang: AssetLanguageRow) =>
     run(async () => {
-      if (imagesOf(lang.id).length > 0) throw new Error('该语言下仍有图片，先清空再删除')
+      if (imagesOf(lang.id).length > 0) throw new Error(t('admin.editor.langHasImages'))
       await deleteLanguage(lang.id)
     })
 
@@ -212,20 +214,20 @@ export function AdminAssetEditorPage() {
 
     try {
       const langRow = languages.find((l) => l.language_code === lang)
-      if (!langRow) throw new Error('语言不存在')
+      if (!langRow) throw new Error(t('admin.editor.langMissing'))
       const fileList = Array.from(files ?? [])
       let count = 0
 
       for (const file of fileList) {
-        if (file.size > MAX_FILE_SIZE) throw new Error(`文件过大：${file.name}（上限 15 MB）`)
+        if (file.size > MAX_FILE_SIZE) throw new Error(t('admin.editor.fileTooLarge', { name: file.name }))
         if (!ALLOWED_MIME.includes(file.type as (typeof ALLOWED_MIME)[number])) {
-          throw new Error(`不支持的格式：${file.name}（仅 JPEG/PNG/WebP）`)
+          throw new Error(t('admin.editor.badFormat', { name: file.name }))
         }
         // V1.1 PB-1: 经 Worker 上传 GitHub（租约串行 + pending 态 + sha 校验 + ready）
         await uploadImageGithub(langRow.id, file)
         count += 1
       }
-      setNotice(`已上传 ${count} 张图到 ${LANGUAGE_LABELS[lang]}`)
+      setNotice(t('admin.editor.uploaded', { n: count, lang: LANGUAGE_LABELS[lang] }))
       await reload()
     } catch (e) {
       setActionError(e instanceof Error ? e.message : String(e))
@@ -253,7 +255,7 @@ export function AdminAssetEditorPage() {
           if ((e as Error & { code?: string }).code === 'not_deletable') {
             await deleteImageRow(img.id) // failed 等无远端对象态 → 仅清行
           } else {
-            setNotice(`远端删除失败，图片已隐藏，sweeper 将继续重试`)
+            setNotice(t('admin.editor.remoteDeletePending'))
           }
           return
         }
@@ -262,7 +264,7 @@ export function AdminAssetEditorPage() {
       await deleteImageRow(img.id) // 先删行（触发 image.deleted 审计；若为封面 FK 自动置 null）
       if (img.storage_path) {
         await deleteStoragePaths([img.storage_path]).catch((e) => {
-          setNotice(`图片记录已删，但存储对象清理失败：${e instanceof Error ? e.message : String(e)}`)
+          setNotice(t('admin.editor.rowDeletedCleanupFailed', { msg: e instanceof Error ? e.message : String(e) }))
         })
       }
     })
@@ -289,21 +291,21 @@ export function AdminAssetEditorPage() {
         <StatusBadge status={asset.status} />
         {asset.status !== 'published' && (
           <Button size="sm" disabled={busy} onClick={() => doTransition('published')}>
-            Publish
+            {t('admin.action.publish')}
           </Button>
         )}
         {asset.status === 'published' && (
           <>
             <Button asChild size="sm" variant="outline">
               <Link to={`/asset/${asset.slug}`} target="_blank">
-                Preview
+                {t('admin.editor.preview')}
               </Link>
             </Button>
             <Button size="sm" variant="outline" disabled={busy} onClick={() => doTransition('draft')}>
-              Unpublish
+              {t('admin.action.unpublish')}
             </Button>
             <Button size="sm" variant="outline" disabled={busy} onClick={() => doTransition('archived')}>
-              Archive
+              {t('admin.action.archive')}
             </Button>
           </>
         )}
@@ -313,13 +315,13 @@ export function AdminAssetEditorPage() {
             variant="outline"
             disabled={busy}
             onClick={() => doTransition('draft')}
-            title="恢复为 Draft，重新检查后才能 Publish"
+            title={t('admin.editor.publishHint')}
           >
             Restore
           </Button>
         )}
         <Button size="sm" variant="destructive" disabled={busy} onClick={() => setConfirmDelete(true)}>
-          Delete
+          {t('admin.action.delete')}
         </Button>
       </div>
 
@@ -336,19 +338,19 @@ export function AdminAssetEditorPage() {
 
       {/* 基础信息 */}
       <section className="max-w-xl space-y-3 rounded-lg border p-4">
-        <h2 className="font-medium">基础信息</h2>
+        <h2 className="font-medium">{t('admin.editor.basics')}</h2>
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="space-y-1">
-            <label className="text-xs text-muted-foreground">Name</label>
+            <label className="text-xs text-muted-foreground">{t('admin.editor.name')}</label>
             <Input value={name} onChange={(e) => setName(e.target.value)} />
           </div>
           <div className="space-y-1">
-            <label className="text-xs text-muted-foreground">Slug</label>
+            <label className="text-xs text-muted-foreground">{t('admin.editor.slug')}</label>
             <Input value={slug} onChange={(e) => setSlug(e.target.value)} />
           </div>
         </div>
         <div className="space-y-1">
-          <label className="text-xs text-muted-foreground">Description</label>
+          <label className="text-xs text-muted-foreground">{t('admin.editor.description')}</label>
           <textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
@@ -357,32 +359,32 @@ export function AdminAssetEditorPage() {
           />
         </div>
         <Button size="sm" variant="outline" disabled={busy} onClick={saveBasics}>
-          Save basics
+          {t('admin.editor.saveBasics')}
         </Button>
       </section>
 
       {/* 标签（Asset 级，Phase 6） */}
       <section className="max-w-xl space-y-3 rounded-lg border p-4">
-        <h2 className="font-medium">标签</h2>
+        <h2 className="font-medium">{t('admin.editor.tagsSection')}</h2>
 
         {/* 已关联标签 */}
         <div className="flex flex-wrap gap-1.5">
           {allTags
-            .filter((t) => assetTagIds.has(t.id))
-            .map((t) => (
+            .filter((tg) => assetTagIds.has(tg.id))
+            .map((tg) => (
               <span
-                key={t.id}
+                key={tg.id}
                 className="inline-flex items-center gap-1 rounded-full border border-primary/40 bg-primary/10 px-2.5 py-0.5 text-xs"
               >
-                {t.name}
+                {tg.name}
                 <button
                   type="button"
-                  aria-label={`移除 ${t.name}`}
+                  aria-label={t('admin.tags.removeTag', { name: tg.name })}
                   disabled={busy}
                   className="text-muted-foreground hover:text-foreground"
                   onClick={() =>
                     run(async () => {
-                      await removeAssetTag(asset.id, t.id)
+                      await removeAssetTag(asset.id, tg.id)
                     })
                   }
                 >
@@ -391,7 +393,7 @@ export function AdminAssetEditorPage() {
               </span>
             ))}
           {assetTagIds.size === 0 && (
-            <span className="text-xs text-muted-foreground">暂无标签</span>
+            <span className="text-xs text-muted-foreground">{t('admin.tags.none')}</span>
           )}
         </div>
 
@@ -400,7 +402,7 @@ export function AdminAssetEditorPage() {
           <Input
             value={tagFilter}
             onChange={(e) => setTagFilter(e.target.value)}
-            placeholder="搜索标签，或输入新标签名"
+            placeholder={t("admin.tags.searchOrCreate")}
           />
           <div className="flex flex-wrap gap-1.5">
             {allTags
@@ -442,7 +444,7 @@ export function AdminAssetEditorPage() {
                 }
               >
                 <Plus className="mr-1 h-4 w-4" />
-                新建标签「{tagFilter.trim()}」并关联
+                {t('admin.tags.createAndLink', { name: tagFilter.trim() })}
               </Button>
             )}
         </div>
@@ -450,7 +452,7 @@ export function AdminAssetEditorPage() {
 
       {/* 语言面板 */}
       <section className="space-y-4">
-        <h2 className="font-medium">语言版本</h2>
+        <h2 className="font-medium">{t('admin.editor.languages')}</h2>
 
         {/* 状态总览：固定产品顺序，一眼看清哪些语言对用户可见 */}
         {languages.length > 0 && (
@@ -469,10 +471,10 @@ export function AdminAssetEditorPage() {
                       ? 'border-green-600/40 bg-green-600/10 text-green-700'
                       : 'border-muted-foreground/30 text-muted-foreground',
                   )}
-                  title={visible ? '用户端可见' : '用户端不可见'}
+                  title={visible ? t('admin.editor.langVisibleTitle') : t('admin.editor.langHiddenTitle')}
                 >
                   <span className="font-medium">{LANGUAGE_LABELS[code]}</span>
-                  <span>· {count}图</span>
+                  <span>· {t('admin.editor.langImgs', { n: count })}</span>
                   <span>· {lang.status}</span>
                   {visible && <span>✓</span>}
                 </span>
@@ -494,7 +496,7 @@ export function AdminAssetEditorPage() {
                 <div className="ml-auto flex gap-1">
                   <Button size="sm" variant="outline" disabled={busy} onClick={() => pickFiles(lang.language_code)}>
                     <ImagePlus className="mr-1 h-4 w-4" />
-                    {uploading === lang.language_code ? '上传中…' : 'Upload'}
+                    {uploading === lang.language_code ? t('admin.editor.uploading') : t('admin.editor.upload')}
                   </Button>
                   <Button
                     size="sm"
@@ -502,13 +504,13 @@ export function AdminAssetEditorPage() {
                     disabled={busy}
                     onClick={() => toggleLanguageStatus(lang)}
                   >
-                    {lang.status === 'published' ? 'To Draft' : 'Publish lang'}
+                    {lang.status === 'published' ? t('admin.editor.toDraft') : t('admin.editor.publishLang')}
                   </Button>
                   <Button
                     size="sm"
                     variant="ghost"
                     disabled={busy || imgs.length > 0}
-                    title={imgs.length > 0 ? '先清空图片才能删除语言' : '删除语言'}
+                    title={imgs.length > 0 ? t('admin.editor.deleteLangDisabled') : t('admin.editor.deleteLang')}
                     onClick={() => removeLanguage(lang)}
                   >
                     <Trash2 className="h-4 w-4" />
@@ -517,7 +519,7 @@ export function AdminAssetEditorPage() {
               </div>
 
               {imgs.length === 0 ? (
-                <p className="text-xs text-muted-foreground">暂无图片，点击 Upload 上传。</p>
+                <p className="text-xs text-muted-foreground">{t('admin.editor.noImages')}</p>
               ) : (
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
                   {imgs.map((img, idx) => (
@@ -526,15 +528,15 @@ export function AdminAssetEditorPage() {
                         <img src={toPublicUrl(img)} alt={img.filename} className="h-full w-full object-cover" />
                         {asset.cover_image_id === img.id && (
                           <span className="absolute left-1 top-1 rounded bg-primary px-1 text-[10px] text-primary-foreground">
-                            Cover
+                            {t('admin.editor.cover')}
                           </span>
                         )}
                       </div>
                       <div className="flex justify-center gap-0.5">
-                        <Button size="sm" variant="ghost" className="h-7 px-1.5" disabled={busy || idx === 0} onClick={() => moveImage(img, -1)} title="上移">
+                        <Button size="sm" variant="ghost" className="h-7 px-1.5" disabled={busy || idx === 0} onClick={() => moveImage(img, -1)} title={t('admin.editor.moveUp')}>
                           <ArrowUp className="h-3.5 w-3.5" />
                         </Button>
-                        <Button size="sm" variant="ghost" className="h-7 px-1.5" disabled={busy || idx === imgs.length - 1} onClick={() => moveImage(img, 1)} title="下移">
+                        <Button size="sm" variant="ghost" className="h-7 px-1.5" disabled={busy || idx === imgs.length - 1} onClick={() => moveImage(img, 1)} title={t('admin.editor.moveDown')}>
                           <ArrowDown className="h-3.5 w-3.5" />
                         </Button>
                         <Button
@@ -544,9 +546,9 @@ export function AdminAssetEditorPage() {
                           disabled={busy || asset.cover_image_id === img.id}
                           onClick={() => setCover(img)}
                         >
-                          Cover
+                          {t('admin.editor.setCover')}
                         </Button>
-                        <Button size="sm" variant="ghost" className="h-7 px-1.5 text-destructive" disabled={busy} onClick={() => removeImage(img)} title="删除图片">
+                        <Button size="sm" variant="ghost" className="h-7 px-1.5 text-destructive" disabled={busy} onClick={() => removeImage(img)} title={t('admin.editor.deleteImage')}>
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>
                       </div>
@@ -560,7 +562,7 @@ export function AdminAssetEditorPage() {
 
         {missingLangs.length > 0 && (
           <div className="flex flex-wrap items-center gap-2 rounded-lg border border-dashed p-4">
-            <span className="text-sm text-muted-foreground">添加语言版本：</span>
+            <span className="text-sm text-muted-foreground">{t('admin.editor.addLanguage')}</span>
             {missingLangs.map((c) => (
               <Button key={c} size="sm" variant="outline" disabled={busy} onClick={() => addLanguage(c)}>
                 + {LANGUAGE_LABELS[c]}
@@ -575,7 +577,7 @@ export function AdminAssetEditorPage() {
         title={`Delete「${asset.name}」？`}
         destructive
         confirmLabel="Delete permanently"
-        description={`此操作物理删除：\n· ${languages.length} 个语言版本 / ${images.length} 张图片记录（级联）\n· Storage 中 images/${asset.id}/ 全部对象\n\n不可撤销，审计记录 asset.deleted。`}
+        description={t('admin.editor.deleteBody', { langs: languages.length, images: images.length })}
         onCancel={() => setConfirmDelete(false)}
         onConfirm={doDelete}
       />
