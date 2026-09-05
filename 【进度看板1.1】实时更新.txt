@@ -7,15 +7,15 @@
 快速恢复上下文。每次完成实质步骤后必须更新本文件的对应标记与时间戳。
 状态标记：✅ 完成 | 🟡 进行中/待裁决 | 🔴 未开始/待 Owner | 🚫 禁止/未授权
 
-最后更新：2026-09-05（PC-1 + PC-2 完成 f914bbf；PC-3 Schedule 开工）
+最后更新：2026-09-05（PC-1/2/3 完成 90f3428；PC-4 Credits 接线开工——最高风险项）
 
 ════════════════════════════════════════════════════════════════════
 ■ 当前位置（一句话）
 ════════════════════════════════════════════════════════════════════
-V1.1 PC-1 i18n ✅ + PC-2 Collection UI ✅ 完成（f3fd712/68b706e/9ee0821/17c29a6/f914bbf）。
-PC-2：首页 Collection 卡片 + /collection/:slug + Admin 管理页（CRUD/排序/归组，走 Worker
-admin 端点 collection.* 审计）；隔离库冒烟 16/16 PASS（视图语义/RLS/H1 守卫/审计）。
-下一步 PC-3 Schedule（settings 开关显隐 + Coming Soon 页），随后 PC-4 Credits 接线。
+V1.1 PC-1 i18n ✅ + PC-2 Collection ✅ + PC-3 Schedule ✅ 完成
+（f3fd712/68b706e/9ee0821/f914bbf/90f3428；PC-2 隔离库冒烟 16/16 PASS）。
+当前：PC-4 Credits 下载扣分接线（最高风险项；0010 RPC 全量复用，零新 RPC 零 schema）。
+完成后隔离库+沙箱全矩阵 PASS → STOP 等 Owner 检查，生产部署单独授权。
 ════════════════════════════════════════════════════════════════════
 ■ 阶段总览
 ════════════════════════════════════════════════════════════════════
@@ -55,10 +55,10 @@ PC-2 Collection UI            ✅ 完成（2026-09-05，f914bbf；隔离库冒�
     首页 Collection 卡片 → /collection/:slug → Asset 列表；
     Admin CRUD + sort_order 排序 + 归档 + 设封面。
     （RLS 已就位：0012）
-PC-3 Schedule                 🔴 未开始
+PC-3 Schedule                 ✅ 完成（2026-09-05，90f3428；开关显隐 + Coming Soon + Admin 开关）
     导航"排期"由 site_settings.schedule_navigation_enabled 控制显隐
     （anon 可读已就位：0011）；页面 Coming Soon；Admin 开关。
-PC-4 Credits 下载扣分接线     🔴 未开始  ← 最高风险项，完成后 STOP
+PC-4 Credits 下载扣分接线     🔴 进行中（本 agent 2026-09-05 开工）  ← 最高风险项，完成后 STOP
     Worker 现状 0 处调用 credits RPC（grep 证实）。
     单图：登录门→published+ready 校验→RPC 扣分→302 raw。
     ZIP：预检(含 raw HEAD)→扣 n×zip 单价→打包；中途失败自动 refund。
