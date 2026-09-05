@@ -7,15 +7,14 @@
 快速恢复上下文。每次完成实质步骤后必须更新本文件的对应标记与时间戳。
 状态标记：✅ 完成 | 🟡 进行中/待裁决 | 🔴 未开始/待 Owner | 🚫 禁止/未授权
 
-最后更新：2026-09-05（Phase C Gate 批准，实施开工）
+最后更新：2026-09-05（PC-1 i18n 全量接线完成 9ee0821；PC-2 Collection UI 开工）
 
 ════════════════════════════════════════════════════════════════════
 ■ 当前位置（一句话）
 ════════════════════════════════════════════════════════════════════
-V1.1 Phase C Design Gate ✅ APPROVED（Owner 2026-09-05：Q1–Q5 全按建议
-通过）。实施已开工：PC-1→PC-2→PC-3 连续，PC-4 隔离库+沙箱全矩阵 PASS
-后 STOP 等 Owner 检查，生产部署单独授权。
-
+V1.1 PC-1 i18n 全量接线 ✅ 完成（f3fd712 / 68b706e / 9ee0821：字典+Provider+Switch、
+公开页+组件、admin 页+features 层；顺手修 2 个交接遗留 bug：TagsPage 确认框漏 $、
+AuditLogs 筛选钮非法 labelKey）。typecheck+build 绿。实施推进中：PC-2 Collection UI。
 ════════════════════════════════════════════════════════════════════
 ■ 阶段总览
 ════════════════════════════════════════════════════════════════════
@@ -47,7 +46,7 @@ V1.1 Phase D（迁移/回归） 🔴 未开始
 ════════════════════════════════════════════════════════════════════
 Gate 文档：docs/v1.1/10-phase-c-design-gate.md（含完整设计与 Q1–Q5）
 
-PC-1 i18n 全量接线            🔴 未开始
+PC-1 i18n 全量接线            ✅ 完成（2026-09-05 本 agent，f3fd712/68b706e/9ee0821 三段全绿）
     所有文案→i18n key；默认 zh-CN；左上角苹果风中英 Switch；
     uiLocale(localStorage acmerd.ui.locale) 与 assetLang(?lang=) 完全隔离；
     切换不刷新页面。不引重型 i18n 框架。
@@ -119,7 +118,7 @@ Q5 PC-4 验证环境                       建议：沙箱全矩阵→STOP→单
       解决：-c credential.helper= 先空值重置列表，再接 token 助手
    b) 助手脚本路径含【】等非 ASCII 字符时 git 无法执行——
       解决：助手放纯 ASCII 路径（如 %LOCALAPPDATA%/Temp），用后即删
-🟡 Phase C 实施进行中（PC-1 i18n 起；PC-4 完成后 STOP 等 Owner）
+🟡 Phase C 实施进行中（PC-1 完成；PC-2 Collection UI 进行中；PC-4 完成后 STOP 等 Owner）
 🚫 Storage cleanup（永久等待 Owner 单独授权）
 
 ════════════════════════════════════════════════════════════════════
@@ -135,7 +134,7 @@ Q5 PC-4 验证环境                       建议：沙箱全矩阵→STOP→单
 07 dry-run 证据（direct 14/14 + e2e 27/27）
 08 Phase B 收口报告（迁移应用/部署/Stage 1/2 上线）
 09 事实边界澄清 + Production Evidence（PB-1 CLOSED + Stage1/2 EXECUTED）
-10 Phase C Design Gate（🟡 PENDING OWNER REVIEW）← 当前活跃文档
+10 Phase C Design Gate（✅ APPROVED 2026-09-05，Q1–Q5 按建议通过）
 
 ════════════════════════════════════════════════════════════════════
 ■ Agent 接手须知（工程纪律，本项目强制）
