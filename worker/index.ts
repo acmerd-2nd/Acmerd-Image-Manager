@@ -196,7 +196,7 @@ async function deductCredits(
       p_user_id: userId,
       p_type: type,
       p_amount: amount,
-      p_idempotency_key: idempotencyKey,
+      p_idempotency_key: idempotencyKey ?? null, // 显式 null：undefined 会被 JSON 丢弃导致 6 参重载解析失败
       p_ref_type: refType,
       p_ref_id: refId,
       p_metadata: metadata,
