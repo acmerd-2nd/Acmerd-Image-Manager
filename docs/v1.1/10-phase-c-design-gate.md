@@ -1,7 +1,7 @@
 # V1.1 Phase C Design Gate — UI 层 + Credits 接线 + 注册 Gate + Seed 用户
 
 - **日期**: 2026-09-05
-- **状态**: 🔴 **PENDING OWNER REVIEW**（纯文档 Gate；Owner 批准前零代码改动、零生产库触碰、零部署）
+- **状态**: ✅ **APPROVED（Owner 2026-09-05：Q1–Q5 全按 Agent 建议通过，批准按 PC-1→PC-7 开工；PC-4 完成即 STOP 等检查）**（批准前已保持零代码、零生产库触碰、零 seed 用户）
 - **前置**: Phase B = CLOSED（PB-1 Gate Closure 见 `09-factual-clarification-production-evidence.md`；Stage 1 VERIFIED、Stage 2 线上运行，Storage cleanup 🚫 未授权未执行）
 - **依据**: V1.1 提案 §52/§57–§62/§69/§71（Phase C = UI）；Rev B（01）与 Phase B Gate（04）所有冻结不变量继续有效
 
@@ -112,15 +112,17 @@ requireUser → source 校验 → deduct_credits(user,'package_download',package
 
 - Storage cleanup（🚫 未授权）｜R2/S3/CDN 切换（仅保留 env 空口）｜多层 Folder｜完整 Settings 系统｜用户自助积分历史 UI（V1.1 ledger 仅 Admin 可见）｜Schedule 内容编排（`schedule.items` 未来再说）｜重 i18n 框架
 
-## §8 待 Owner 裁决（Q1–Q5）
+## §8 Owner 裁决（2026-09-05 已落档：Q1–Q5 全按建议通过）
 
-| # | 问题 | Agent 建议 |
-| --- | --- | --- |
-| Q1 | 单图扣分时机：302 前是否加 raw HEAD 探针确认可达？ | **不加**（ready 态已含 sha 校验；省子请求）。总纲 §45"确认可读取"由 ready 语义满足 |
-| Q2 | 下载幂等 key 策略 | 前端每次点击 uuid 透传 RPC；不做服务端时间窗去重；防双击靠前端 loading 态 |
-| Q3 | `collection_id=null` 的 Asset 公域可见性 | 首页只列 Collection；无归属 Asset 不进公域，仅 Admin 可见 |
-| Q4 | 注册邮箱确认 | 沿用 GoTrue 现状配置，Worker 不改 GoTrue 行为 |
-| Q5 | PC-4 验证环境 | 隔离库 + dry-run 沙箱全矩阵（含并发双击、unlimited、不足、refund 路径）PASS 后 STOP，生产部署单独授权 |
+| # | 问题 | Agent 建议 | **Owner 裁决** |
+| --- | --- | --- | --- |
+| Q1 | 单图扣分时机：302 前是否加 raw HEAD 探针确认可达？ | **不加**（ready 态已含 sha 校验；省子请求）。总纲 §45"确认可读取"由 ready 语义满足 | ✅ 按建议：不加 |
+| Q2 | 下载幂等 key 策略 | 前端每次点击 uuid 透传 RPC；不做服务端时间窗去重；防双击靠前端 loading 态 | ✅ 按建议 |
+| Q3 | `collection_id=null` 的 Asset 公域可见性 | 首页只列 Collection；无归属 Asset 不进公域，仅 Admin 可见 | ✅ 按建议 |
+| Q4 | 注册邮箱确认 | 沿用 GoTrue 现状配置，Worker 不改 GoTrue 行为 | ✅ 按建议（GoTrue 直连 signup 残余风险记录在案） |
+| Q5 | PC-4 验证环境 | 隔离库 + dry-run 沙箱全矩阵（含并发双击、unlimited、不足、refund 路径）PASS 后 STOP，生产部署单独授权 | ✅ 按建议 |
+
+**总体**：批准 Phase C 开工，按 §1 顺序 PC-1→PC-2→PC-3→PC-4 执行；**PC-4 隔离库+沙箱全矩阵 PASS 后 STOP 等 Owner 检查**，生产部署/切换单独授权；其后 PC-5→PC-6 连续实施，PC-7 全量回归后 STOP 等终验。
 
 ## §9 风险评估
 
@@ -132,4 +134,4 @@ requireUser → source 校验 → deduct_credits(user,'package_download',package
 
 ---
 
-**Gate 纪律重申**：本文件批准前，不改任何代码、不动生产库、不创建 seed 用户。批准后按 §1 顺序执行，PC-4 完成即 STOP 等 Owner 检查。
+**Gate 纪律重申**：本文件已获批（2026-09-05），实施按 §1 顺序执行：PC-1→PC-2→PC-3 连续；**PC-4 隔离库+沙箱全矩阵 PASS 后 STOP 等 Owner 检查**；其后 PC-5→PC-6 连续，PC-7 全量回归后 STOP 等终验。

@@ -7,14 +7,14 @@
 快速恢复上下文。每次完成实质步骤后必须更新本文件的对应标记与时间戳。
 状态标记：✅ 完成 | 🟡 进行中/待裁决 | 🔴 未开始/待 Owner | 🚫 禁止/未授权
 
-最后更新：2026-09-05 10:25 (GMT+8)
+最后更新：2026-09-05（Phase C Gate 批准，实施开工）
 
 ════════════════════════════════════════════════════════════════════
 ■ 当前位置（一句话）
 ════════════════════════════════════════════════════════════════════
-V1.1 Phase C Design Gate 已提交（docs/v1.1/10-phase-c-design-gate.md，
-commit 124f3c1），🔴 PENDING OWNER REVIEW。Gate 批准前零代码、零生产库、
-零 seed 用户。批准后按 PC-1→PC-7 顺序执行，PC-4 完成后 STOP。
+V1.1 Phase C Design Gate ✅ APPROVED（Owner 2026-09-05：Q1–Q5 全按建议
+通过）。实施已开工：PC-1→PC-2→PC-3 连续，PC-4 隔离库+沙箱全矩阵 PASS
+后 STOP 等 Owner 检查，生产部署单独授权。
 
 ════════════════════════════════════════════════════════════════════
 ■ 阶段总览
@@ -26,8 +26,8 @@ V1.1 Phase B Design Gate  ✅ APPROVED（04，两处必改已并入）
 V1.1 PB-1（GitHub 仓储）  ✅ CLOSED（Gate Closure 见 09 号文档）
 V1.1 Stage 1（复制迁移）  ✅ EXECUTED + VERIFIED（生产 1 图已上 GitHub）
 V1.1 Stage 2（切换 github）✅ EXECUTED + 线上验证（6/6 复核 PASS）
-V1.1 Phase C Design Gate  🟡 PENDING OWNER REVIEW（10 号文档）
-V1.1 Phase C 实施         🔴 未开始（等 Gate 批准）
+V1.1 Phase C Design Gate  ✅ APPROVED（10 号文档，Owner 2026-09-05）
+V1.1 Phase C 实施         🟡 进行中（PC-1 起）
 V1.1 Phase D（迁移/回归） 🔴 未开始
 
 ════════════════════════════════════════════════════════════════════
@@ -119,7 +119,7 @@ Q5 PC-4 验证环境                       建议：沙箱全矩阵→STOP→单
       解决：-c credential.helper= 先空值重置列表，再接 token 助手
    b) 助手脚本路径含【】等非 ASCII 字符时 git 无法执行——
       解决：助手放纯 ASCII 路径（如 %LOCALAPPDATA%/Temp），用后即删
-🔴 Phase C Gate 等待 Owner 裁决（Q1–Q5 + 总体批准）
+🟡 Phase C 实施进行中（PC-1 i18n 起；PC-4 完成后 STOP 等 Owner）
 🚫 Storage cleanup（永久等待 Owner 单独授权）
 
 ════════════════════════════════════════════════════════════════════
