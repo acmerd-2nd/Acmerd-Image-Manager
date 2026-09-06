@@ -1,16 +1,17 @@
 # 🔄 HANDOVER — ACMERD Image Manager 交接文档
 
-> **最后更新**: 2026-09-04 深夜（**V1.1 Phase B 全链收口**：PB-1 验收 → 0009–0014 应用生产 → e2e 27/27 → 部署 → Stage 1/2 上线，**生产图已由 GitHub 提供**）
-> **当前状态**: ✅ **V1.0 冻结基线未破坏** · 🟢 **V1.1 Phase B = CLOSED**（GitHub Image Repository 生产运行；Phase C 待 Owner 发起）
-> **线上**: https://image.acmerd.com 运行中（bundle `index-C_-skktm.js`；迁移 0001–0014 全 applied；`/api/health` 200）
-> **发布身份（Truth Source）**: `git ls-remote refs/tags/v1.0.0`（V1.0 归档基线）；V1.1 Phase B 证据链 = `docs/v1.1/01…08`（Design Gate Rev B → 裁决 ×2 → Phase A/B 报告 → dry-run 证据 → 收口报告）
-> **本文件转为归档状态**：后续新需求一律走 Change Proposal → 新 Phase/版本流程，不得在已发布基线上直接改。
+> **最后更新**: 2026-09-06（**V1.1 全链收口 + 生产部署 + push 完成**：Phase C PC-1→PC-7 全 CLOSED → V1.1 已上线 image.acmerd.com → 远端 main 与本地一致）
+> **当前状态**: ✅ **V1.0 冻结基线未破坏** · 🟢 **V1.1 Phase A/B/C 全部 CLOSED，V1.1 已在生产运行**（Worker ver `71278568-…`，100%；回滚锚点 `18941cbc`）· 远端 `main = c7c9ce5`（与本地一致，无遗留 commit）
+> **线上**: https://image.acmerd.com 运行中（`/api/health` 200；迁移 0001–0014 全 applied，本次部署零迁移；生产验证 16/0 + 浏览器全绿，见 `docs/v1.1/13-production-deploy-plan.md` §6）
+> **Truth Source**: 远端 `git ls-remote origin main = c7c9ce5`；部署记录与回滚预案 = `docs/v1.1/13`；PC-7 回归 = `docs/v1.1/12`
+> **V1.1 证据链（`docs/v1.1/01…13`，全部 Owner 签署/批准）**: 01 Design Gate Rev B → 02 裁决 → 03 Phase A → 04 Phase B Gate → 05 PB-1 → 06 Stage1 → 07 dry-run → 08 Phase B 收口 → 09 事实澄清 → **10 Phase C Design Gate（Q1–Q5 已批）→ 11 PC-4 收口证据 → 12 PC-7 回归报告 → 13 生产部署预案+执行记录**
 
-> ### 🟢 V1.1 Phase B 已收口（2026-09-04 深夜）— 新 Agent 必读
-> - **Gate 链**（`docs/v1.1/`，全部 Owner 签署）：`01` Design Gate Rev B → `02` Owner 裁决 → `03` Phase A（CLOSED）→ `04` Phase B Gate（APPROVED）→ `05` PB-1（ACCEPTED）→ `07` dry-run 证据（direct 14/14 + e2e 27/27）→ `08` 收口报告。
-> - **生产现状**：1 张图片 `provider=github`（source_path `assets/{uuid}/en/tu1.jpg`，source_sha `7a20f0e88a87…`），下载 302 → `raw.githubusercontent.com`（生产仓库 **public，勿切 private**）；Supabase Storage 原件保留（零删除，回滚即切回）。
-> - **冻结不变量**（不得推翻）：H2 Credits 幂等三态、一 debit 一 refund、ledger `ON DELETE SET NULL`、Credits 定价语义、`makeImageUrl` 唯一 URL 出口、GITHUB_TOKEN 仅 Worker Secret、无 Worker 图片代理、`/asset/:slug` 永久兼容。
-> - **下一步 = Phase C**（需 Owner 发起 Change Proposal/Gate）：Collections UI、Credits 下载扣分接线（0010 RPC 已就位）、注册 Worker、Schedule UI；全部 UI 从第一天 i18n key 化。
+> ### 🟢 V1.1 当前态（2026-09-06）— 新 Agent 必读
+> - **Phase C 全部完成**：PC-1 i18n（zh/en 全量接线，`uiLocale`≠`assetLang`）/ PC-2 Collection UI / PC-3 Schedule / **PC-4 Credits 扣分接线**（单图/ZIP/Package 三链路 × 0010 RPC，沙箱 31/2——2 FAIL=W0f 本地 Node raw 出网受限，Owner 已裁决豁免关 Gate，W7 ZIP 200 反证 raw 可用）/ **PC-5 注册 Gate**（Worker `POST /api/auth/register`，前端改投，E2E 建号→登录闭环）/ **PC-6 Platform Controls + Seed**（demo01–08@acmerd.com 已建产，凭据文件交 Owner 落 `G:\000000.AIDIJIA`）/ **PC-7 集成回归 PASS**（沙箱 + zh 走查 12 路由 + 红线 grep + 零残留）。
+> - **生产部署（Owner 授权本机执行）**：ver `18941cbc` → `71278568`；P0 阻断项（`.env` 缺 `VITE_GITHUB_IMAGES_*` → 烘焙空 owner/repo）部署前抓到并修复；线上验证：`scripts/v11-pc7-prod-verify.mjs` **16 PASS/0 FAIL/1 SKIP** + 浏览器 tu1.jpg 200。routes 步 10000 报错 = cosmetic（既知）。
+> - **V1.1 冻结不变量（新增，叠加在 V1.0 之上）**：Credits H2 幂等三态 + C6 无负余额 + 一 debit 一 refund + unlimited 旁路；注册 gate 服务端 fail-closed（GoTrue anon 直连 signup 旁路 = 已批残余风险 PD-3 A）；GitHub path `assets/{asset-uuid}/{langCode}/{file}`；`images.status` 四态；`makeImageUrl` 唯一 URL 出口（V1.0已有，V1.1强化验证）；seed 用户 `account_origin='seed'` 仅标识无特权。
+> - **待 Owner 决定（当前唯二开口）**：① 生产 `registration_enabled` 现为 true（开放注册）——要默认关闭去 Admin 平台控制一键（与代码无关）；② Phase D / 后续需求未发起。
+> - **环境坑（本会话实证，接手必读）**：本机**全局 `npx`/npm 已坏**（`AppData\Roaming\npm\...\npx-cli.js` 缺失）→ 跑 wrangler 一律 `node node_modules/wrangler/wrangler-dist/cli.js …`；本机 Node 到 `raw.githubusercontent.com` 出网被阻（浏览器正常）→ 沙箱 W0f 类 raw 轮询必 FAIL，判别口径=W0f FAIL + W7 ZIP 200 ⇒ 环境非对称非缺陷；本机无本地 Postgres 且 `db.*.supabase.co:5432` DNS ENOTFOUND → 隔离库冒烟无法复跑（历史证据 48/48、16/16、13/13 代位，有环境可补跑）。
 
 > ### 📌 Owner 正式声明 — Frozen Production Release（2026-09-04）
 > > **V1.0.0 is the frozen production release. Any post-release change must go through Change Proposal / new phase rather than modifying the release baseline in place.**
@@ -39,31 +40,34 @@
    - `docs/phase-7/01-design-gate.md`（含附录 A1–A6 裁决，是最完整的"裁决落档"范例）
    - `docs/phase-8/02-security-review.md`（**安全基线冻结文件**，G8 后任何改动都要对照它说明是否触碰边界）
    - 本 HANDOVER 全文
+   - `docs/v1.1/01…13-*.md`（**V1.1 全证据链**：10 号 Phase C Gate 的 Q1–Q5 裁决 + 12 号 PC-7 回归 + 13 号部署/回滚——新需求前必读冻结不变量）
+   - `【总纲1.1】v1.1.txt` + `【进度看板1.1】实时更新.txt`（V1.1 权威总纲与实时看板，本地文件不推公开仓库）
 2. **确认密钥就位**：项目根 `.env` 必须存在（键名见第二节）。若新机器没有 `.env`，**必须找 Owner 索取原文件**——所有密钥都只在 `.env`，无法从别处重建。`.env` 已被 `.gitignore` 排除，**绝不提交**。
 3. **确认工具链**：bash 会话中 `node`/`npm` 可直接用（受管 Node v22）。若 npm 解析失败，回退 `/d/node/npm.cmd`（历史已知可用 Node v24）。`python` 可直接用（受管 3.13）。
 4. **验证环境健康**（只读，安全）：
    ```bash
-   git log --oneline -3          # 应见 74cae3a 及本交接 commit
+   git log --oneline -3          # 应见 c7c9ce5（V1.1 收口/push 记录）
    npm run typecheck             # 前后端 TS 0 错误
    curl -s -o /dev/null -w "%{http_code}\n" https://image.acmerd.com/api/health   # 200
    npm run db:migrate            # 全部 skip（幂等）即 DB 状态正确
    ```
-5. **确认 DB 状态**：`supabase/migrations/` 有 0001–0007，`schema_migrations` 全记录（本机实测：1 asset / 1 lang / 1 image / 0 tags / 64 audit rows，演示级数据）。**不要在 Supabase Dashboard 手改生产库**——结构变更只许新增 `supabase/migrations/XXXX_*.sql` 后跑 `npm run db:migrate`。
-6. **进入 Phase 9**：见「第六节」。**先等 Owner 对 D1–D10 的裁决，严禁未批准先写实现代码。**
+5. **确认 DB 状态**：`supabase/migrations/` 有 **0001–0014**（V1.1 全部已 applied），`schema_migrations` 全记录。**不要在 Supabase Dashboard 手改生产库**——结构变更只许新增 `supabase/migrations/XXXX_*.sql` 后跑 `npm run db:migrate`。
+6. **确认 V1.1 现状**：V1.1 已生产运行（ver `71278568`，远端 main 同步）。唯一待 Owner 决定项见「第六节」。**严禁在未获 Owner 裁决前实施任何新需求/新代码。**
 
 **关键红线（违反会被 Owner 打回）**：Service Role Key 只进 Worker Secret / 本地脚本，绝不进前端 bundle / Git / wrangler.toml；权限只靠 UI 隐藏无效，必须 RLS/服务端兜底；改设计先交 Change Proposal；两份中文规划文档 + `.workbuddy/` 不推公开仓库；**未提供证据前不得宣布 Gate PASS**；不扩大 Scope、不重构已完成 Phase。
 
-### 当前状态快照
+### 当前状态快照（2026-09-06，V1.1 收口后）
 | 维度 | 值 |
 | --- | --- |
-| HEAD / 远端 | `74cae3a`（Phase 8）= origin/main，已推送；本交接 commit 紧随其后 |
-| 工作树 | 仅未跟踪：`.workbuddy/`[故意]、`docs/phase-9/`[本交接将提交]、两份规划文档[故意] |
-| 已应用迁移 | 0001 schema+RLS+storage / 0002 grants / 0003 asset 完整性守卫 / 0004 下载源 URL 守卫 / 0005 search_assets+tag slug+审计 / 0006 Admin 控制台（原子变更 RPC+disabled 门禁+stats+allowlist18）/ 0007 审计收口（asset_languages 五语义+images WHEN 审计+DEF-1 tags.updated_at+allowlist24） |
-| Worker 端点 | `/api/health`；`/api/downloads/image/:id`、`/api/downloads/zip`；`/api/admin/storage/delete`；`/api/admin/users`（分页 envelope）、`/api/admin/users/:id/role`、`/api/admin/users/:id/disabled`、`/api/admin/stats`。全部经 `authenticate()`（角色 + `profiles.disabled` 逐请求校验 → 403 `account_disabled`） |
+| HEAD / 远端 | `c7c9ce5` = origin/main（已推送，完全同步；本地无遗留 commit） |
+| 生产 Worker | ver `71278568-5b23-46de-a5ff-6246dea6dc6c`（2026-09-06 部署；回滚锚点 `18941cbc`） |
+| 工作树 | 仅未跟踪：`.workbuddy/`、`.qoder/`、两份规划文档 + 总纲1.1/看板1.1 [故意不推] |
+| 已应用迁移 | 0001–0008（V1.0：schema+RLS / grants / 资产守卫 / 下载源守卫 / search+tags / Admin 控制台 / 审计收口 / 分页化）+ **0009–0014（V1.1：collections+settings+account_origin / credits 三 RPC / settings grants / collections RLS / allowlist 扩展 / GitHub provider 双模型）** |
+| Worker 端点 | V1.0：`/api/health`、单图/ZIP 下载、storage/delete、admin users/role/disabled/stats。**V1.1 新增**：`POST /api/auth/register`（注册 gate）、`GET/PATCH /api/admin/settings`、`/api/admin/collections…`、`/api/admin/images/github-upload|github-delete`、`POST /api/downloads/package`；admin credits 端点；下载三端点接 deduct/refund；`scheduled` sweeper（cron */10）。全部经 `authenticate()`（角色 + `profiles.disabled` 逐请求校验 → 403 `account_disabled`） |
 | Worker Secret | `SUPABASE_SERVICE_ROLE_KEY` 已 `wrangler secret put`；本地 `worker/.dev.vars` 同步 |
 | 管理员账号 | `1902768564@qq.com`（密码见 `.env` 的 `ADMIN_PASSWORD`），角色 admin |
 | 冻结基线 | 双层可见性（Asset+Language published，0007 后语义经 NO-DRIFT 证明未漂移）、多语言模型、三套下载解耦、ZIP ≤30/≤100MB/并发4、public bucket（残余风险已记录，见 D5/5a）、audit allowlist=24、last-admin 原子保护、disabled 门禁对偶（Worker 403 + RLS `is_admin` 含 `disabled=false`） |
-| 数据现状 | 生产库极小（1 asset/1 image/0 tags）——**分页/大列表验收必须在隔离库造数**，不许拿生产小数据集充数 |
+| 数据现状 | 生产库极小：1 asset（Ecosonique）/1 image（tu1.jpg, provider=github）/0 tags + **seed 用户 demo01–08@acmerd.com（user 角色，余额 0）+ admin**。大列表/分页验收仍须在隔离库造数，不许拿生产小数据集充数 |
 
 ---
 
@@ -188,23 +192,21 @@ React 18 + TS + Vite + Tailwind + shadcn 风格 UI；Hono Worker + `[assets]` SP
 
 ---
 
-## 六、当前待办：Phase 10 — Production Release（Design Gate 已提交，PENDING OWNER REVIEW）
+## 六、当前待办（2026-09-06 更新）
 
-**状态**：Phase 9 全部完成。G9 第④类响应式运行时证据已于 2026-09-04 在真实 Chromium QA 环境补齐，期间发现并修复 DEF-9-1（Admin Users/Audit Logs 在 Tablet/Mobile 页面级横向溢出，根因 `AdminLayout.tsx` flex 子项缺 `min-w-0`；属已批准 D9 范围的精准最小修复）。**G9 = PASS（7/7 CONFIRMED）**，依据 `docs/phase-9/03-g9-closure-report.md`。生产已运行修复版 bundle `index-DosBFCeX.js`。
+**已全部完成**：V1.0（Phase 0–10，G9 已于真实 Chromium QA 环境补齐响应式证据后 PASS）；**V1.1 Phase A/B/C 全部 CLOSED 并已部署生产**（证据链 `docs/v1.1/01…13`；PC-7 回归报告 `12`；部署预案+执行记录 `13` §6）。
 
-**Phase 10 Design Gate 已落档**：`docs/phase-10/01-design-gate.md`（D1 三层混合回归环境 / D2 复用 agent-browser / D3 Reset Password=N/A / D4 V1.0 发布形态 / D5 六套回归矩阵与 G10 判据）。**等待 Owner 逐项裁决（D1–D5）后才执行回归与发布，严禁未批准先实施。**
+**当前唯二开口（均 Owner 决定，Agent 不得擅自推进）**：
+1. **生产 `registration_enabled` 现为 true**（开放注册）。若要默认关闭：Admin Dashboard → 平台控制 → 关「开放注册」即可（即时生效，与部署无关）。关闭后前台注册按钮保留、提交 403 提示"暂未开放注册"。
+2. **Phase D / 后续需求未发起**。任何新需求走 Change Proposal → 新 Phase/版本流程（V1.1 证据链惯例：Design Gate 文档落 `docs/v1.1/NN`，Owner 逐项裁决后才动代码）。
 
-### Phase 10 进入条件与范围纪律（Owner 明示）
-- ~~进入 Phase 10 前须先关闭 G9~~ ✅ G9 已 PASS，条件满足。
-- **Phase 10 严格是"全量回归验证 + 发布"，不得塞新功能**（总纲定义：无新功能）。
+**技术债/留档事项（非阻塞）**：
+- 隔离库复跑（Phase A 48/48、PC-2 16/16、PC-4 13/13）在本机不可行（无本地 Postgres + `db.*.supabase.co:5432` DNS ENOTFOUND）——有隔离库环境时用 `scripts/v11-phase-a-smoke.mjs` / `v11-pc2-smoke.mjs` / `v11-pc4-smoke.mjs` 补跑。
+- GoTrue 公开 signup 可被 anon key 直连绕过（PD-3 已批 A，记录在案）；绝对关闭需 Supabase Auth 侧配置（单独授权）。
+- raw 大陆可访问性（R1）：`VITE_GITHUB_IMAGE_CDN_BASE` 已预留 CDN 切换口。
+- wrangler deploy routes 步 10000 报错 = cosmetic（token 缺 zone routes 读权限；如要消除需 Owner 在 CF 补权限）。
 
-### Phase 10 回归时复用的不变量（已由隔离库/线上证明）
-I1a/I1b `search_assets` 契约零破坏；I2/I2a 分页并集=全量且顺序一致；I3 Guest 集合 NO-DRIFT；I4 RLS/allowlist24/disabled 门禁不漂移。published_assets / is_admin() / RLS / audit / disabled = **冻结基础设施**。
-
-### 补充 QA 环境经验（2026-09-04，供 Phase 10 复用）
-- 本会话使用 agent-browser（真实 Chromium）作为 QA 浏览器：`agent-browser set viewport W H` + `open` + `eval` + `screenshot` **必须在同一 Bash 命令链内执行**——守护进程会在调用间随机重置标签页/视口/登录态（曾致 2 张空白截图与登录丢失，识别后已用防御模式规避）。
-- Admin 登录态采证：`.env` 的 `ADMIN_EMAIL/ADMIN_PASSWORD` + `input[type=email]/input[type=password]` 选择器登录；Admin 页面**只读查看零变更操作**。
-- 溢出判定范式：`document.documentElement.scrollWidth vs clientWidth` + 逐元素 `getBoundingClientRect` 定位溢出源（DEF-9-1 即由此范式定位）。
+**V1.1 验证脚本索引（可复跑）**：`scripts/v11-pc4-sandbox.mjs`（31 项全矩阵；跑前对齐 `.dev.vars` 生产仓 + 用 `node node_modules/wrangler/.../cli.js dev --port 8787` 单进程树，设 `PC4_BASE`）、`v11-pc5-verify.mjs`（PC5_BASE）、`v11-pc6-seed.mjs`（幂等 seed，勿重跑重发密码）、`v11-pc7-prod-verify.mjs`（生产部署后验证，读 G: seed 凭据）、`v11-pc7 回归证据 docs/v1.1/evidence-*`。
 
 ---
 
@@ -286,8 +288,57 @@ scripts/
 └── security-scan.mjs                  # Secret 扫描（git 全历史 + dist + 跟踪，可复跑 + 阳性对照法）
 
 docs/
-├── phase-0/   · phase-7/（gate+impl+evidence，附录 A1–A6）· phase-8/（gate+review+impl+evidence）
-└── phase-9/01-design-gate.md          # ⭐ 当前唯一待办（PENDING OWNER REVIEW，§7 裁决块待填）
+├── phase-0/ · phase-7/ · phase-8/ · phase-9/ · phase-10/   # V1.0 全部归档
+└── v1.1/01…13-*.md + evidence-*.md      # V1.1 证据链（12=PC-7 回归、13=部署预案+执行记录）
+```
+
+### V1.1代码地图增量（在 V1.0 基础上，2026-09-06 现状）
+
+```plaintext
+supabase/migrations/（0008–0014 为 V1.1 新增，全部已 applied）
+├── 0008_search_pagination.sql      # _search_assets_core → search_assets → search_assets_paged
+├── 0009_v11_foundation.sql         # collections + site_settings(5 key) + profiles.account_origin
+├── 0010_credits.sql                # credit_accounts + credit_transactions + deduct/refund/adjust RPC（H2）
+├── 0011_settings.sql               # site_settings anon 可读 grants + settings 审计
+├── 0012_collections_rls.sql        # collections RLS（anon 读 published / admin 写）
+├── 0013_audit_allowlist_v11.sql    # allowlist 扩展（credits.* / settings.updated 等）
+└── 0014_phase_b_github.sql         # images provider 双模型 + 四态 + sweeper 语义
+
+worker/index.ts                      # V1.1 新增端点（其余同 V1.0）：
+                                     #   POST /api/auth/register（PC-5 注册 gate，公开，fail-closed）
+                                     #   POST /api/admin/images/github-upload|github-delete（PB）
+                                     #   GET/PATCH /api/admin/settings（PC-3/6，5 key allowlist）
+                                     #   GET/POST /api/admin/collections…（PC-2 admin CRUD）
+                                     #   下载三端点接 deduct_credits/refund_credits（PC-4）
+                                     #   scheduled = reconcileSweeper（cron */10）
+
+src/
+├── i18n/{zh,en,index.tsx}           # 轻量 i18n：Dictionary 同构（const en: Dictionary）+ LocaleProvider + t()
+├── components/LocaleSwitch.tsx      # 左上角 中/EN Apple 风切换（uiLocale=localStorage acmerd.ui.locale）
+├── features/
+│   ├── auth/api.ts                  # PC-5 registerViaWorker + RegisterError（前端不建会话）
+│   ├── auth/AuthProvider.tsx        # + uiLocale 隔离；资产语言 ?lang= 语义不变
+│   ├── collections/api.ts · CollectionCard.tsx    # PC-2
+│   ├── credits/…                    # 余额徽标 CreditsBadge（credit_accounts RLS 自读）
+│   ├── settings/api.ts              # getSiteSettings（公开只读 5 key）
+│   └── admin/api.ts                 # + getPlatformSettings/updatePlatformSettings/updateUserCredits
+└── routes/pages/
+    ├── SchedulePage.tsx · CollectionDetailPage.tsx   # PC-3 / PC-2
+    ├── RegisterPage.tsx             # PC-5 改投 Worker → signInWithPassword（PD-1 A）
+    └── admin/AdminDashboardPage.tsx # + PlatformControlsCard（PC-6 A：2 开关 + 3 价格）
+    └── admin/AdminCollectionsPage.tsx · SchedulePage 等 i18n 全量接线（PC-1）
+
+scripts/（V1.1 新增）
+├── v11-phase-a-smoke.mjs            # Phase A 隔离库 48/48（历史证据）
+├── v11-pc2-smoke.mjs · v11-pc4-smoke.mjs
+├── v11-pc4-sandbox.mjs              # PC-4 沙箱 31 项全矩阵（本地 worker + 生产 Supabase/GitHub，e2e4 前缀）
+├── v11-pc5-verify.mjs · v11-pc6-seed.mjs · v11-pc7-prod-verify.mjs
+└── _pc4/5/7-runner*.sh              # 临时 runner（用后即删；本机全局 npx 坏 → 走项目本地 wrangler 二进制）
+
+关键本机文件（均 gitignored，勿回退/勿提交）：
+├── .env                             # 全部凭据 + VITE_*（含 VITE_GITHUB_IMAGES_OWNER/REPO/BRANCH——缺失会导致烘焙 raw URL 空 owner/repo，P0 级）
+├── .dev.vars                        # GitHub 仓配置已对齐生产仓 acmerd-2nd/-Photo-Acmerd-Image-Manager（PC-4 排障结论）
+└── G:\000000.AIDIJIA\seed-credentials-*.txt  # seed 用户密码（Owner 保管，绝不入 Git/chat/文档/记忆）
 ```
 
 **证据与记忆纪律**：每 Phase 的 evidence 落在 `docs/phase-X/evidence/*.md`；六类证据模板（实际 SQL / 权限验证 / 并发语义 / 门禁线上 / RLS 回归 / 前 Phase 回归）；换人衔接更新本文件 + `.workbuddy/memory/YYYY-MM-DD.md`（append-only，勿删 `.workbuddy/`）。
