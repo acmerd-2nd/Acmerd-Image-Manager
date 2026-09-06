@@ -7,7 +7,7 @@
 快速恢复上下文。每次完成实质步骤后必须更新本文件的对应标记与时间戳。
 状态标记：✅ 完成 | 🟡 进行中/待裁决 | 🔴 未开始/待 Owner | 🚫 禁止/未授权
 
-最后更新：2026-09-06（**V1.1 生产部署 ✅ EXECUTED + 线上验证全绿**——ver 18941cbc→71278568；PC-1→PC-7 全 CLOSED；push 待 Owner 单独授权；回滚锚点与验证记录见 13 号文档 §6）
+最后更新：2026-09-06（**V1.1 生产部署 ✅ EXECUTED + 线上验证全绿 + push 完成**——ver 18941cbc→71278568；远端 main=9eea9e8 与本地一致；PC-1→PC-7 全 CLOSED；回滚锚点见 13 号文档 §6）
 
 ════════════════════════════════════════════════════════════════════
 ■ 当前位置（一句话）
@@ -16,7 +16,7 @@ V1.1 PC-1 i18n ✅ + PC-2 Collection ✅ + PC-3 Schedule ✅ 完成
 （f3fd712/68b706e/9ee0821/f914bbf/90f3428；PC-2 隔离库冒烟 16/16 PASS）。
 当前：PC-4 Credits 接线 ✅ CLOSED —— 沙箱 31/2（2 FAIL=W0f 本地 Node raw 出网受限，非产品缺陷；W7 ZIP 200 反证 raw 可用）经 Owner 裁决豁免关 Gate。Step4 复核 DB 零 e2e4 残留；发现的 1 个 GitHub 孤儿 blob 已按 Owner 授权删除（f0e23399），复核仓库零孤儿、生产真图未触碰。
 当前：PC-5 Registration Gate ✅ —— Worker `POST /api/auth/register`（服务端密码校验 + gate `registration_enabled` + service_role createUser，不建会话/不回传 token）；前端 RegisterPage 改投 Worker 后复用 `signInWithPassword`（PD-1 A）。本地沙箱 8/8 PASS（含 E2E 建号→GoTrue 登录闭环），e2e5 零残留。403 disabled 分支代码级验证（未擅翻生产全局开关做运行时探测）。
-下一步 = ① push 13 个本地 commit（需 Owner 单独授权）；② 可选：生产 `registration_enabled` 若要默认关闭，Admin 一键；③ Phase D/后续需求由 Owner 决定。生产运行 version `71278568`，回滚锚点 `18941cbc`（`wrangler rollback` 秒级）。
+下一步 = ① 可选：生产 `registration_enabled` 若要默认关闭，Admin 一键；② Phase D/后续需求由 Owner 决定。生产运行 version `71278568`，回滚锚点 `18941cbc`（`wrangler rollback` 秒级）。远端 main=9eea9e8（2026-09-06 push 完成，与本地一致）。
 ════════════════════════════════════════════════════════════════════
 ■ 阶段总览
 ════════════════════════════════════════════════════════════════════
