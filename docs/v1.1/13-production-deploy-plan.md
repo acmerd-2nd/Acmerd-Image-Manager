@@ -76,11 +76,18 @@
 - GoTrue 公开 signup 可被 anon key 直连绕过（PD-3 已批 A，记录在案）；绝对关闭需 Supabase Auth 侧配置（单独授权）。
 - 下载扣分与 302 之间进程死亡 → ledger 人工 refund 兜底（§9.1 既定，不建自动补偿）。
 
-## 6. 执行记录（部署时回填）
+## 6. 执行记录（2026-09-06 实际部署回填）
 
-- [ ] 终验通过时间 / 授权方式：
-- [ ] push commit 范围 / 远端 hash：
-- [ ] 部署前 version id（回滚锚点）：
-- [ ] 部署后 version id：
-- [ ] §3 十项验证结果：
-- [ ] 回滚预案未触发 / 触发原因与时间：
+- [x] **授权方式**：Owner 2026-09-06 明确授权「在本机跑 `npm run deploy`」；push **未**授权、**未**执行（本地 main 仍领先远端 13 commit）。
+- [x] P0-2 `.env` VITE 三变量补齐 + 重建核验（部署当日发现并修复的 P0 阻断项）。
+- [x] P1-1 `git ls-remote origin main` = `f68a866`（无分叉）。
+- [x] **部署前 version id（回滚锚点）：`18941cbc-3463-4554-a467-b5eae0c0b9f5`**（2026-09-04T15:07:22Z）。
+- [x] 部署执行：2026-09-06T01:49Z，上传 29 个静态资产 + Worker（7.10s）；routes 步 10000 报错复现，确证 cosmetic（部署完成）。
+- [x] **部署后 version id：`71278568-5b23-46de-a5ff-6246dea6dc6c`**（100% 流量）。
+- [x] **§3 验证结果 = 全 PASS**：
+  - V1 health 200 ✅；V2 生产图 tu1.jpg **200 加载**、URL 烘焙正确（Owner Chrome 实测；再次印证 raw 出网非对称＝W0f 环境定性）✅；V3 详情页 + `?lang=en` 回跳 ✅
+  - V4/V5（`scripts/v11-pc7-prod-verify.mjs`）：Set Balance=5 → demo01 登录 → 单图 302（Location 指向生产 raw）→ 扣 5→4 → 同 key 重放不重复扣 ✅；V6a ZIP 402 ✅（V6b SKIP：生产无 enabled 网盘源）；V7 线上注册 200（e2e6 已清理）✅；V9 credits 审计新行 ✅；V10 demo01–08 在位 ✅；CLEANUP demo01 归零 ✅
+  - **合计 16 PASS / 0 FAIL / 1 SKIP（脚本）+ V2/V3 浏览器全绿。**
+  - ⚠️ 走查插曲（已排除，留档）：Owner Chrome 缓存的旧 index.html 曾短暂发出 `raw…///main`（空 owner）请求 —— 服务端新 chunk 烘焙正确（live `api-Daloa3vP.js` 含 `acmerd-2nd`、无任何空模板 chunk），强刷后消失。**其他访客若见图挂，强刷即可（旧 HTML 缓存所致，非服务端问题）。**
+- [x] **回滚预案未触发。**
+- [ ] 待办：push 13 个本地 commit（需 Owner 单独授权）；`registration_enabled` 当前生产=true（如需默认关闭，Admin 一键即可）。
