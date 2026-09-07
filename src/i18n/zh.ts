@@ -159,6 +159,7 @@ export const zh = {
     resetTitle: '找回密码',
     resetSubtitle: '输入注册邮箱，我们将发送密码重置链接。',
     resetSendBtn: '发送重置链接',
+    backToLogin: '返回登录',
     resetSent: '如果该邮箱已注册，重置链接已发送，请查收邮件（注意垃圾箱）。',
     resetConfirmTitle: '设置新密码',
     resetConfirmSubtitle: '请输入新密码完成密码重置。',

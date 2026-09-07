@@ -157,6 +157,7 @@ export const en: Dictionary = {
     resetTitle: 'Reset your password',
     resetSubtitle: 'Enter your registered email and we will send you a reset link.',
     resetSendBtn: 'Send reset link',
+    backToLogin: 'Back to login',
     resetSent: 'If that email is registered, a reset link has been sent. Please check your inbox (and spam folder).',
     resetConfirmTitle: 'Set a new password',
     resetConfirmSubtitle: 'Enter your new password to finish the reset.',
