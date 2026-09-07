@@ -21,12 +21,14 @@ const base = getUrl('DATABASE_URL')
 if (!base) throw new Error('DATABASE_URL missing in .env')
 
 const candidates = [base]
+const refMatch = new URL(base).hostname.match(/^db\.([^.]+)\.supabase\.co$/)
+const projectRef = refMatch ? refMatch[1] : null
 for (const h of ['aws-0-ap-northeast-1.pooler.supabase.com', 'aws-0-ap-southeast-1.pooler.supabase.com']) {
   try {
     const u = new URL(base)
     u.hostname = h
     u.port = '5432'
-    u.username = 'postgres.' + (u.username.split('.')[0] || 'postgres')
+    if (projectRef) u.username = 'postgres.' + projectRef
     candidates.push(u.toString())
   } catch { /* skip */ }
 }
