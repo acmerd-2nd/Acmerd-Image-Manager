@@ -7,13 +7,18 @@
 快速恢复上下文。每次完成实质步骤后必须更新本文件的对应标记与时间戳。
 状态标记：✅ 完成 | 🟡 进行中/待裁决 | 🔴 未开始/待 Owner | 🚫 禁止/未授权
 
-最后更新：2026-09-06（**V1.1 生产部署 ✅ EXECUTED + 线上验证全绿 + push 完成**——ver 18941cbc→71278568；远端 main=9eea9e8 与本地一致；PC-1→PC-7 全 CLOSED；回滚锚点见 13 号文档 §6）
+最后更新：2026-09-07（**V1.2 生产部署 ✅ EXECUTED + 线上验证全绿**——ver 71278568→3fd18445；0016 生产已应用；0016 冒烟 10/10 补齐；C 沙箱走查过 + backToLogin 修复 94b1d56；D10①② Owner 已配；邮件闭环验证待收信邮箱/SMTP）
 
 ════════════════════════════════════════════════════════════════════
 ■ 当前位置（一句话）
 ════════════════════════════════════════════════════════════════════
-V1.1 PC-1 i18n ✅ + PC-2 Collection ✅ + PC-3 Schedule ✅ 完成
-（f3fd712/68b706e/9ee0821/f914bbf/90f3428；PC-2 隔离库冒烟 16/16 PASS）。
+**V1.2 实施中**（Gate docs/v1.2/01，D1–D12 Owner 2026-09-07 全批"按建议"）：
+- A 多层 Folder ✅ CLOSED（commit 35f9c10）：0015（parent_id+防环/深度≤5触发器+递归链视图）→ 隔离库冒烟 13/13（曾抓出守卫公式 2 个真 bug 已修）→ 生产已应用并核验 → Worker parentId/409 预检/guard 映射 → Admin 树形/父级选择器/Home 根级/Detail 面包屑+子集卡 → 本地 Worker 沙箱 13/13（e2e7 零残留）。
+- B Schedule 代码 ✅（commit 7d92c2c）：0016（镜像 0012 范式+allowlist 38→43）+ Worker CRUD + AdminSchedulePage + 公开页真实渲染（空态回 Coming Soon）。⚠️ 0016 隔离冒烟暂挂：本机 DNS 故障（db 直连 ENOTFOUND/pooler tenant 异常），网络恢复后立即补跑；**生产未应用 0016**。
+- C 密码找回 代码 ✅（同 commit）：/reset-password + /reset-password/confirm（GoTrue 原生流，redirectTo 仅同源常量）+ 登录页入口。D10 生产 SMTP/redirect 配置待 Owner。
+- D CDN 评估 ✅（docs/v1.2/02）：实测 jsDelivr `gh/` 面已整体 301→raw（连 jquery@tag 也是）→ 零加速收益，建议 R1 维持现状；待 Owner 终裁。
+**V1.2 生产部署已执行**（2026-09-07，Owner chat 授权）：0016 冒烟 10/10 → 0016 生产应用（核验通过）→ wrangler deploy（ver 3fd18445，bundle index-CGRO1bD2.js）→ 线上验证 V1–V8 全绿（判别器 401 JSON、e2e7 CRUD 6/6 零残留、/schedule 空态、/reset-password 渲染、首页零回归）。回滚锚点 = 71278568。
+下一步 = ① Owner：CDN 终裁（docs/v1.2/02）+ D10③ SMTP（可选）+ 邮件闭环验证（需真实收信邮箱）；② Agent：V1.2 收口报告 + HANDOVER 刷新；③ 0015/0016 push 待单独授权。
 当前：PC-4 Credits 接线 ✅ CLOSED —— 沙箱 31/2（2 FAIL=W0f 本地 Node raw 出网受限，非产品缺陷；W7 ZIP 200 反证 raw 可用）经 Owner 裁决豁免关 Gate。Step4 复核 DB 零 e2e4 残留；发现的 1 个 GitHub 孤儿 blob 已按 Owner 授权删除（f0e23399），复核仓库零孤儿、生产真图未触碰。
 当前：PC-5 Registration Gate ✅ —— Worker `POST /api/auth/register`（服务端密码校验 + gate `registration_enabled` + service_role createUser，不建会话/不回传 token）；前端 RegisterPage 改投 Worker 后复用 `signInWithPassword`（PD-1 A）。本地沙箱 8/8 PASS（含 E2E 建号→GoTrue 登录闭环），e2e5 零残留。403 disabled 分支代码级验证（未擅翻生产全局开关做运行时探测）。
 下一步 = ① 可选：生产 `registration_enabled` 若要默认关闭，Admin 一键；② Phase D/后续需求由 Owner 决定。生产运行 version `71278568`，回滚锚点 `18941cbc`（`wrangler rollback` 秒级）。远端 main=9eea9e8（2026-09-06 push 完成，与本地一致）。
@@ -31,6 +36,12 @@ V1.1 Phase C Design Gate  ✅ APPROVED（10 号文档，Owner 2026-09-05）
 V1.1 Phase C 实施         ✅ CLOSED（PC-1→PC-7 全 CLOSED；PC-7 回归 PASS 见 12 号文档）
 V1.1 生产部署             ✅ EXECUTED + 线上验证（2026-09-06，13 号预案；ver 18941cbc→71278568；验证 16/0+浏览器全绿；push 待单独授权）
 V1.1 Phase D（迁移/回归） 🔴 未开始
+V1.2 Design Gate          ✅ APPROVED（docs/v1.2/01，D1–D12 Owner 2026-09-07 全批）
+V1.2 A 多层 Folder        ✅ CLOSED（0015 生产已应用；冒烟 13/13 + 沙箱 13/13；35f9c10）
+V1.2 B Schedule           ✅ 0016 冒烟 10/10 + 生产应用 + 部署 + 线上 e2e6/6（7d92c2c）
+V1.2 C 密码找回           ✅ 代码上线（94b1d56 修复）；D10①② Owner 已配；邮件闭环验证待收信邮箱/SMTP
+V1.2 D CDN 评估           🟡 报告已出（docs/v1.2/02，jsDelivr 不可行）→ 待 Owner 终裁
+V1.2 生产部署             ✅ EXECUTED + 线上验证（2026-09-07；ver 3fd18445；docs/v1.2/03）
 
 ════════════════════════════════════════════════════════════════════
 ■ 生产形态快照（2026-09-05 起）
