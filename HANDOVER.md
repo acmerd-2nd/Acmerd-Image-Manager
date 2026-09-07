@@ -1,10 +1,11 @@
 # 🔄 HANDOVER — ACMERD Image Manager 交接文档
 
-> **最后更新**: 2026-09-07（**V1.2 全链实施 + 生产部署 + push 完成**：Gate D1–D12 → A 多层 Folder CLOSED → B Schedule / C 密码找回生产运行 → D CDN 评估报告已交 → 收口报告 04 号落档）
-> **当前状态**: ✅ **V1.0/V1.1 冻结基线未破坏** · 🟢 **V1.2 A/B/C/D 全部 CLOSED**（D12 终裁：维持 raw，R1 关闭）（Worker ver `3fd18445-…`，bundle `index-CGRO1bD2.js`；回滚锚点 `71278568`）· 远端 main 与本地一致
+> **最后更新**: 2026-09-07（**V1.2 全链 CLOSED（含 D12 终裁）+ V1.3 积分流水页 CLOSED + 生产部署 push 完成**：生产 ver `85180f65`，bundle `index-DsgD8Mav.js`）
+> **当前状态**: ✅ **V1.0/V1.1 冻结基线未破坏** · 🟢 **V1.2 A/B/C/D 全部 CLOSED**（D12 终裁：维持 raw，R1 关闭）· 🟢 **V1.3 积分流水页 CLOSED**（Worker ver `85180f65-…`，bundle `index-DsgD8Mav.js`；回滚锚点 `71278568`）· 远端 main 与本地一致
 > **线上**: https://image.acmerd.com 运行中（`/api/health` 200；迁移 **0001–0016** 全 applied；线上验证 V1–V8 全绿，见 `docs/v1.2/03-deploy-record.md`）
 > **Truth Source**: 远端 `git ls-remote origin main = 8afcde9`；部署记录与回滚 = `docs/v1.2/03`；收口报告 = `docs/v1.2/04`
 > **V1.2 证据链（`docs/v1.2/01…04`，全链 CLOSED）**: 01 Design Gate（D1–D12 Owner 全批）→ 02 CDN 评估（jsDelivr 不可行；Owner 终裁维持 raw）→ 03 部署记录 → 04 收口报告
+> **V1.3 证据链（`docs/v1.3/01`）**: Change Proposal（C1–C5 Owner 全批）→ §9 执行记录回填（CLOSED）
 
 > ### 🟢 V1.2 当前态（2026-09-07）— 新 Agent 必读
 > - **A 多层 Folder（CLOSED，35f9c10）**：0015 = `collections.parent_id`（自引用 FK RESTRICT）+ 守卫触发器（自引用/环/深度≤5/子树随迁溢出）+ `published_collections` 递归链重建（全链 published 才公开；`asset_count` 仍只数直接子资产）；Worker create/patch `parentId` + 删父预检 409 `collection_has_children` + guard 400 映射；Admin 树形 + 父级选择器、首页仅根级、详情页面包屑+子合集卡。冒烟 13/13（曾抓出守卫 2 个真 bug 已修）+ 沙箱 13/13。
@@ -55,28 +56,28 @@
 3. **确认工具链**：bash 会话中 `node`/`npm` 可直接用（受管 Node v22）。若 npm 解析失败，回退 `/d/node/npm.cmd`（历史已知可用 Node v24）。`python` 可直接用（受管 3.13）。
 4. **验证环境健康**（只读，安全）：
    ```bash
-   git log --oneline -3          # 应见 8afcde9（V1.2 收口/push 记录）
+   git log --oneline -3          # 应见 6ec4e18（V1.3 收口/push 记录）
    npm run typecheck             # 前后端 TS 0 错误
    curl -s -o /dev/null -w "%{http_code}\n" https://image.acmerd.com/api/health   # 200
    npm run db:migrate            # 全部 skip（幂等）即 DB 状态正确
    ```
-5. **确认 DB 状态**：`supabase/migrations/` 有 **0001–0016**（V1.1+V1.2 全部已 applied），`schema_migrations` 全记录。**不要在 Supabase Dashboard 手改生产库**——结构变更只许新增 `supabase/migrations/XXXX_*.sql` 后跑 `npm run db:migrate`。
-6. **确认 V1.2 现状**：V1.2 已生产运行（ver `3fd18445`，远端 main 同步）。待 Owner 决定项见「第六节」。**严禁在未获 Owner 裁决前实施任何新需求/新代码。**
+5. **确认 DB 状态**：`supabase/migrations/` 有 **0001–0016**（V1.1+V1.2 全部已 applied；V1.3 零迁移），`schema_migrations` 全记录。**不要在 Supabase Dashboard 手改生产库**——结构变更只许新增 `supabase/migrations/XXXX_*.sql` 后跑 `npm run db:migrate`。
+6. **确认 V1.2/V1.3 现状**：均生产运行（ver `85180f65`，远端 main 同步）。待 Owner 决定项见「第六节」。**严禁在未获 Owner 裁决前实施任何新需求/新代码。**
 
 **关键红线（违反会被 Owner 打回）**：Service Role Key 只进 Worker Secret / 本地脚本，绝不进前端 bundle / Git / wrangler.toml；权限只靠 UI 隐藏无效，必须 RLS/服务端兜底；改设计先交 Change Proposal；两份中文规划文档 + `.workbuddy/` 不推公开仓库；**未提供证据前不得宣布 Gate PASS**；不扩大 Scope、不重构已完成 Phase。
 
-### 当前状态快照（2026-09-07，V1.2 收口后）
+### 当前状态快照（2026-09-07，V1.3 收口后）
 | 维度 | 值 |
 | --- | --- |
-| HEAD / 远端 | `8afcde9` = origin/main（已推送，完全同步；本地无遗留 commit） |
-| 生产 Worker | ver `3fd18445-7f81-4588-8c73-fb2a1b24c350`（2026-09-07 部署；回滚锚点 `71278568`；bundle `index-CGRO1bD2.js`） |
+| HEAD / 远端 | `6ec4e18` = origin/main（已推送，完全同步；本地无遗留 commit） |
+| 生产 Worker | ver `85180f65-112a-45f8-9e12-868cabaec2db`（2026-09-07 部署 ×2；回滚锚点 `71278568`；bundle `index-DsgD8Mav.js`） |
 | 工作树 | 仅未跟踪：`.workbuddy/`、`.qoder/`、两份规划文档 + 总纲1.1/看板1.1 [故意不推] |
 | 已应用迁移 | 0001–0008（V1.0）+ 0009–0014（V1.1：collections+settings+account_origin / credits 三 RPC / settings grants / collections RLS / allowlist 扩展 / GitHub provider 双模型）+ **0015–0016（V1.2：collections 层级 parent_id+守卫触发器+递归链视图 / schedule_items+RLS+视图+allowlist 43）** |
-| Worker 端点 | V1.0/V1.1 全量保留（health、下载三套、storage/delete、admin users/settings/collections/images github 双端点/credits、register、sweeper）。**V1.2 新增**：`GET/POST/PATCH/DELETE /api/admin/schedule-items`（0016；审计 schedule.item_*）；collections create/patch 收 `parentId`、delete 预检 409 `collection_has_children`、guard 错误映射 400。全部经 `authenticate()`（角色 + `profiles.disabled` 逐请求校验 → 403 `account_disabled`） |
+| Worker 端点 | V1.0/V1.1 全量保留（health、下载三套、storage/delete、admin users/settings/collections/images github 双端点/credits、register、sweeper）。**V1.2 新增**：`GET/POST/PATCH/DELETE /api/admin/schedule-items`（0016；审计 schedule.item_*）；collections create/patch 收 `parentId`、delete 预检 409 `collection_has_children`、guard 错误映射 400。**V1.3 零新端点**（Profile 积分流水 = 纯前端读 0010 RLS）。全部经 `authenticate()`（角色 + `profiles.disabled` 逐请求校验 → 403 `account_disabled`） |
 | Worker Secret | `SUPABASE_SERVICE_ROLE_KEY` 已 `wrangler secret put`；本地 `worker/.dev.vars` 同步 |
 | 管理员账号 | `1902768564@qq.com`（密码见 `.env` 的 `ADMIN_PASSWORD`），角色 admin |
 | 冻结基线 | 双层可见性（Asset+Language published，0007 后语义经 NO-DRIFT 证明未漂移）、多语言模型、三套下载解耦、ZIP ≤30/≤100MB/并发4、public bucket（残余风险已记录，见 D5/5a）、audit allowlist=24、last-admin 原子保护、disabled 门禁对偶（Worker 403 + RLS `is_admin` 含 `disabled=false`） |
-| 数据现状 | 生产库极小：1 asset（Ecosonique）/1 image（tu1.jpg, provider=github）/0 tags/0 collections/0 schedule_items + **seed 用户 demo01–08@acmerd.com（user 角色，余额 0）+ admin**。大列表/分页/层级验收仍须在隔离库造数，不许拿生产小数据集充数 |
+| 数据现状 | 生产库极小：1 asset（Ecosonique）/1 image（tu1.jpg, provider=github）/0 tags/0 collections/0 schedule_items + **seed 用户 demo01–08@acmerd.com（user 角色，余额 0）+ admin**。admin 现有 credit_accounts（0 余额）+ 2 条 V1.3 验证调分行（净零，reason 带 v1.3 ledger verify）。大列表/分页/层级验收仍须在隔离库造数，不许拿生产小数据集充数 |
 
 ---
 
@@ -203,13 +204,12 @@ React 18 + TS + Vite + Tailwind + shadcn 风格 UI；Hono Worker + `[assets]` SP
 
 ## 六、当前待办（2026-09-07 更新）
 
-**已全部完成**：V1.0（Phase 0–10）；**V1.1 全链**（`docs/v1.1/01…13`）；**V1.2 A/B/C 全链 CLOSED 并已部署生产**（证据链 `docs/v1.2/01…04`：Gate → CDN 评估 → 部署记录 → 收口报告）。
+**已全部完成**：V1.0（Phase 0–10）；**V1.1 全链**（`docs/v1.1/01…13`）；**V1.2 全链**（`docs/v1.2/01…04`，含 D12 终裁「维持 raw」）；**V1.3 积分流水页**（`docs/v1.3/01`，C1–C5 全批 → 实施 → 部署 ver `85180f65`）。
 
 **当前开口（均 Owner 决定，Agent 不得擅自推进）**：
-1. **V1.2-D CDN 终裁**：`docs/v1.2/02` 结论 jsDelivr 已退出 gh CDN（301→raw），建议**维持 raw 现状、关闭 R1**；Owner 拍板即可归档。
-2. **C 邮件闭环验证（Owner 明示暂缓）**：需 1 个真实可收信邮箱；SMTP（D10③）可选后补（内置 mailer 限速 ~2 封/小时）。
-3. **生产 `registration_enabled` 现为 true**。若要默认关闭：Admin Dashboard → 平台控制一键（即时生效）。
-4. **后续需求未发起**。任何新需求走 Change Proposal → 新 Phase/版本流程（V1.2 惯例：Gate 落 `docs/v1.2/NN`，Owner 逐项裁决后才动代码）。
+1. **邮件闭环验证（Owner 明示暂缓）**：需 1 个真实可收信邮箱；SMTP（D10③）可选后补（内置 mailer 限速 ~2 封/小时）。
+2. **生产 `registration_enabled` 现为 true**。若要默认关闭：Admin Dashboard → 平台控制一键（即时生效）。
+3. **后续需求未发起**。任何新需求走 Change Proposal → 新 Phase/版本流程（惯例：Gate 落 `docs/vN.N/NN`，Owner 逐项裁决后才动代码）。
 
 **技术债/留档事项（非阻塞）**：
 - 0009–0014 曾不在 `schema_migrations`（V1.1 经其他通道应用），2026-09-07 migrator 幂等重放补记，核验零副作用——后续勿重复执行非幂等变更。
@@ -217,7 +217,7 @@ React 18 + TS + Vite + Tailwind + shadcn 风格 UI；Hono Worker + `[assets]` SP
 - GoTrue 公开 signup 可被 anon key 直连绕过（PD-3 已批 A，记录在案）。
 - wrangler deploy routes 步 10000 报错 = cosmetic（token 缺 zone routes 读权限；消除需 Owner 在 CF 补权限）。
 
-**验证脚本索引（可复跑）**：V1.1 = `scripts/v11-pc4-sandbox.mjs`（PC4_BASE）、`v11-pc5-verify.mjs`、`v11-pc6-seed.mjs`（幂等 seed，勿重跑重发密码）、`v11-pc7-prod-verify.mjs`（读 G: seed 凭据）；**V1.2 = `v12-a-folder-smoke.mjs`（隔离库 13/13）、`v12-a-worker-sandbox.mjs`（本地 worker 13/13）、`v12-b-schedule-smoke.mjs`（隔离库 10/10）**；证据 `docs/v1.2/`。
+**验证脚本索引（可复跑）**：V1.1 = `scripts/v11-pc4-sandbox.mjs`（PC4_BASE）、`v11-pc5-verify.mjs`、`v11-pc6-seed.mjs`（幂等 seed，勿重跑重发密码；G: 盘已不在，凭据找 Owner 重发）、`v11-pc7-prod-verify.mjs`；**V1.2 = `v12-a-folder-smoke.mjs`（隔离库 13/13）、`v12-a-worker-sandbox.mjs`（本地 worker 13/13）、`v12-b-schedule-smoke.mjs`（隔离库 10/10）**；V1.3 = 纯读功能，走查即可（无脚本）；证据 `docs/v1.2/`、`docs/v1.3/`。
 
 ---
 
