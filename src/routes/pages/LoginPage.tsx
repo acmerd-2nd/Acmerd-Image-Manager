@@ -153,6 +153,16 @@ export function LoginPage() {
             </Button>
           </form>
 
+          {/* V1.2-C D9：找回密码入口 */}
+          <p className="mt-3 text-center text-sm">
+            <Link
+              to="/reset-password"
+              className="text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+            >
+              {t('auth.forgotPassword')}
+            </Link>
+          </p>
+
           <p className="mt-4 text-center text-sm text-muted-foreground">
             {t('auth.noAccount')}{' '}
             <Link

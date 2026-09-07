@@ -6,6 +6,8 @@ import { AdminLayout } from '@/components/layout/AdminLayout'
 import { RequireAuth, RequireRole } from '@/components/guards'
 import { LoginPage } from '@/routes/pages/LoginPage'
 import { RegisterPage } from '@/routes/pages/RegisterPage'
+import { ResetPasswordPage } from '@/routes/pages/ResetPasswordPage'
+import { ResetPasswordConfirmPage } from '@/routes/pages/ResetPasswordConfirmPage'
 import { ForbiddenPage, NotFoundPage } from '@/routes/pages/ErrorPages'
 
 // Phase 9 D3：路由级代码分割。AuthProvider / 布局 / Guard 保持 eager，
@@ -31,6 +33,9 @@ const AdminAssetEditorPage = lazy(() => import('@/routes/pages/admin/AdminAssetE
 const AdminCollectionsPage = lazy(() =>
   import('@/routes/pages/admin/AdminCollectionsPage').then((m) => ({ default: m.AdminCollectionsPage })),
 )
+const AdminSchedulePage = lazy(() =>
+  import('@/routes/pages/admin/AdminSchedulePage').then((m) => ({ default: m.AdminSchedulePage })),
+)
 
 export default function App() {
   return (
@@ -46,6 +51,8 @@ export default function App() {
             <Route path="/schedule" element={<SchedulePage />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
+            <Route path="/reset-password" element={<ResetPasswordPage />} />
+            <Route path="/reset-password/confirm" element={<ResetPasswordConfirmPage />} />
             <Route
               path="/profile"
               element={
@@ -67,6 +74,7 @@ export default function App() {
               <Route index element={<AdminDashboardPage />} />
               <Route path="dashboard" element={<AdminDashboardPage />} />
               <Route path="collections" element={<AdminCollectionsPage />} />
+              <Route path="schedule" element={<AdminSchedulePage />} />
               <Route path="assets" element={<AdminAssetsPage />} />
               <Route path="assets/new" element={<AdminAssetNewPage />} />
               <Route path="assets/:id" element={<AdminAssetEditorPage />} />

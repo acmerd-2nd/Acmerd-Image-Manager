@@ -1853,6 +1853,203 @@ app.post('/api/admin/collections/assign', async (c) => {
 })
 
 // ===========================================================================
+// V1.2-B: Schedule items admin endpoints (0016; Gate docs/v1.2/01 D6-D8)
+//   GET/POST/PATCH/DELETE /api/admin/schedule-items（写经 service_role 单语句原子，
+//   审计 schedule.item_created/updated/deleted/published/archived —— allowlist 已扩）
+//   公开读不经此端点：前端 anon 直读 published_schedule_items 视图（0016 grants）
+// ===========================================================================
+
+interface ScheduleItemCreateBody {
+  title?: unknown
+  description?: unknown
+  eventDate?: unknown
+  sortOrder?: unknown
+}
+
+interface ScheduleItemUpdateBody {
+  title?: unknown
+  description?: unknown
+  eventDate?: unknown
+  status?: unknown
+  sortOrder?: unknown
+}
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+
+async function fetchScheduleItemRow(env: Env, id: string): Promise<Record<string, unknown> | null> {
+  const res = await fetch(`${env.SUPABASE_URL}/rest/v1/schedule_items?id=eq.${id}&select=*`, {
+    headers: svc(env),
+  })
+  if (!res.ok) return null
+  const rows = (await res.json()) as Array<Record<string, unknown>>
+  return rows[0] ?? null
+}
+
+app.get('/api/admin/schedule-items', async (c) => {
+  const auth = await requireAdmin(c)
+  if (!auth.ok) return c.json({ error: authErrBody(auth) }, auth.status)
+
+  const res = await fetch(`${c.env.SUPABASE_URL}/rest/v1/schedule_items?select=*&order=event_date.asc.nullslast,sort_order.asc,created_at.asc`, {
+    headers: svc(c.env),
+  })
+  if (!res.ok) {
+    console.error('Schedule items read failed:', res.status)
+    return c.json({ error: { code: 'upstream_error', message: 'Schedule items unavailable' } }, 502)
+  }
+  return c.json({ ok: true, items: await res.json() })
+})
+
+app.post('/api/admin/schedule-items', async (c) => {
+  const auth = await requireAdmin(c)
+  if (!auth.ok) return c.json({ error: authErrBody(auth) }, auth.status)
+
+  let body: ScheduleItemCreateBody
+  try {
+    body = await c.req.json<ScheduleItemCreateBody>()
+  } catch {
+    return c.json({ error: { code: 'bad_request', message: 'Invalid JSON body' } }, 400)
+  }
+  const title = typeof body.title === 'string' ? body.title.trim() : ''
+  if (!title) return c.json({ error: { code: 'bad_request', message: 'title is required' } }, 400)
+  const description = typeof body.description === 'string' && body.description.trim() ? body.description.trim() : null
+  let eventDate: string | null = null
+  if (body.eventDate !== undefined && body.eventDate !== null) {
+    if (typeof body.eventDate !== 'string' || !DATE_RE.test(body.eventDate)) {
+      return c.json({ error: { code: 'bad_request', message: 'eventDate must be YYYY-MM-DD' } }, 400)
+    }
+    eventDate = body.eventDate
+  }
+  const sortOrder = typeof body.sortOrder === 'number' && Number.isInteger(body.sortOrder) ? body.sortOrder : 0
+
+  const res = await fetch(`${c.env.SUPABASE_URL}/rest/v1/schedule_items`, {
+    method: 'POST',
+    headers: { ...svc(c.env), Prefer: 'return=representation' },
+    body: JSON.stringify({ title, description, event_date: eventDate, sort_order: sortOrder, created_by: auth.userId }),
+  })
+  if (!res.ok) {
+    const errBody = (await res.json().catch(() => null)) as { message?: string } | null
+    console.error('Schedule item create failed:', res.status, errBody?.message)
+    return c.json({ error: { code: 'upstream_error', message: 'Schedule item create failed' } }, 502)
+  }
+  const rows = (await res.json()) as Array<Record<string, unknown>>
+  const row = rows[0]
+  if (!row) return c.json({ error: { code: 'upstream_error', message: 'Schedule item create failed' } }, 502)
+
+  await writeAudit(c.env, 'schedule.item_created', 'schedule_items', String(row.id), auth.userId, { title })
+  return c.json({ ok: true, item: row })
+})
+
+app.patch('/api/admin/schedule-items/:itemId', async (c) => {
+  const auth = await requireAdmin(c)
+  if (!auth.ok) return c.json({ error: authErrBody(auth) }, auth.status)
+
+  const id = c.req.param('itemId')
+  if (!UUID_RE.test(id)) {
+    return c.json({ error: { code: 'bad_request', message: 'Invalid schedule item id' } }, 400)
+  }
+
+  let body: ScheduleItemUpdateBody
+  try {
+    body = await c.req.json<ScheduleItemUpdateBody>()
+  } catch {
+    return c.json({ error: { code: 'bad_request', message: 'Invalid JSON body' } }, 400)
+  }
+
+  const patch: Record<string, unknown> = {}
+  if (body.title !== undefined) {
+    const title = typeof body.title === 'string' ? body.title.trim() : ''
+    if (!title) return c.json({ error: { code: 'bad_request', message: 'title cannot be empty' } }, 400)
+    patch.title = title
+  }
+  if (body.description !== undefined) {
+    patch.description = typeof body.description === 'string' && body.description.trim() ? body.description.trim() : null
+  }
+  if (body.eventDate !== undefined) {
+    if (body.eventDate === null) {
+      patch.event_date = null
+    } else if (typeof body.eventDate === 'string' && DATE_RE.test(body.eventDate)) {
+      patch.event_date = body.eventDate
+    } else {
+      return c.json({ error: { code: 'bad_request', message: 'eventDate must be YYYY-MM-DD or null' } }, 400)
+    }
+  }
+  if (body.sortOrder !== undefined) {
+    if (typeof body.sortOrder !== 'number' || !Number.isInteger(body.sortOrder)) {
+      return c.json({ error: { code: 'bad_request', message: 'sortOrder must be an integer' } }, 400)
+    }
+    patch.sort_order = body.sortOrder
+  }
+  if (body.status !== undefined) {
+    if (body.status !== 'draft' && body.status !== 'published' && body.status !== 'archived') {
+      return c.json({ error: { code: 'bad_request', message: 'invalid status' } }, 400)
+    }
+    patch.status = body.status
+  }
+  if (Object.keys(patch).length === 0) {
+    return c.json({ error: { code: 'bad_request', message: 'nothing to update' } }, 400)
+  }
+
+  const before = await fetchScheduleItemRow(c.env, id)
+  if (!before) return c.json({ error: { code: 'not_found', message: 'Schedule item not found' } }, 404)
+
+  const res = await fetch(`${c.env.SUPABASE_URL}/rest/v1/schedule_items?id=eq.${id}`, {
+    method: 'PATCH',
+    headers: { ...svc(c.env), Prefer: 'return=representation' },
+    body: JSON.stringify(patch),
+  })
+  if (!res.ok) {
+    const errBody = (await res.json().catch(() => null)) as { message?: string } | null
+    console.error('Schedule item patch failed:', res.status, errBody?.message)
+    return c.json({ error: { code: 'upstream_error', message: 'Schedule item update failed' } }, 502)
+  }
+  const rows = (await res.json()) as Array<Record<string, unknown>>
+  const row = rows[0]
+  if (!row) return c.json({ error: { code: 'not_found', message: 'Schedule item not found' } }, 404)
+
+  // 审计：status 变更记 published/archived（对齐 0016 触发器语义），其余记 updated
+  const statusChanged = typeof patch.status === 'string' && patch.status !== before.status
+  if (statusChanged && (patch.status === 'published' || patch.status === 'archived')) {
+    await writeAudit(c.env, `schedule.item_${patch.status}`, 'schedule_items', id, auth.userId, {
+      from: before.status,
+      to: patch.status,
+    })
+  } else {
+    await writeAudit(c.env, 'schedule.item_updated', 'schedule_items', id, auth.userId, {
+      fields: Object.keys(patch),
+    })
+  }
+  return c.json({ ok: true, item: row })
+})
+
+app.delete('/api/admin/schedule-items/:itemId', async (c) => {
+  const auth = await requireAdmin(c)
+  if (!auth.ok) return c.json({ error: authErrBody(auth) }, auth.status)
+
+  const id = c.req.param('itemId')
+  if (!UUID_RE.test(id)) {
+    return c.json({ error: { code: 'bad_request', message: 'Invalid schedule item id' } }, 400)
+  }
+
+  const before = await fetchScheduleItemRow(c.env, id)
+  if (!before) return c.json({ error: { code: 'not_found', message: 'Schedule item not found' } }, 404)
+
+  const del = await fetch(`${c.env.SUPABASE_URL}/rest/v1/schedule_items?id=eq.${id}`, {
+    method: 'DELETE',
+    headers: svc(c.env),
+  })
+  if (!del.ok) {
+    const errBody = (await del.json().catch(() => null)) as { message?: string } | null
+    console.error('Schedule item delete failed:', del.status, errBody?.message)
+    return c.json({ error: { code: 'upstream_error', message: 'Schedule item delete failed' } }, 502)
+  }
+
+  await writeAudit(c.env, 'schedule.item_deleted', 'schedule_items', id, auth.userId, {
+    title: before.title,
+  })
+  return c.json({ ok: true })
+})
+
+// ===========================================================================
 // V1.1 PC-3/PC-6: Site settings admin endpoints (0011: 写仅 service_role)
 //   GET  /api/admin/settings      —— 全量读取（admin 面板初始化）
 //   PATCH /api/admin/settings     —— 部分更新（仅允许 5 个已知 key；settings.updated 审计）
