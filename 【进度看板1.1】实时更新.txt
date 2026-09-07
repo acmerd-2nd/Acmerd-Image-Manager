@@ -40,7 +40,7 @@ V1.2 Design Gate          ✅ APPROVED（docs/v1.2/01，D1–D12 Owner 2026-09-0
 V1.2 A 多层 Folder        ✅ CLOSED（0015 生产已应用；冒烟 13/13 + 沙箱 13/13；35f9c10）
 V1.2 B Schedule           ✅ 0016 冒烟 10/10 + 生产应用 + 部署 + 线上 e2e6/6（7d92c2c）
 V1.2 C 密码找回           ✅ 代码上线（94b1d56 修复）；D10①② Owner 已配；邮件闭环验证待收信邮箱/SMTP
-V1.2 D CDN 评估           🟡 报告已出（docs/v1.2/02，jsDelivr 不可行）→ 待 Owner 终裁
+V1.2 D CDN 评估           ✅ CLOSED（Owner 2026-09-07 终裁：维持 raw，R1 关闭；docs/v1.2/02）
 V1.2 生产部署             ✅ EXECUTED + 线上验证（2026-09-07；ver 3fd18445；docs/v1.2/03）
 
 ════════════════════════════════════════════════════════════════════

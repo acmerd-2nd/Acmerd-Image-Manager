@@ -48,4 +48,4 @@
 
 ---
 
-**Owner 终裁待办**：确认本报告结论 → R1 关闭（维持现状）或另立 Change Proposal。
+**Owner 终裁（2026-09-07，chat）**：「维持 raw。」—— **R1 关闭（CLOSED）**：生产维持 raw.githubusercontent.com 直出；`VITE_GITHUB_IMAGE_CDN_BASE` 切换口保留备用；如未来需要大陆加速，另立 Change Proposal。

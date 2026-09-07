@@ -1,18 +1,18 @@
 # 🔄 HANDOVER — ACMERD Image Manager 交接文档
 
 > **最后更新**: 2026-09-07（**V1.2 全链实施 + 生产部署 + push 完成**：Gate D1–D12 → A 多层 Folder CLOSED → B Schedule / C 密码找回生产运行 → D CDN 评估报告已交 → 收口报告 04 号落档）
-> **当前状态**: ✅ **V1.0/V1.1 冻结基线未破坏** · 🟢 **V1.2 A/B/C = CLOSED，D = 待 Owner 终裁**（Worker ver `3fd18445-…`，bundle `index-CGRO1bD2.js`；回滚锚点 `71278568`）· 远端 `main = 8afcde9`（与本地一致）
+> **当前状态**: ✅ **V1.0/V1.1 冻结基线未破坏** · 🟢 **V1.2 A/B/C/D 全部 CLOSED**（D12 终裁：维持 raw，R1 关闭）（Worker ver `3fd18445-…`，bundle `index-CGRO1bD2.js`；回滚锚点 `71278568`）· 远端 main 与本地一致
 > **线上**: https://image.acmerd.com 运行中（`/api/health` 200；迁移 **0001–0016** 全 applied；线上验证 V1–V8 全绿，见 `docs/v1.2/03-deploy-record.md`）
 > **Truth Source**: 远端 `git ls-remote origin main = 8afcde9`；部署记录与回滚 = `docs/v1.2/03`；收口报告 = `docs/v1.2/04`
-> **V1.2 证据链（`docs/v1.2/01…04`）**: 01 Design Gate（D1–D12 Owner 全批）→ 02 CDN 评估（jsDelivr 不可行）→ 03 部署记录 → 04 收口报告
+> **V1.2 证据链（`docs/v1.2/01…04`，全链 CLOSED）**: 01 Design Gate（D1–D12 Owner 全批）→ 02 CDN 评估（jsDelivr 不可行；Owner 终裁维持 raw）→ 03 部署记录 → 04 收口报告
 
 > ### 🟢 V1.2 当前态（2026-09-07）— 新 Agent 必读
 > - **A 多层 Folder（CLOSED，35f9c10）**：0015 = `collections.parent_id`（自引用 FK RESTRICT）+ 守卫触发器（自引用/环/深度≤5/子树随迁溢出）+ `published_collections` 递归链重建（全链 published 才公开；`asset_count` 仍只数直接子资产）；Worker create/patch `parentId` + 删父预检 409 `collection_has_children` + guard 400 映射；Admin 树形 + 父级选择器、首页仅根级、详情页面包屑+子合集卡。冒烟 13/13（曾抓出守卫 2 个真 bug 已修）+ 沙箱 13/13。
 > - **B Schedule 编排（CLOSED，7d92c2c）**：0016 = `schedule_items` + 4 RLS（镜像 0012）+ `published_schedule_items` 视图（event_date asc nulls last）+ 审计 5 动作 + allowlist 38→43；Worker `/api/admin/schedule-items` CRUD；AdminSchedulePage（侧栏+路由）；公开页真实渲染、空态回 Coming Soon。冒烟 10/10 + 生产 e2e 6/6 零残留。
 > - **C 密码找回（CLOSED，94b1d56）**：`/reset-password` + `/reset-password/confirm`（GoTrue 原生流，redirectTo 仅同源常量）；D10①② Owner 已配（Site URL + redirect allowlist）；**邮件闭环验证 Owner 明示暂缓**（需真实收信邮箱；内置 mailer 限速 ~2 封/小时，SMTP=D10③ 可选后补）。
-> - **D R1 CDN（待 Owner 终裁）**：实测 jsDelivr `gh/` 面已整体 301→raw（连 jquery@tag 也如此）→ 零加速收益；建议维持 raw 现状，见 `docs/v1.2/02`。
+> - **D R1 CDN（CLOSED）**：实测 jsDelivr `gh/` 面已整体 301→raw（连 jquery@tag 也如此）→ 零加速收益；**Owner 终裁「维持 raw」，R1 关闭**（`docs/v1.2/02` 终裁注记；`VITE_GITHUB_IMAGE_CDN_BASE` 切换口保留备用）。
 > - **事实更正留档**：0009–0014 在 `schema_migrations` 原无记录（V1.1 经其他通道应用）；2026-09-07 migrator 幂等重放并补记，核验零副作用。
-> - **待 Owner（当前开口）**：① D12 CDN 终裁（建议维持 raw）；② 邮件闭环验证 + SMTP 可选；③ 生产 `registration_enabled` 默认关闭（Admin 一键）。
+> - **待 Owner（当前开口）**：① 邮件闭环验证（暂缓，需收信邮箱）+ SMTP 可选；② 生产 `registration_enabled` 默认关闭（Admin 一键）；③ 后续需求未发起。
 > - **环境坑（更新）**：全局 npx/npm 仍坏（一律 `node node_modules/wrangler/wrangler-dist/cli.js …`）；本机 Node 到 raw 出网受限（W0f 判别口径不变）；**2026-09-07 下午曾发 DNS 故障**——`db.*.supabase.co` ENOTFOUND + pooler tenant 异常（WARP/IPv6-only 环境），隔离冒烟/生产 DDL 会间歇不可用，重试等待即可恢复。
 
 > ### 🟢 V1.1 当前态（归档快照，2026-09-06）

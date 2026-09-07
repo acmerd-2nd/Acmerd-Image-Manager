@@ -1,7 +1,7 @@
 # V1.2 收口报告（Closure Report）
 
 > **日期**: 2026-09-07 · **依据**: docs/v1.2/01 Design Gate（D1–D12 Owner 2026-09-07 全批）
-> **状态**: **A/B/C = CLOSED；D = 报告已交、待 Owner 终裁**；生产已部署并验证
+> **状态**: **A/B/C/D 全部 CLOSED**（D12 终裁：维持 raw）；生产已部署并验证
 > **生产形态**: ver `3fd18445`（bundle `index-CGRO1bD2.js`）· 迁移 0001–0016 全 applied · 回滚锚点 `71278568`
 
 ---
@@ -13,7 +13,7 @@
 | **A 多层 Folder** | 0015（parent_id 自引用 FK RESTRICT + 守卫触发器：自引用/环/深度≤5/子树随迁溢出 + `published_collections` 递归链重建）· Worker create/patch `parentId` + 删父预检 409 + guard 错误映射 · Admin 树形渲染 + 父级选择器（排除自身+子孙）· 首页仅根级 · 详情页面包屑 + 子合集卡 | ✅ CLOSED |
 | **B Schedule 编排** | 0016（schedule_items + 4 条 RLS 镜像 0012 + `published_schedule_items` 视图 + 审计 5 动作 + allowlist 38→43）· Worker `/api/admin/schedule-items` CRUD · AdminSchedulePage（含路由/侧栏）· 公开 SchedulePage 真实渲染（空态回 Coming Soon） | ✅ CLOSED |
 | **C 密码找回** | `/reset-password` + `/reset-password/confirm`（GoTrue 原生流 D9，redirectTo 仅同源常量）· 登录页「忘记密码？」入口 · confirm 页无 recovery session 自动弹回 · 改密成功撤销会话回登录页 | ✅ CLOSED（邮件闭环验证 Owner 明示暂缓） |
-| **D R1 CDN 评估** | jsDelivr @main 三项实测：**gh/ 面已整体 301 → raw.githubusercontent.com（连 jquery@tag 也如此）**，npm 面正常 → 零加速收益 | 🟡 报告已交（docs/v1.2/02），**建议维持 raw 现状，待 Owner 终裁** |
+| **D R1 CDN 评估** | jsDelivr @main 三项实测：**gh/ 面已整体 301 → raw.githubusercontent.com（连 jquery@tag 也如此）**，npm 面正常 → 零加速收益 | ✅ **CLOSED（Owner 2026-09-07 终裁：维持 raw，R1 关闭）** |
 
 ## 二、Files（变更足迹）
 
@@ -51,9 +51,9 @@
 
 ## 六、Owner 待裁/待办
 
-1. **D12 CDN 终裁**：docs/v1.2/02 → 建议"维持 raw 现状，关闭 R1"；如未来需要大陆加速，另立 Change Proposal
-2. **邮件闭环验证**（暂缓，Owner 明示）：需真实收信邮箱；SMTP（D10③）可选后补，内置 mailer 限速 ~2 封/小时
-3. 可选：生产 `registration_enabled` 默认关闭（Admin 一键）
+1. **邮件闭环验证**（暂缓，Owner 明示）：需真实收信邮箱；SMTP（D10③）可选后补，内置 mailer 限速 ~2 封/小时
+2. 可选：生产 `registration_enabled` 默认关闭（Admin 一键）
+3. 已归档：D12 CDN 终裁（2026-09-07「维持 raw」，R1 关闭，见 docs/v1.2/02 终裁注记）
 
 ## 七、Gate Status
 
@@ -63,4 +63,4 @@
 | A 多层 Folder | 证据全 CONFIRMED | ✅ **PASS / CLOSED** |
 | B Schedule | 证据全 CONFIRMED（含生产 e2e） | ✅ **PASS / CLOSED** |
 | C 密码找回 | 代码链证据 CONFIRMED；邮件 E2E 暂缓（Owner 明示） | ✅ **PASS（暂缓项已留档）** |
-| D CDN | 评估报告已交 | 🟡 待 Owner 终裁 |
+| D CDN | Owner 终裁「维持 raw」（2026-09-07） | ✅ **PASS / CLOSED（R1 关闭）** |
