@@ -21,11 +21,57 @@ import { Spinner } from '@/components/spinner'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 
 /**
- * V1.1 PC-2：Collection 管理页（Admin）。
+ * V1.1 PC-2 + V1.2-A：Collection 管理页（Admin）。
  * 读走 RLS（admin 直连）；写统一走 Worker admin 端点（原子 + 审计）。
- * 排序：V1 用上移/下移（sort_order 两次原子 PATCH），拖拽留待后续。
+ * 排序：V1 用上移/下移（sort_order 两次原子 PATCH），拖拽留待后续；V1.2-A 起仅在同级兄弟间移动。
+ * 层级：新建/编辑可选父级（防环/深度≤5 由 DB 触发器终审，Worker 预检父级存在性）。
  * 归组：列表内直接加未归组资产；移出带 cover 守卫提示（DB 触发器终审）。
  */
+
+/** 按层级 DFS 展开（roots → 各级子级，组内按 sort_order），供树形渲染 */
+function flattenTree(rows: CollectionRow[]): Array<{ col: CollectionRow; depth: number }> {
+  const byParent = new Map<string | null, CollectionRow[]>()
+  for (const c of rows) {
+    const list = byParent.get(c.parent_id) ?? []
+    list.push(c)
+    byParent.set(c.parent_id, list)
+  }
+  for (const list of byParent.values()) list.sort((a, b) => a.sort_order - b.sort_order)
+  const out: Array<{ col: CollectionRow; depth: number }> = []
+  const walk = (parent: string | null, depth: number) => {
+    for (const col of byParent.get(parent) ?? []) {
+      out.push({ col, depth })
+      walk(col.id, depth + 1)
+    }
+  }
+  walk(null, 0)
+  // 防御：孤儿（父级意外缺失）也兜底展示，避免丢数据
+  if (out.length !== rows.length) {
+    const seen = new Set(out.map((x) => x.col.id))
+    for (const c of rows) if (!seen.has(c.id)) out.push({ col: c, depth: 0 })
+  }
+  return out
+}
+
+/** 收集子孙集合 id（含自身），供父级选择器排除（防环的客户端预判；终审仍在 DB） */
+function descendantIds(rows: CollectionRow[], rootId: string): Set<string> {
+  const childrenOf = new Map<string, string[]>()
+  for (const c of rows) {
+    if (c.parent_id) {
+      const list = childrenOf.get(c.parent_id) ?? []
+      list.push(c.id)
+      childrenOf.set(c.parent_id, list)
+    }
+  }
+  const out = new Set<string>([rootId])
+  const stack = [rootId]
+  while (stack.length) {
+    const cur = stack.pop()!
+    for (const ch of childrenOf.get(cur) ?? []) if (!out.has(ch)) { out.add(ch); stack.push(ch) }
+  }
+  return out
+}
+
 export function AdminCollectionsPage() {
   const { t } = useLocale()
   const { isAdmin } = useAuth()
@@ -36,9 +82,11 @@ export function AdminCollectionsPage() {
   // 新建表单
   const [newName, setNewName] = useState('')
   const [newDesc, setNewDesc] = useState('')
+  const [newParentId, setNewParentId] = useState<string>('')
 
   // 选中合集的管理区
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [editParentId, setEditParentId] = useState<string>('')
   const [members, setMembers] = useState<AssetRow[] | null>(null)
   const [ungrouped, setUngrouped] = useState<AssetRow[] | null>(null)
   const [assetQuery, setAssetQuery] = useState('')
@@ -58,6 +106,11 @@ export function AdminCollectionsPage() {
   }, [isAdmin, reload])
 
   const selected = collections?.find((c) => c.id === selectedId) ?? null
+
+  // 选中合集变化时同步父级选择器
+  useEffect(() => {
+    setEditParentId(selected?.parent_id ?? '')
+  }, [selectedId, selected?.parent_id])
 
   // 成员 + 未归组列表：busy 翻转（每次 mutation 后）触发重读
   useEffect(() => {
@@ -95,7 +148,10 @@ export function AdminCollectionsPage() {
     } catch (e) {
       const code = (e as Error & { code?: string }).code
       const msg = e instanceof Error ? e.message : String(e)
-      setError(code === 'slug_taken' ? t('admin.collections.slugTaken') : msg)
+      if (code === 'slug_taken') setError(t('admin.collections.slugTaken'))
+      else if (code === 'collection_has_children') setError(t('admin.collections.hasChildren'))
+      else if (code === 'collection_guard' || code === 'parent_not_found') setError(t('admin.collections.hierarchyGuard'))
+      else setError(msg)
     }
     setBusy(false)
   }
@@ -106,9 +162,15 @@ export function AdminCollectionsPage() {
       if (!name) throw new Error(t('admin.collections.nameRequired'))
       const slug = slugify(name)
       if (!slug) throw new Error(t('admin.collections.slugInvalid'))
-      await createCollection({ name, slug, description: newDesc.trim() || null })
+      await createCollection({
+        name,
+        slug,
+        description: newDesc.trim() || null,
+        parentId: newParentId || null,
+      })
       setNewName('')
       setNewDesc('')
+      setNewParentId('')
     })
 
   const onTransition = (col: CollectionRow, to: 'draft' | 'published' | 'archived') =>
@@ -119,18 +181,26 @@ export function AdminCollectionsPage() {
       await updateCollection(col.id, { status: to })
     })
 
-  // sort_order 交换：两次原子 PATCH（V1 上移/下移；失败可重放，无部分态风险）
+  // sort_order 交换：两次原子 PATCH（V1.2-A 起仅在同级兄弟间移动）
   const onMove = (col: CollectionRow, dir: -1 | 1) => {
     if (!collections) return
-    const sorted = [...collections].sort((a, b) => a.sort_order - b.sort_order)
-    const idx = sorted.findIndex((c) => c.id === col.id)
-    const target = sorted[idx + dir]
+    const siblings = [...collections]
+      .filter((c) => c.parent_id === col.parent_id)
+      .sort((a, b) => a.sort_order - b.sort_order)
+    const idx = siblings.findIndex((c) => c.id === col.id)
+    const target = siblings[idx + dir]
     if (!target) return
     run(async () => {
       await updateCollection(col.id, { sort_order: target.sort_order })
       await updateCollection(target.id, { sort_order: col.sort_order })
     })
   }
+
+  // V1.2-A：换父（null=升根；客户端先排除自身+子孙，环/深度由 DB 触发器终审）
+  const onChangeParent = (col: CollectionRow, parentId: string) =>
+    run(async () => {
+      await updateCollection(col.id, { parentId: parentId || null })
+    })
 
   const onAssign = (assetId: string, collectionId: string | null) =>
     run(async () => {
@@ -182,6 +252,28 @@ export function AdminCollectionsPage() {
             onChange={(e) => setNewDesc(e.target.value)}
             placeholder={t('admin.collections.description')}
           />
+          {/* V1.2-A：父级选择（根级 = 无父级；防环/深度终审在 DB 触发器） */}
+          <div className="flex max-w-xl items-center gap-2">
+            <label className="shrink-0 text-sm text-muted-foreground" htmlFor="new-parent">
+              {t('admin.collections.parentLabel')}
+            </label>
+            <select
+              id="new-parent"
+              className="h-9 flex-1 rounded-md border border-input bg-background px-2 text-sm"
+              value={newParentId}
+              onChange={(e) => setNewParentId(e.target.value)}
+            >
+              <option value="">{t('admin.collections.parentRoot')}</option>
+              {(collections ?? [])
+                .slice()
+                .sort((a, b) => a.sort_order - b.sort_order)
+                .map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+            </select>
+          </div>
           <p className="text-xs text-muted-foreground">{t('admin.collections.createAndManage')}</p>
         </CardContent>
       </Card>
@@ -198,10 +290,13 @@ export function AdminCollectionsPage() {
         </Card>
       ) : (
         <div className="space-y-2">
-          {[...collections]
-            .sort((a, b) => a.sort_order - b.sort_order)
-            .map((col, idx, arr) => (
-              <Card key={col.id}>
+          {flattenTree(collections).map(({ col, depth }) => {
+            // 兄弟间首位/末位判定（V1.2-A：上移/下移仅同级生效）
+            const siblings = collections.filter((c) => c.parent_id === col.parent_id)
+            const isFirstSibling = siblings.every((s) => s.sort_order >= col.sort_order)
+            const isLastSibling = siblings.every((s) => s.sort_order <= col.sort_order)
+            return (
+              <Card key={col.id} style={{ marginLeft: `${depth * 20}px` }}>
                 <CardContent className="flex flex-wrap items-center gap-3 p-3">
                   <div className="min-w-0 flex-1">
                     <button
@@ -228,13 +323,18 @@ export function AdminCollectionsPage() {
                         : t('admin.status.archived')}
                   </Badge>
                   <div className="flex shrink-0 gap-1">
-                    <Button size="sm" variant="outline" disabled={busy || idx === 0} onClick={() => onMove(col, -1)}>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={busy || isFirstSibling}
+                      onClick={() => onMove(col, -1)}
+                    >
                       ↑
                     </Button>
                     <Button
                       size="sm"
                       variant="outline"
-                      disabled={busy || idx === arr.length - 1}
+                      disabled={busy || isLastSibling}
                       onClick={() => onMove(col, 1)}
                     >
                       ↓
@@ -265,7 +365,8 @@ export function AdminCollectionsPage() {
                   </div>
                 </CardContent>
               </Card>
-            ))}
+            )
+          })}
         </div>
       )}
 
@@ -276,6 +377,30 @@ export function AdminCollectionsPage() {
             <div className="flex items-center justify-between">
               <h2 className="font-semibold">{t('admin.collections.assetsSection')}</h2>
               <span className="text-xs text-muted-foreground">{t('admin.collections.notVisibleHint')}</span>
+            </div>
+
+            {/* V1.2-A：换父级（排除自身+子孙，防环；深度/环终审在 DB 触发器） */}
+            <div className="flex max-w-md items-center gap-2">
+              <label className="shrink-0 text-sm text-muted-foreground" htmlFor="edit-parent">
+                {t('admin.collections.parentLabel')}
+              </label>
+              <select
+                id="edit-parent"
+                className="h-9 flex-1 rounded-md border border-input bg-background px-2 text-sm"
+                value={editParentId}
+                disabled={busy}
+                onChange={(e) => onChangeParent(selected, e.target.value)}
+              >
+                <option value="">{t('admin.collections.parentRoot')}</option>
+                {(collections ?? [])
+                  .filter((c) => !descendantIds(collections ?? [], selected.id).has(c.id))
+                  .sort((a, b) => a.sort_order - b.sort_order)
+                  .map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+              </select>
             </div>
 
             {members === null ? (

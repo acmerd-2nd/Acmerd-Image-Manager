@@ -1569,6 +1569,7 @@ interface CollectionCreateBody {
   name?: unknown
   slug?: unknown
   description?: unknown
+  parentId?: unknown
 }
 
 interface CollectionUpdateBody {
@@ -1576,6 +1577,7 @@ interface CollectionUpdateBody {
   slug?: unknown
   description?: unknown
   status?: unknown
+  parentId?: unknown
 }
 
 const SLUG_RE = /^[a-z0-9\u4e00-\u9fff]+(-[a-z0-9\u4e00-\u9fff]+)*$/
@@ -1626,16 +1628,30 @@ app.post('/api/admin/collections', async (c) => {
   if (!slug || !SLUG_RE.test(slug)) {
     return c.json({ error: { code: 'bad_request', message: 'invalid slug' } }, 400)
   }
+  // V1.2-A D1：parentId（null=根级；uuid=挂到既有集合）。存在性预检，防环/深度交给 0015 触发器
+  let parentId: string | null = null
+  if (body.parentId !== undefined && body.parentId !== null) {
+    if (typeof body.parentId !== 'string' || !UUID_RE.test(body.parentId)) {
+      return c.json({ error: { code: 'bad_request', message: 'invalid parentId' } }, 400)
+    }
+    const parent = await fetchCollectionRow(c.env, body.parentId)
+    if (!parent) return c.json({ error: { code: 'parent_not_found', message: 'Parent collection not found' } }, 400)
+    parentId = body.parentId
+  }
 
   const res = await fetch(`${c.env.SUPABASE_URL}/rest/v1/collections`, {
     method: 'POST',
     headers: { ...svc(c.env), Prefer: 'return=representation' },
-    body: JSON.stringify({ name, slug, description, created_by: auth.userId }),
+    body: JSON.stringify({ name, slug, description, parent_id: parentId, created_by: auth.userId }),
   })
   if (!res.ok) {
     const errBody = (await res.json().catch(() => null)) as { message?: string; code?: string } | null
     const dup = res.status === 409 || (errBody?.code === '23505')
     if (dup) return c.json({ error: { code: 'slug_taken', message: 'Slug already exists' } }, 409)
+    // V1.2-A：层级守卫触发器拒绝（parent_id 违反 FK 也会带 FK 文本）→ 明确 400
+    if (/COLLECTION_COVER|COLLECTION_GUARD|COLLECTION_PARENT_SELF|COLLECTION_CYCLE|COLLECTION_DEPTH_EXCEEDED|violates foreign key/.test(errBody?.message ?? '')) {
+      return c.json({ error: { code: 'collection_guard', message: errBody?.message } }, 400)
+    }
     console.error('Collection create failed:', res.status, errBody?.message)
     return c.json({ error: { code: 'upstream_error', message: 'Collection create failed' } }, 502)
   }
@@ -1685,6 +1701,21 @@ app.patch('/api/admin/collections/:collectionId', async (c) => {
     }
     patch.status = body.status
   }
+  if (body.parentId !== undefined) {
+    // V1.2-A D1：parentId=null 升根；uuid 换父（自引用/环/深度由 0015 触发器拒绝）
+    if (body.parentId === null) {
+      patch.parent_id = null
+    } else if (typeof body.parentId === 'string' && UUID_RE.test(body.parentId)) {
+      if (body.parentId === id) {
+        return c.json({ error: { code: 'collection_guard', message: 'COLLECTION_PARENT_SELF' } }, 400)
+      }
+      const parent = await fetchCollectionRow(c.env, body.parentId)
+      if (!parent) return c.json({ error: { code: 'parent_not_found', message: 'Parent collection not found' } }, 400)
+      patch.parent_id = body.parentId
+    } else {
+      return c.json({ error: { code: 'bad_request', message: 'invalid parentId' } }, 400)
+    }
+  }
   if (Object.keys(patch).length === 0) {
     return c.json({ error: { code: 'bad_request', message: 'nothing to update' } }, 400)
   }
@@ -1698,8 +1729,8 @@ app.patch('/api/admin/collections/:collectionId', async (c) => {
     if (mut.status === 409 || /duplicate key/.test(mut.message)) {
       return c.json({ error: { code: 'slug_taken', message: 'Slug already exists' } }, 409)
     }
-    // cover 完整性触发器拒绝（COLLECTION_COVER_MISMATCH 等）→ 明确 400
-    if (/COLLECTION_COVER|COLLECTION_GUARD/.test(mut.message)) {
+    // cover 完整性 / 层级守卫触发器拒绝（COLLECTION_COVER_MISMATCH / COLLECTION_PARENT_SELF / COLLECTION_CYCLE / COLLECTION_DEPTH_EXCEEDED）→ 明确 400
+    if (/COLLECTION_COVER|COLLECTION_GUARD|COLLECTION_PARENT_SELF|COLLECTION_CYCLE|COLLECTION_DEPTH_EXCEEDED/.test(mut.message)) {
       return c.json({ error: { code: 'collection_guard', message: mut.message } }, 400)
     }
     console.error('Collection patch failed:', mut.status, mut.message)
@@ -1732,6 +1763,17 @@ app.delete('/api/admin/collections/:collectionId', async (c) => {
 
   const before = await fetchCollectionRow(c.env, id)
   if (!before) return c.json({ error: { code: 'not_found', message: 'Collection not found' } }, 404)
+
+  // V1.2-A D3：有子集合 → 409 拒删（RESTRICT 兜底在 FK，这里是友好预检）
+  const childChk = await fetch(`${c.env.SUPABASE_URL}/rest/v1/collections?parent_id=eq.${id}&select=id&limit=1`, {
+    headers: svc(c.env),
+  })
+  if (childChk.ok) {
+    const childRows = (await childChk.json()) as Array<Record<string, unknown>>
+    if (childRows.length > 0) {
+      return c.json({ error: { code: 'collection_has_children', message: 'Collection has child collections; move or delete them first' } }, 409)
+    }
+  }
 
   // FK assets_collection_fk ON DELETE SET NULL → 资产回归未归组（Q3：不进公域浏览）
   const del = await fetch(`${c.env.SUPABASE_URL}/rest/v1/collections?id=eq.${id}`, {

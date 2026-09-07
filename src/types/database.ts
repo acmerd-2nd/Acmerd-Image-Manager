@@ -71,7 +71,7 @@ export interface ImageSourceRow {
   source_path: string | null
 }
 
-/** V1.1 D5：Collection（单层，无嵌套） */
+/** V1.2-A D1：Collection（任意层级，硬上限 5 层；parent_id=null 为根级） */
 export interface CollectionRow {
   id: string
   name: string
@@ -80,12 +80,13 @@ export interface CollectionRow {
   cover_image_id: string | null
   status: AssetStatus
   sort_order: number
+  parent_id: string | null
   created_by: string | null
   created_at: string
   updated_at: string
 }
 
-/** published_collections 视图行（V1.1 Phase C 首页 Collection 卡片数据源） */
+/** published_collections 视图行（V1.2-A 递归链可见性：全链 published 才公开） */
 export interface PublishedCollectionRow {
   id: string
   name: string
@@ -93,6 +94,7 @@ export interface PublishedCollectionRow {
   description: string | null
   cover_image_id: string | null
   asset_count: number
+  parent_id: string | null
 }
 
 /** V1.1 D10：账号来源标记（仅标记字段，不构成特殊权限类别） */

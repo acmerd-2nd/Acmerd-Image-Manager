@@ -120,6 +120,7 @@ export const zh = {
     uncategorizedTitle: '更多资源',
     uncategorizedSubtitle: '未归入合集的已发布资产。',
     noCollections: '暂无已发布合集。',
+    childCollections: '子合集',
   },
   schedule: {
     title: '排期',
@@ -250,6 +251,10 @@ export const zh = {
       publishBlocked: '发布前需先设置封面',
       slugInvalid: 'Slug 只能包含小写字母、数字、中文，用连字符分隔',
       slugTaken: 'Slug 已被占用，请换一个',
+      parentLabel: '父级合集',
+      parentRoot: '根级（无父级）',
+      hasChildren: '该合集包含子合集，无法删除；请先删除或移出子合集',
+      hierarchyGuard: '层级变更被拒绝（不可形成环或超过 5 层深度）',
       deleteBody:
         '此操作删除该合集；合集内资产回归「未归组」（不进公域浏览），资产本身不受影响。\n\n不可撤销，审计将记录 collection.deleted。',
       deleted: '已删除合集「{name}」',

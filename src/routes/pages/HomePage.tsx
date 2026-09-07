@@ -91,16 +91,18 @@ export function HomePage() {
         </div>
       </div>
 
-      {/* V1.1 PC-2：首页 = Collection 卡片（Q3：未归组资产折叠在页面底部区） */}
+      {/* V1.1 PC-2 + V1.2-A：首页只展示根级合集（子合集在父合集详情页内展开；Q3：未归组资产折叠在页面底部区） */}
       {collections === null ? (
         <div className="mb-10 h-24 animate-pulse rounded-xl bg-muted" />
-      ) : collections.length > 0 ? (
+      ) : collections.filter((c) => c.parent_id === null).length > 0 ? (
         <section className="mb-12">
           <h2 className="mb-4 text-lg font-semibold">{t('collection.featured')}</h2>
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-            {collections.map((col) => (
-              <CollectionCard key={col.id} collection={col} />
-            ))}
+            {collections
+              .filter((c) => c.parent_id === null)
+              .map((col) => (
+                <CollectionCard key={col.id} collection={col} />
+              ))}
           </div>
         </section>
       ) : (

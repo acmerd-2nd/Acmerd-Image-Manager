@@ -118,6 +118,7 @@ export const en: Dictionary = {
     uncategorizedTitle: 'More Resources',
     uncategorizedSubtitle: 'Published assets not grouped into a collection.',
     noCollections: 'No published collections yet.',
+    childCollections: 'Sub-collections',
   },
   schedule: {
     title: 'Schedule',
@@ -248,6 +249,10 @@ export const en: Dictionary = {
       publishBlocked: 'Set a cover before publishing',
       slugInvalid: 'Slug may only contain lowercase letters, digits, CJK, joined by hyphens',
       slugTaken: 'Slug is taken. Please choose another',
+      parentLabel: 'Parent collection',
+      parentRoot: 'Root level (no parent)',
+      hasChildren: 'This collection has sub-collections and cannot be deleted; remove or delete them first',
+      hierarchyGuard: 'Hierarchy change rejected (cycle or 5-level depth limit)',
       deleteBody:
         'This deletes the collection; its assets return to "ungrouped" (not publicly browsable). Assets themselves are unaffected.\n\nThis cannot be undone. Audit will record collection.deleted.',
       deleted: 'Collection deleted: {name}',

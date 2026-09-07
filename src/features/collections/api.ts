@@ -27,6 +27,37 @@ export async function getPublishedCollectionBySlug(slug: string): Promise<Publis
   return (data as PublishedCollectionRow) ?? null
 }
 
+/** V1.2-A D2：直接子集合（视图全链 published 收敛，直接查 parent_id 即可） */
+export async function listPublishedChildCollections(parentId: string): Promise<PublishedCollectionRow[]> {
+  const { data, error } = await supabase
+    .from('published_collections')
+    .select('*')
+    .eq('parent_id', parentId)
+    .order('sort_order')
+  if (error) throw new Error(error.message)
+  return (data ?? []) as PublishedCollectionRow[]
+}
+
+/** V1.2-A：面包屑祖先链（从当前合集到根，含自身；数据量小，一次拉全量在客户端回溯） */
+export async function getPublishedBreadcrumb(
+  collection: PublishedCollectionRow,
+): Promise<PublishedCollectionRow[]> {
+  const { data, error } = await supabase.from('published_collections').select('*')
+  if (error) throw new Error(error.message)
+  const byId = new Map((data ?? []).map((r) => [r.id, r as PublishedCollectionRow]))
+  const chain: PublishedCollectionRow[] = [collection]
+  let cursor = collection.parent_id
+  const seen = new Set([collection.id])
+  while (cursor && !seen.has(cursor)) {
+    seen.add(cursor)
+    const parent = byId.get(cursor)
+    if (!parent) break
+    chain.unshift(parent)
+    cursor = parent.parent_id
+  }
+  return chain
+}
+
 /** Admin：全部状态合集列表（RLS is_admin） */
 export async function listAllCollections(): Promise<CollectionRow[]> {
   const { data, error } = await supabase
@@ -140,7 +171,13 @@ export interface AdminCollectionMutationResult {
   collection: CollectionRow
 }
 
-export function createCollection(input: { name: string; slug: string; description?: string | null }) {
+export function createCollection(input: {
+  name: string
+  slug: string
+  description?: string | null
+  /** V1.2-A D1：null/缺省=根级；uuid=挂到既有集合 */
+  parentId?: string | null
+}) {
   return collectionRequest<AdminCollectionMutationResult>('/api/admin/collections', input)
 }
 
@@ -152,6 +189,8 @@ export function updateCollection(
     description?: string | null
     status?: 'draft' | 'published' | 'archived'
     sort_order?: number
+    /** V1.2-A D1：null=升根；uuid=换父（环/深度由 DB 触发器终审） */
+    parentId?: string | null
   },
 ) {
   return collectionRequest<AdminCollectionMutationResult>(`/api/admin/collections/${id}`, patch, 'PATCH')
