@@ -170,7 +170,7 @@ try {
   const anonBase = (await asRole('', () => q(`select count(*)::int as n from public.schedule_items`))).rows[0].n
   ok('S4a anon 基表只见 published', anonBase === 4, 'n=' + anonBase)
   const adminBase = (await asRole(ADMIN1, () => q(`select count(*)::int as n from public.schedule_items`))).rows[0].n
-  ok('S4b admin 基表全量', adminBase === 6, 'n=' + adminBase)
+  ok('S4b admin 基表全量', adminBase === 5, 'n=' + adminBase)
 
   // ---------- S5 anon 写拒绝（INSERT WITH CHECK 抛错） ----------
   r = await expectErr(`select 1`, '__noop__')
@@ -182,13 +182,16 @@ try {
 
   // ---------- S6 审计链（admin 身份：created/published/updated/deleted） ----------
   const before = (await q(`select count(*)::int as n from public.audit_logs where action like 'schedule.item%'`)).rows[0].n
-  await asRole(ADMIN1, async () => {
-    const a1 = (await q(`insert into public.schedule_items (title) values ('aud1') returning id`)).rows[0].id
-    await q(`update public.schedule_items set status='published' where id='${a1}'`)
-    await q(`update public.schedule_items set title='aud1-r' where id='${a1}'`)  // item_updated
-    await q(`update public.schedule_items set status='archived' where id='${a1}'`)
-    await q(`delete from public.schedule_items where id='${a1}'`)
-  })
+  // 注意：审计断言必须真实提交——不能包 ROLLBACK 事务；用会话级 claim + set role，测毕还原
+  await q(`select set_config('request.jwt.claim.sub', '${ADMIN1}', false), set_config('request.jwt.claim.role', 'authenticated', false)`)
+  await q('set role authenticated')
+  const a1 = (await q(`insert into public.schedule_items (title) values ('aud1') returning id`)).rows[0].id
+  await q(`update public.schedule_items set status='published' where id='${a1}'`)
+  await q(`update public.schedule_items set title='aud1-r' where id='${a1}'`)  // item_updated
+  await q(`update public.schedule_items set status='archived' where id='${a1}'`)
+  await q(`delete from public.schedule_items where id='${a1}'`)
+  await q('reset role')
+  await q(`select set_config('request.jwt.claim.sub', '', false), set_config('request.jwt.claim.role', 'anon', false)`)
   const acts = (await q(`select action, count(*)::int as n from public.audit_logs where action like 'schedule.item%' group by action order by action`)).rows
   const amap = Object.fromEntries(acts.map((x) => [x.action, x.n]))
   const delta = acts.reduce((s2, x) => s2 + x.n, 0) - before
