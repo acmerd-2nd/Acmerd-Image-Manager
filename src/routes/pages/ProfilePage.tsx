@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase/client'
 import { useAuth } from '@/features/auth/AuthProvider'
+import { CreditsLedger } from '@/features/credits/CreditsLedger'
 import { useLocale } from '@/i18n'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -124,6 +125,9 @@ export function ProfilePage() {
               {t('nav.logout')}
             </Button>
           </div>
+
+          {/* V1.3 C1：积分流水自助查看（本人 RLS 只读；Admin 亦可见自己流水，语义一致） */}
+          <CreditsLedger />
         </CardContent>
       </Card>
     </div>
