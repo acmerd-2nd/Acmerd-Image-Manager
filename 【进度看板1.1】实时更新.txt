@@ -18,7 +18,7 @@
 - C 密码找回 代码 ✅（同 commit）：/reset-password + /reset-password/confirm（GoTrue 原生流，redirectTo 仅同源常量）+ 登录页入口。D10 生产 SMTP/redirect 配置待 Owner。
 - D CDN 评估 ✅（docs/v1.2/02）：实测 jsDelivr `gh/` 面已整体 301→raw（连 jquery@tag 也是）→ 零加速收益，建议 R1 维持现状；待 Owner 终裁。
 **V1.2 生产部署已执行**（2026-09-07，Owner chat 授权）：0016 冒烟 10/10 → 0016 生产应用（核验通过）→ wrangler deploy（ver 3fd18445，bundle index-CGRO1bD2.js）→ 线上验证 V1–V8 全绿（判别器 401 JSON、e2e7 CRUD 6/6 零残留、/schedule 空态、/reset-password 渲染、首页零回归）。回滚锚点 = 71278568。
-下一步 = ① Owner：CDN 终裁（docs/v1.2/02）+ D10③ SMTP（可选）+ 邮件闭环验证（需真实收信邮箱）；② Agent：V1.2 收口报告 + HANDOVER 刷新；③ 0015/0016 push 待单独授权。
+下一步 = ① Owner：CDN 终裁（docs/v1.2/02）+ D10③ SMTP（可选）+ 邮件闭环验证（需真实收信邮箱）；② Agent：V1.2 收口报告 + HANDOVER 刷新；③ push ✅（2026-09-07，远端 main=59133ae 与本地一致）。
 当前：PC-4 Credits 接线 ✅ CLOSED —— 沙箱 31/2（2 FAIL=W0f 本地 Node raw 出网受限，非产品缺陷；W7 ZIP 200 反证 raw 可用）经 Owner 裁决豁免关 Gate。Step4 复核 DB 零 e2e4 残留；发现的 1 个 GitHub 孤儿 blob 已按 Owner 授权删除（f0e23399），复核仓库零孤儿、生产真图未触碰。
 当前：PC-5 Registration Gate ✅ —— Worker `POST /api/auth/register`（服务端密码校验 + gate `registration_enabled` + service_role createUser，不建会话/不回传 token）；前端 RegisterPage 改投 Worker 后复用 `signInWithPassword`（PD-1 A）。本地沙箱 8/8 PASS（含 E2E 建号→GoTrue 登录闭环），e2e5 零残留。403 disabled 分支代码级验证（未擅翻生产全局开关做运行时探测）。
 下一步 = ① 可选：生产 `registration_enabled` 若要默认关闭，Admin 一键；② Phase D/后续需求由 Owner 决定。生产运行 version `71278568`，回滚锚点 `18941cbc`（`wrangler rollback` 秒级）。远端 main=9eea9e8（2026-09-06 push 完成，与本地一致）。
