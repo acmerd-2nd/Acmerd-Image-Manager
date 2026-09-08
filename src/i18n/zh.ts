@@ -71,6 +71,8 @@ export const zh = {
     tagsLabel: '标签',
     selectForZip: '选择打包',
     cancelSelection: '取消选择',
+    selectAll: '全选',
+    deselectAll: '取消全选',
     downloadNeedLogin: '下载需登录',
     download: '下载',
     preview: '预览 {name}',

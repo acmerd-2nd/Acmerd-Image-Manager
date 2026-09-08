@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { Check, Download, DownloadCloud, Image as ImageIcon, ListChecks, Lock, Tag as TagIcon } from 'lucide-react'
+import { Check, CheckCheck, Download, DownloadCloud, Image as ImageIcon, ListChecks, Lock, Tag as TagIcon } from 'lucide-react'
 import {
   getPublishedAssetBySlug,
   imageSrcOf,
@@ -240,6 +240,18 @@ export function AssetDetailPage() {
     setBusy(false)
   }
 
+  const allSelected =
+    !!activeImages && activeImages.length > 0 && activeImages.every((i) => selected.has(i.id))
+  const handleSelectAll = () => {
+    if (!activeImages) return
+    if (allSelected) {
+      setSelected(new Set())
+      return
+    }
+    const ids = activeImages.map((i) => i.id).slice(0, MAX_ZIP)
+    setSelected(new Set(ids))
+  }
+
   return (
     <div className="mx-auto w-full max-w-7xl px-4 py-12 sm:px-6">
       <div className="grid gap-8 lg:grid-cols-[1fr_260px]">
@@ -318,6 +330,12 @@ export function AssetDetailPage() {
                 <ListChecks className="mr-1 h-4 w-4" />
                 {selectionMode ? t('asset.cancelSelection') : t('asset.selectForZip')}
               </Button>
+              {selectionMode && (
+                <Button size="sm" variant="outline" onClick={handleSelectAll}>
+                  <CheckCheck className="mr-1 h-4 w-4" />
+                  {allSelected ? t('asset.deselectAll') : t('asset.selectAll')}
+                </Button>
+              )}
               {!session && (
                 <span className="flex items-center gap-1 text-xs text-muted-foreground">
                   <Lock className="h-3 w-3" /> {t('asset.downloadNeedLogin')}
@@ -348,12 +366,24 @@ export function AssetDetailPage() {
                       isSelected && 'ring-2 ring-primary',
                     )}
                   >
-                    <button
-                      type="button"
-                      onClick={() => !selectionMode && setPreview(img)}
-                      className="block w-full cursor-zoom-in"
-                      aria-label={`Preview ${img.filename}`}
-                    >
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (selectionMode) {
+                            if (!selectDisabled) toggleSelect(img.id)
+                          } else {
+                            setPreview(img)
+                          }
+                        }}
+                        className={cn('block w-full', selectionMode ? 'cursor-pointer' : 'cursor-zoom-in')}
+                        aria-label={
+                          selectionMode
+                            ? isSelected
+                              ? 'Deselect'
+                              : 'Select'
+                            : `Preview ${img.filename}`
+                        }
+                      >
                       <img
                         src={imageSrcOf(img, THUMB_GRID)}
                         alt={img.filename}

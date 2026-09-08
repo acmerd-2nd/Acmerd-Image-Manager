@@ -69,6 +69,8 @@ export const en: Dictionary = {
     tagsLabel: 'Tags',
     selectForZip: 'Select for ZIP',
     cancelSelection: 'Cancel selection',
+    selectAll: 'Select all',
+    deselectAll: 'Deselect all',
     downloadNeedLogin: 'Login required to download',
     download: 'Download',
     preview: 'Preview {name}',
