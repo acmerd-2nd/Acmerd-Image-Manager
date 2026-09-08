@@ -27,7 +27,7 @@
 > - **安全不变量（实测）**：客户端仅发 `{sourceId}`，计数/成本/金额全服务端权威（伪造字段无效）；`image_count<1` → 404 `not_available` 零扣费；H2 幂等保留（同 key 重放 ledger 仅 1 条）；unlimited 旁路/一次性授权跳转/语言无关全部不变。UI 徽标 `{count} 张 · {n} 积分`（无限 `{count} 张 · ♾`）。
 > - **生产验证**：`scripts/v141-package-pricing-verify.mjs` **23/23 PASS**（矩阵 7→3.5/9→4.5/20→10/30→15 + 多语言 EN7+DE8+IT9=24→12 + 0图守卫 + 篡改 + 幂等 + finally 零残留 + 余额还原）。e2e7 前缀测试实体已全清。
 > - **线上**：Worker ver `1d0c454b-b2ce-431c-90a5-842fdebb848c`（100%）；回滚锚点 = 前一部署（rebrand 版）。
-> - **待 Owner**：本地 commit push 授权；`schema_migrations` 0020 记账自愈（DNS 恢复）；可选清理迁移删旧键。
+> - **待 Owner**：push ✅ 已完成（2026-09-08 Owner 授权，`bf7f2e6..de71e46` 推 origin/main，git ls-remote 复核一致）；`schema_migrations` 0020 记账自愈（DNS 恢复）；可选清理迁移删旧键。
 
 > ### 🟢 V1.4 当前态（2026-09-08）— 新 Agent 必读
 > - **Gate 来源**：`docs/v1.4/01-design-gate.md`（Owner 裁决落档）；收口 `docs/v1.4/02-implementation-report.md`。
@@ -102,9 +102,9 @@
 ### 当前状态快照（2026-09-08，V1.4.1 收口后）
 | 维度 | 值 |
 | --- | --- |
-| HEAD / 远端 | 远端 main = `bf7f2e6`（rebrand，git ls-remote 复核一致）；V1.4.1 本地 commit **待 Owner 授权 push** |
+| HEAD / 远端 | 远端 main = `de71e46`（V1.4.1，git ls-remote 复核一致） |
 | 生产 Worker | ver `1d0c454b-b2ce-431c-90a5-842fdebb848c`（2026-09-08 V1.4.1 部署；run_worker_first=true；回滚锚点 = 前一部署；bundle `index-D_e27djE.js`） |
-| 工作树 | 未跟踪：`.workbuddy/`、`.qoder/`、规划文档 + 总纲1.1/看板1.1 [故意不推]；V1.4.1 代码+文档已 commit，**push 待 Owner 授权** |
+| 工作树 | 未跟踪：`.workbuddy/`、`.qoder/`、规划文档 + 总纲1.1/看板1.1 [故意不推]；V1.4.1 全部已提交已推送 |
 | 已应用迁移 | 0001–0008（V1.0）+ 0009–0014（V1.1）+ 0015–0016（V1.2）+ 0017–0018（V1.3.1）+ 0019（V1.4 品牌种子）+ **0020（V1.4.1：`package_download_cost_per_image=0.5` KV 种子；旧固定键保留）** |
 | Worker 端点 | V1.0–V1.3.1 全量保留。全部经 `authenticate()` |
 | Worker Secret | `SUPABASE_SERVICE_ROLE_KEY` 已 `wrangler secret put`；本地 `worker/.dev.vars` 同步 |
@@ -244,7 +244,7 @@ React 18 + TS + Vite + Tailwind + shadcn 风格 UI；Hono Worker + `[assets]` SP
 **V1.4.1 Package 动态计价（CLOSED，2026-09-08）**：Owner D1–D4 全批（`docs/v1.4.1/01`）；0020 KV 种子（`package_download_cost_per_image=0.5`，旧键保留）+ Worker 动态计价（基础表直查计数，服务端唯一权威）+ UI 动态价徽标 + Admin 每图积分输入（两位小数）；生产价格矩阵验证 `scripts/v141-package-pricing-verify.mjs` **23/23 PASS**（含多语言 24→12、0 图守卫、篡改、幂等、零残留）；生产 ver `1d0c454b-…`；收口 `docs/v1.4.1/02-implementation-report.md`。**本地 commit 待 Owner 授权 push**。
 
 **当前开口（均 Owner 决定，Agent 不得擅自推进）**：
-1. **V1.4.1 push 授权**：本地 commit（0020 + Worker/前端/i18n + 002 收口报告 + 验证脚本）待 Owner 确认后按可靠模式推 origin/main。
+1. **V1.4.1 push**：✅ 已完成（2026-09-08 Owner 授权；`bf7f2e6..de71e46` 推 origin/main，git ls-remote 复核一致）。
 2. **邮件闭环验证（Owner 明示暂缓）**：需 1 个真实可收信邮箱；SMTP（D10③）可选后补（内置 mailer 限速 ~2 封/小时）。
 3. **生产 `registration_enabled` 现为 true**。若要默认关闭：Admin Dashboard → 平台控制一键（即时生效）。
 4. **后续需求未发起**。任何新需求走 Change Proposal → 新 Phase/版本流程（惯例：Gate 落 `docs/vN.N/NN`，Owner 逐项裁决后才动代码）。

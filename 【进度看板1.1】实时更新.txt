@@ -7,7 +7,7 @@
 快速恢复上下文。每次完成实质步骤后必须更新本文件的对应标记与时间戳。
 状态标记：✅ 完成 | 🟡 进行中/待裁决 | 🔴 未开始/待 Owner | 🚫 禁止/未授权
 
-最后更新：2026-09-08（**V1.4.1 Package 动态计价 ✅ CLOSED + 部署 + 生产价格矩阵 23/23 PASS**——Gate docs/v1.4.1/01（Owner D1–D4 全批 + 附加矩阵测试要求）→ 0020 KV 种子（package_download_cost_per_image=0.5，旧固定键保留 D1）→ Worker 动态计价（整个 Asset 已发布 ready 图数 × 每图成本，服务端唯一权威；矩阵验证拦截 P0：published_assets 视图 svc 无授权 42501，改基础表直查）→ 前端动态价徽标 + Admin 每图积分（两位小数）→ 部署 ver 1d0c454b → 生产矩阵 23/23（7/9/20/30 单语言 + 多语言 24→12 + 0 图守卫 + 篡改 + 幂等 + finally 零残留）→ 收口 docs/v1.4.1/02。push 🔴 待 Owner 授权）
+最后更新：2026-09-08（**V1.4.1 Package 动态计价 ✅ CLOSED + 部署 + 生产价格矩阵 23/23 PASS**——Gate docs/v1.4.1/01（Owner D1–D4 全批 + 附加矩阵测试要求）→ 0020 KV 种子（package_download_cost_per_image=0.5，旧固定键保留 D1）→ Worker 动态计价（整个 Asset 已发布 ready 图数 × 每图成本，服务端唯一权威；矩阵验证拦截 P0：published_assets 视图 svc 无授权 42501，改基础表直查）→ 前端动态价徽标 + Admin 每图积分（两位小数）→ 部署 ver 1d0c454b → 生产矩阵 23/23（7/9/20/30 单语言 + 多语言 24→12 + 0 图守卫 + 篡改 + 幂等 + finally 零残留）→ 收口 docs/v1.4.1/02。push ✅（Owner 授权，bf7f2e6..de71e46 推 origin/main，git ls-remote 复核一致））
 
 ════════════════════════════════════════════════════════════════════
 ■ 当前位置（一句话）
@@ -21,7 +21,7 @@
 **V1.3.1 全链 CLOSED（2026-09-08）**：排期三状态（0017 progress + 双端）、合集封面写入链路+可视化选图（守卫不变）、积分修复（BUG-A 404 / BUG-B 证伪）、CreditsAdjustDialog（快捷±/Set Balance+Reason+确认/Unlimited Toast）、批量调整（整批原子）、⋯菜单、下载成本标签（♾）。生产 ver `efb2c05d`，回滚锚点 `85180f65`。证据 docs/v1.3.1/01…02。
 下一步 = ① Owner 登录态走查（Admin 改状态/封面/积分→刷新仍正确）；② 邮件闭环验证（暂缓）；③ 后续需求 Owner 发起（Change Proposal 流程）。push ✅（远端 main=7d24882+docs，与本地一致）。
 **V1.4 站点品牌可配置 CLOSED（2026-09-08）**：可配置品牌（导航文字 brand_text / 浏览器标题 brand_title / Logo brand_logo_path，存 GitHub 图床 branding/logo.<ext>）。零 schema/RLS/Storage/allowlist 变更；0019 幂等种子 site_settings 3 brand 行（默认 "ACMERD · 探知" / ""）。Worker `POST/DELETE /api/admin/branding/logo`（requireAdmin，复用 ghPutFile/ghDeleteFile/computeGitBlobSha + 扩展名/MIME/体积校验）+ PATCH 字符串校验；前端 BrandingCard + AppShell 导航/标题动态渲染（document.title 取 brand_title）+ brandLogoUrl()。部署 ver `b10be398-d2c0-4e9a-8ad4-90b444a412b8`（含 wrangler.toml run_worker_first=true 回归修复——首轮 4.128 默认 false 致 /api 404 落 SPA，已修）。生产验证 `scripts/v14-prod-verify.mjs` **11/11 PASS**（品牌 PATCH→anon 直读→还原→上传/删 Logo→GitHub 仓→审计），残留=默认。收口 docs/v1.4/02。回滚锚点 `8d214ddf-9c54-422a-a7ac-3e899d785aed`。push ✅（2026-09-08 Owner 授权，可靠模式 48577dc..7fdffdb 推 origin/main，git ls-remote 复核一致）。
-**V1.4.1 Package 动态计价 CLOSED（2026-09-08）**：Package 总价 = 整个 Asset 跨全部已发布语言 ready 图数 × package_download_cost_per_image（D4 口径同 published_assets.image_count，与 ?lang= 解耦）；初值 Single=1/ZIP每图=1/Package每图=0.5。0020 KV 种子已生产应用（旧键 package_download_cost=15 保留 D1 回滚兼容，代码零读写）。P0 实证：published_assets 视图 grant 仅 anon/authenticated，svc 查询 42501 → 已改基础表直查计数（零 grant 扩张）。安全实测：客户端仅发 sourceId，伪造 imageCount/cost 字段无效；image_count<1 → 404 not_available 零扣费；H2 幂等保留（重放 ledger 仅 1 条）；unlimited 旁路不变。UI 徽标 `N 张 · X 积分`（无限 `N 张 · ♾`）。生产验证 `scripts/v141-package-pricing-verify.mjs` **23/23 PASS**（矩阵 7→3.5/9→4.5/20→10/30→15 + 多语言 EN7+DE8+IT9=24→12 + 0 图 + 篡改 + 幂等 + e2e7 finally 全清 + 余额还原）。部署 ver `1d0c454b-b2ce-431c-90a5-842fdebb848c`。收口 docs/v1.4.1/02。push 🔴 待 Owner 授权。
+**V1.4.1 Package 动态计价 CLOSED（2026-09-08）**：Package 总价 = 整个 Asset 跨全部已发布语言 ready 图数 × package_download_cost_per_image（D4 口径同 published_assets.image_count，与 ?lang= 解耦）；初值 Single=1/ZIP每图=1/Package每图=0.5。0020 KV 种子已生产应用（旧键 package_download_cost=15 保留 D1 回滚兼容，代码零读写）。P0 实证：published_assets 视图 grant 仅 anon/authenticated，svc 查询 42501 → 已改基础表直查计数（零 grant 扩张）。安全实测：客户端仅发 sourceId，伪造 imageCount/cost 字段无效；image_count<1 → 404 not_available 零扣费；H2 幂等保留（重放 ledger 仅 1 条）；unlimited 旁路不变。UI 徽标 `N 张 · X 积分`（无限 `N 张 · ♾`）。生产验证 `scripts/v141-package-pricing-verify.mjs` **23/23 PASS**（矩阵 7→3.5/9→4.5/20→10/30→15 + 多语言 EN7+DE8+IT9=24→12 + 0 图 + 篡改 + 幂等 + e2e7 finally 全清 + 余额还原）。部署 ver `1d0c454b-b2ce-431c-90a5-842fdebb848c`。收口 docs/v1.4.1/02。push ✅（de71e46 推 origin/main，ls-remote 一致）。
 当前：PC-4 Credits 接线 ✅ CLOSED —— 沙箱 31/2（2 FAIL=W0f 本地 Node raw 出网受限，非产品缺陷；W7 ZIP 200 反证 raw 可用）经 Owner 裁决豁免关 Gate。Step4 复核 DB 零 e2e4 残留；发现的 1 个 GitHub 孤儿 blob 已按 Owner 授权删除（f0e23399），复核仓库零孤儿、生产真图未触碰。
 当前：PC-5 Registration Gate ✅ —— Worker `POST /api/auth/register`（服务端密码校验 + gate `registration_enabled` + service_role createUser，不建会话/不回传 token）；前端 RegisterPage 改投 Worker 后复用 `signInWithPassword`（PD-1 A）。本地沙箱 8/8 PASS（含 E2E 建号→GoTrue 登录闭环），e2e5 零残留。403 disabled 分支代码级验证（未擅翻生产全局开关做运行时探测）。
 下一步 = ① 可选：生产 `registration_enabled` 若要默认关闭，Admin 一键；② Phase D/后续需求由 Owner 决定。生产运行 version `71278568`，回滚锚点 `18941cbc`（`wrangler rollback` 秒级）。远端 main=9eea9e8（2026-09-06 push 完成，与本地一致）。
@@ -53,7 +53,7 @@ V1.4 Design Gate          ✅ APPROVED（docs/v1.4/01，Owner 裁决落档）
 V1.4 实施                  ✅ CLOSED（0019 种子 + Worker branding 双端点 + PATCH 字符串校验 + 前端 BrandingCard/导航/标题；typecheck/build 全绿；456abab）
 V1.4 生产部署              ✅ EXECUTED + 验证（2026-09-08；ver b10be398；含 run_worker_first=true 修复；生产验证 11/11 PASS；docs/v1.4/02）
 V1.4 push                  ✅ EXECUTED（2026-09-08；48577dc..7fdffdb 推 origin/main，git ls-remote 复核一致）
-V1.4.1 Package 动态计价    ✅ CLOSED + 部署 + 生产矩阵 23/23（2026-09-08；ver 1d0c454b；0020 applied；docs/v1.4.1/01…02）· push 🔴 待 Owner 授权
+V1.4.1 Package 动态计价    ✅ CLOSED + 部署 + 生产矩阵 23/23（2026-09-08；ver 1d0c454b；0020 applied；docs/v1.4.1/01…02）· push ✅（de71e46，ls-remote 一致）
 
 ════════════════════════════════════════════════════════════════════
 ■ 生产形态快照（2026-09-05 起）
