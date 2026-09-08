@@ -1,12 +1,12 @@
 # 🔄 HANDOVER — ACMERD Image Manager 交接文档
 
-> **最后更新**: 2026-09-08（**V1.3.1 体验优化+缺陷修复 CLOSED + 生产部署完成**：生产 ver `efb2c05d`，bundle `index-CjQn1Bce.js`，迁移 0001–0017）
-> **当前状态**: ✅ **V1.0/V1.1 冻结基线未破坏** · 🟢 **V1.2 A/B/C/D 全部 CLOSED**（D12 终裁：维持 raw）· 🟢 **V1.3 积分流水页 CLOSED** · 🟢 **V1.3.1 CLOSED**（排期三状态/合集封面 UX/积分修复+快捷+批量；回滚锚点 `85180f65`）· 远端 main 与本地一致
-> **线上**: https://image.acmerd.com 运行中（`/api/health` 200；迁移 **0001–0017** 全 applied）
-> **Truth Source**: 远端 `main = 7d24882` 之后；V1.3.1 部署记录+收口 = `docs/v1.3.1/02`
+> **最后更新**: 2026-09-08（**V1.3.1 CLOSED + 走查跟进修复 CLOSED**：生产 ver `ad5dfa69`，bundle `index-CWLNOoWe.js`，迁移 0001–0018）
+> **当前状态**: ✅ **V1.0/V1.1 冻结基线未破坏** · 🟢 **V1.2 A/B/C/D 全部 CLOSED**（D12 终裁：维持 raw）· 🟢 **V1.3 积分流水页 CLOSED** · 🟢 **V1.3.1 + 走查跟进 CLOSED**（排期三状态/封面 UX/积分修复+快捷+批量/Switch/管理员备注；回滚锚点 `85180f65`）· 远端 main 与本地一致
+> **线上**: https://image.acmerd.com 运行中（`/api/health` 200；迁移 **0001–0018** 全 applied）
+> **Truth Source**: 远端 `main = 73e5aab` 之后随 docs commit 同步；V1.3.1 收口 = `docs/v1.3.1/02`，走查跟进 = `docs/v1.3.1/03`
 > **V1.2 证据链（`docs/v1.2/01…04`，全链 CLOSED）**: 01 Design Gate（D1–D12 Owner 全批）→ 02 CDN 评估（jsDelivr 不可行；Owner 终裁维持 raw）→ 03 部署记录 → 04 收口报告
 > **V1.3 证据链（`docs/v1.3/01`）**: Change Proposal（C1–C5 Owner 全批）→ §9 执行记录回填（CLOSED）
-> **V1.3.1 证据链（`docs/v1.3.1/01…02`，全链 CLOSED）**: 01 Design Gate（G1–G6 Owner「全按建议」批；含 BUG-B 证伪更正）→ 02 收口报告（冒烟 16/16 + 生产结构 8/8 + RPC 回滚实测零残留）
+> **V1.3.1 证据链（`docs/v1.3.1/01…03`，全链 CLOSED）**: 01 Design Gate（G1–G6 Owner「全按建议」批；含 BUG-B 证伪更正）→ 02 收口报告（冒烟 16/16 + 生产结构 8/8 + RPC 回滚实测零残留）→ 03 走查跟进（0018 冒烟 13/13 + UI 走查）
 
 > ### 🟢 V1.3.1 当前态（2026-09-08）— 新 Agent 必读
 > - **CR 来源**：Owner `v1.3.1优化方案.txt`（体验优化+缺陷修复，非重构）。Gate `docs/v1.3.1/01`（G1–G6 Owner 全批）；收口 `docs/v1.3.1/02`。
@@ -16,7 +16,8 @@
 > - **G3/G4 积分**：审计证明后端链路无 Bug，根因=UX（点击数字无标识、无 Toast）；BUG-A 已修（unlimited PATCH 0 行→404 `credit_account_missing`，原静默 no-op）；BUG-B **证伪**（`handle_new_user` 触发器 0010 §4 自动建户）。新 `CreditsAdjustDialog`（快捷 ±10/50/100、负调折叠、Set Balance+Reason+二次确认、Unlimited Toast）+ `POST /api/admin/users/credits/batch`（≤100、reason 必填）+ 用户页复选批量条。
 > - **G5/G6**：用户操作列 ⋯ 菜单（末行向上弹防裁剪）；下载三处成本标签（N 积分 / ♾ unlimited；补 `credits.unlimitedShort` 键）。
 > - **生产回归**：结构 8/8（`scripts/v131-prod-verify.mjs`）+ RPC 回滚实测零残留（`scripts/v131-prod-rpc-test.mjs`）+ 未登录 401 门禁 + 前台排期进度已生效。冒烟 `scripts/v131-smoke.mjs` 16/16。
-> - **待 Owner 走查（登录态）**：Admin 改排期状态→前台变色；设置/更换/移除封面；调整积分→刷新仍正确；批量调整。
+> - **走查跟进（2026-09-08 晚，CLOSED，`docs/v1.3.1/03`）**：Owner 反馈「无法改积分/无法开无限积分」真根因 = 0012 `credit_accounts` SELECT 策略漏 admin 分支（admin 客户端只读到 1 行 → 积分列 `—`、调整按钮灰、Dialog 打不开；Worker 开关链路实测健康）→ **0018** 修为 own-or-admin（只读放宽；写仍 Worker 独占）+ `user_admin_notes` 管理员备注（RLS 仅 is_admin + 审计 `users.notes_updated`，allowlist 43→44）。前端：苹果 Switch（`ui/switch.tsx`；列表 Unlimited 列直接可切 + Dialog 内）+ ⋯菜单「备注」（`UserNotesDialog`）。冒烟 `v1311-smoke.mjs` **13/13**；生产验证：admin 读 9 行、开关回环 200、备注回滚零残留、UI 走查「调整积分」不再置灰 + demo01 开关 Toast 回环。
+> - **待 Owner 走查（登录态）**：批量调整走查；其余项已由 Agent UI 走查覆盖。
 
 > ### 🟢 V1.2 当前态（2026-09-07）— 新 Agent 必读
 > - **A 多层 Folder（CLOSED，35f9c10）**：0015 = `collections.parent_id`（自引用 FK RESTRICT）+ 守卫触发器（自引用/环/深度≤5/子树随迁溢出）+ `published_collections` 递归链重建（全链 published 才公开；`asset_count` 仍只数直接子资产）；Worker create/patch `parentId` + 删父预检 409 `collection_has_children` + guard 400 映射；Admin 树形 + 父级选择器、首页仅根级、详情页面包屑+子合集卡。冒烟 13/13（曾抓出守卫 2 个真 bug 已修）+ 沙箱 13/13。
@@ -80,11 +81,11 @@
 ### 当前状态快照（2026-09-08，V1.3.1 收口后）
 | 维度 | 值 |
 | --- | --- |
-| HEAD / 远端 | `7d24882`（V1.3.1 feat）之后随 docs commit 同步 origin/main |
-| 生产 Worker | ver `efb2c05d-…`（2026-09-08 部署；回滚锚点 `85180f65`；bundle `index-CjQn1Bce.js`） |
+| HEAD / 远端 | `73e5aab`（走查跟进）之后随 docs commit 同步 origin/main |
+| 生产 Worker | ver `ad5dfa69-…`（2026-09-08 晚部署；回滚锚点 `85180f65`；bundle `index-CWLNOoWe.js`） |
 | 工作树 | 仅未跟踪：`.workbuddy/`、`.qoder/`、规划文档 + 总纲1.1/看板1.1 [故意不推] |
-| 已应用迁移 | 0001–0008（V1.0）+ 0009–0014（V1.1）+ 0015–0016（V1.2）+ **0017（V1.3.1：schedule progress + adjust_credits 5 参 + admin_batch_adjust_credits）** |
-| Worker 端点 | V1.0–V1.3 全量保留。**V1.3.1 变更**：`POST /api/admin/users/credits/batch`（新）；`PATCH /api/admin/schedule-items/:id` 收 `progress`；credits POST 收 `operation`；collections PATCH 收 `coverImageId`；unlimited 0 行命中改 404 `credit_account_missing`。全部经 `authenticate()` |
+| 已应用迁移 | 0001–0008（V1.0）+ 0009–0014（V1.1）+ 0015–0016（V1.2）+ 0017（V1.3.1）+ **0018（走查跟进：credit_accounts 读策略 own-or-admin + user_admin_notes + allowlist 44）** |
+| Worker 端点 | V1.0–V1.3.1 全量保留。全部经 `authenticate()` |
 | Worker Secret | `SUPABASE_SERVICE_ROLE_KEY` 已 `wrangler secret put`；本地 `worker/.dev.vars` 同步 |
 | 管理员账号 | `1902768564@qq.com`（密码见 `.env` 的 `ADMIN_PASSWORD`），角色 admin |
 | 冻结基线 | 双层可见性（Asset+Language published，0007 后语义经 NO-DRIFT 证明未漂移）、多语言模型、三套下载解耦、ZIP ≤30/≤100MB/并发4、public bucket（残余风险已记录，见 D5/5a）、audit allowlist=43、last-admin 原子保护、disabled 门禁对偶（Worker 403 + RLS `is_admin` 含 `disabled=false`） |
@@ -228,7 +229,7 @@ React 18 + TS + Vite + Tailwind + shadcn 风格 UI；Hono Worker + `[assets]` SP
 - GoTrue 公开 signup 可被 anon key 直连绕过（PD-3 已批 A，记录在案）。
 - wrangler deploy routes 步 10000 报错 = cosmetic（token 缺 zone routes 读权限；消除需 Owner 在 CF 补权限）。
 
-**验证脚本索引（可复跑）**：V1.1 = `scripts/v11-pc4-sandbox.mjs`（PC4_BASE）、`v11-pc5-verify.mjs`、`v11-pc6-seed.mjs`（幂等 seed，勿重跑重发密码；G: 盘已不在，凭据找 Owner 重发）、`v11-pc7-prod-verify.mjs`；**V1.2 = `v12-a-folder-smoke.mjs`（隔离库 13/13）、`v12-a-worker-sandbox.mjs`（本地 worker 13/13）、`v12-b-schedule-smoke.mjs`（隔离库 10/10）**；**V1.3.1 = `v131-smoke.mjs`（隔离冒烟 16/16）、`v131-prod-verify.mjs`（生产结构 8/8 只读）、`v131-prod-rpc-test.mjs`（生产 RPC 回滚实测，零残留）**；V1.3 = 纯读功能，走查即可（无脚本）；证据 `docs/v1.2/`、`docs/v1.3/`、`docs/v1.3.1/`。
+**验证脚本索引（可复跑）**：V1.1 = `scripts/v11-pc4-sandbox.mjs`（PC4_BASE）、`v11-pc5-verify.mjs`、`v11-pc6-seed.mjs`（幂等 seed，勿重跑重发密码；G: 盘已不在，凭据找 Owner 重发）、`v11-pc7-prod-verify.mjs`；**V1.2 = `v12-a-folder-smoke.mjs`（隔离库 13/13）、`v12-a-worker-sandbox.mjs`（本地 worker 13/13）、`v12-b-schedule-smoke.mjs`（隔离库 10/10）**；**V1.3.1 = `v131-smoke.mjs`（隔离冒烟 16/16）、`v131-prod-verify.mjs`（生产结构 8/8 只读）、`v131-prod-rpc-test.mjs`（生产 RPC 回滚实测，零残留）、`v1311-smoke.mjs`（0018 跟进冒烟 13/13）**；V1.3 = 纯读功能，走查即可（无脚本）；证据 `docs/v1.2/`、`docs/v1.3/`、`docs/v1.3.1/`。
 
 ---
 

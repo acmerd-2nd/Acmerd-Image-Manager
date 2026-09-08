@@ -30,10 +30,17 @@
 - 部署：0018 生产应用 → build+deploy（bundle 含 F2/F3）→ 生产验证（admin 读 9 行 / 备注回环 / 开关回环）。
 - ⚠️ 环境注记：2026-09-08 晚本机到 `db.*.supabase.co`（纯 IPv6 主机，本机 IPv6 TCP 出网超时）与全部 pooler region（XX000 tenant not found）均不可达；REST/GoTrue（HTTPS）正常。冒烟与迁移待 egress 恢复后执行，恢复前**不部署**。
 
-## 状态
+## 状态：**CLOSED**（2026-09-08）
 
 - [x] 根因诊断（生产复现 + 复原，零残留）
 - [x] 0018 迁移落稿（幂等）
 - [x] F2/F3 前端实现 + typecheck/build 绿
-- [ ] 0018 隔离冒烟（等网络恢复）
-- [ ] 0018 生产应用 + 部署 + 生产验证（待 Owner 授权节奏不变：网络恢复后一并执行）
+- [x] 0018 隔离冒烟 **13/13**（`scripts/v1311-smoke.mjs` T1–T6；曾修两处冒烟桩：user_roles upsert、审计断言须 commit 事务）
+- [x] 0018 生产应用（db-apply OK，迁移 0001–0018）
+- [x] 部署 ver **`ad5dfa69`**（bundle `index-CWLNOoWe.js`，AdminUsersPage chunk `BzYAzg3b`）
+- [x] 生产验证：
+  - admin JWT 读 credit_accounts = **9 行**（修复前 1 行）
+  - Unlimited 开关回环（demo01 on=200/off=200，复原）
+  - 备注写路径回滚实测：admin 事务内插入 + 审计 `users.notes_updated`(INSERT) 正确，ROLLBACK 零残留
+  - 真实 UI 走查（浏览器，Owner 会话）：9 用户积分列全显示（demo08=100）、每行苹果 Switch、demo01 开→Toast「无限积分已开启」→关→false、⋯菜单=调整积分/备注/设为管理员/禁用、**「调整积分」不再置灰**；首页合集卡显示「暂无封面」新文案
+- push：`4ec91d7..73e5aab`（含 b963de5 实装 + 73e5aab 冒烟修正）
