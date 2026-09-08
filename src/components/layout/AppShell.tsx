@@ -10,6 +10,7 @@ import { CreditsBadge } from '@/components/CreditsBadge'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/spinner'
 import { cn } from '@/lib/utils'
+import { BreadcrumbProvider, Breadcrumbs } from '@/components/Breadcrumbs'
 
 export function AppShell() {
   const { session, isAdmin, signOut } = useAuth()
@@ -46,8 +47,9 @@ export function AppShell() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col">
-      <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur">
+    <BreadcrumbProvider>
+      <div className="flex min-h-screen flex-col">
+        <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur">
         <div className="mx-auto flex h-14 w-full max-w-7xl items-center justify-between px-4 sm:px-6">
           <div className="flex items-center gap-6">
             <Link to="/" className="flex items-center gap-2">
@@ -119,6 +121,8 @@ export function AppShell() {
         </div>
       </header>
 
+      <Breadcrumbs />
+
       <main className="flex-1">
         <Suspense fallback={<div className="flex justify-center py-20"><Spinner className="h-6 w-6" /></div>}>
           <Outlet />
@@ -130,6 +134,7 @@ export function AppShell() {
           {t('home.footerTagline')}
         </div>
       </footer>
-    </div>
+      </div>
+    </BreadcrumbProvider>
   )
 }

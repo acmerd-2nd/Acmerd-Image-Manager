@@ -22,6 +22,13 @@ export const zh = {
     saved: '已保存',
     copy: '复制',
   },
+  breadcrumb: {
+    asset: '资产',
+    collection: '合集',
+    newAsset: '新建资产',
+    editAsset: '编辑资产',
+    resetPassword: '重置密码',
+  },
   nav: {
     explore: '探索',
     search: '搜索',

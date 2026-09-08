@@ -20,6 +20,13 @@ export const en: Dictionary = {
     saved: 'Saved',
     copy: 'Copy',
   },
+  breadcrumb: {
+    asset: 'Asset',
+    collection: 'Collection',
+    newAsset: 'New Asset',
+    editAsset: 'Edit Asset',
+    resetPassword: 'Reset Password',
+  },
   nav: {
     explore: 'Explore',
     search: 'Search',

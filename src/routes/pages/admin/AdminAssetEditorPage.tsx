@@ -40,6 +40,7 @@ import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/spinner'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { cn } from '@/lib/utils'
+import { useBreadcrumb } from '@/components/Breadcrumbs'
 
 /**
  * Asset 编辑器（Phase 3 核心工作台）：
@@ -49,6 +50,7 @@ import { cn } from '@/lib/utils'
  */
 export function AdminAssetEditorPage() {
   const { t } = useLocale()
+  const { setLeafName } = useBreadcrumb()
   const { id = '' } = useParams()
   const navigate = useNavigate()
 
@@ -104,6 +106,12 @@ export function AdminAssetEditorPage() {
   useEffect(() => {
     reload()
   }, [reload])
+
+  // 面包屑末级：资产加载后写入真实名称（asset.name）；加载失败/卸载时复位走回退标签
+  useEffect(() => {
+    setLeafName(asset?.name ?? null)
+    return () => setLeafName(null)
+  }, [asset?.name])
 
   const run = async (fn: () => Promise<void>) => {
     setBusy(true)

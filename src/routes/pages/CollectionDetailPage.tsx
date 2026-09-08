@@ -13,11 +13,13 @@ import {
 import { useLocale } from '@/i18n'
 import { CardGridSkeleton } from '@/components/CardSkeleton'
 import { useToast } from '@/components/ToastProvider'
+import { useBreadcrumb } from '@/components/Breadcrumbs'
 
 /** V1.1 PC-2 + V1.2-A：/collection/:slug —— 面包屑 + 子合集卡 + 双层 published 资产（RLS 收敛） */
 export function CollectionDetailPage() {
   const { slug = '' } = useParams()
   const { t } = useLocale()
+  const { setLeafName } = useBreadcrumb()
   const toast = useToast()
   const [collection, setCollection] = useState<Awaited<ReturnType<typeof getPublishedCollectionBySlug>>>(undefined as never)
   const [assets, setAssets] = useState<AssetCardRow[] | null>(null)
@@ -59,6 +61,12 @@ export function CollectionDetailPage() {
       cancelled = true
     }
   }, [slug, toast, t])
+
+  // 面包屑末级：合集加载后写入真实名称；路由切换/卸载时复位，避免名称串台
+  useEffect(() => {
+    setLeafName(collection?.name ?? null)
+    return () => setLeafName(null)
+  }, [collection?.name])
 
   if (missing) {
     return (

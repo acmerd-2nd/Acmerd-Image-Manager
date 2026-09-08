@@ -4,6 +4,7 @@ import { FolderOpen, FolderTree, LayoutDashboard, ScrollText, Tags, Users, Datab
 import { useLocale } from '@/i18n'
 import { Spinner } from '@/components/spinner'
 import { cn } from '@/lib/utils'
+import { BreadcrumbProvider, Breadcrumbs } from '@/components/Breadcrumbs'
 
 const items = [
   { to: '/admin/dashboard', labelKey: 'admin.page.dashboard', icon: LayoutDashboard },
@@ -19,8 +20,9 @@ const items = [
 export function AdminLayout() {
   const { t } = useLocale()
   return (
-    <div className="flex min-h-[calc(100vh-3.5rem)]">
-      <aside className="hidden w-56 shrink-0 border-r bg-muted/40 md:block">
+    <BreadcrumbProvider>
+      <div className="flex min-h-[calc(100vh-3.5rem)]">
+        <aside className="hidden w-56 shrink-0 border-r bg-muted/40 md:block">
         <div className="sticky top-14 flex h-[calc(100vh-3.5rem)] flex-col p-4">
           <div className="mb-4 px-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             Admin Console
@@ -52,6 +54,7 @@ export function AdminLayout() {
       {/* min-w-0：允许 flex 子项收缩至内容宽度以下，使页内 overflow-x-auto 容器真正生效，
           防止宽表格（Users/Audit Logs）在移动/平板视口把溢出转移到页面级（G9 第④类证据发现） */}
       <div className="min-w-0 flex-1 p-6">
+        <Breadcrumbs />
         {/* 移动端简易导航（Phase 9 响应式再完善） */}
         <nav className="mb-4 flex flex-wrap gap-2 md:hidden">
           {items.map(({ to, labelKey }) => (
@@ -73,6 +76,7 @@ export function AdminLayout() {
           <Outlet />
         </Suspense>
       </div>
-    </div>
+      </div>
+    </BreadcrumbProvider>
   )
 }

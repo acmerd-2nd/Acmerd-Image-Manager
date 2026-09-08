@@ -33,6 +33,7 @@ import { useToast } from '@/components/ToastProvider'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/spinner'
 import { cn } from '@/lib/utils'
+import { useBreadcrumb } from '@/components/Breadcrumbs'
 
 const MAX_ZIP = 30
 
@@ -48,6 +49,7 @@ export function AssetDetailPage() {
   const navigate = useNavigate()
   const { session } = useAuth()
   const { t } = useLocale()
+  const { setLeafName } = useBreadcrumb()
 
   const [asset, setAsset] = useState<PublishedAssetRow | null>(null)
   const [languages, setLanguages] = useState<AssetLanguageRow[] | null>(null)
@@ -176,6 +178,12 @@ export function AssetDetailPage() {
       cancelled = true
     }
   }, [asset?.id])
+
+  // 面包屑末级：资产加载完成后写入真实名称；路由切换/卸载时 cleanup 复位，避免名称串台
+  useEffect(() => {
+    setLeafName(asset?.name ?? null)
+    return () => setLeafName(null)
+  }, [asset?.name])
 
   if (notFound) return <NotFoundInline />
   if (!asset || languages === null) {
