@@ -28,7 +28,7 @@
 > - **部署回归修复（关键）**：wrangler 4.4→4.128 默认 `run_worker_first` 翻为 false（assets-first）→ 首轮部署 `/api/*` 全 404 落 SPA 回退。修复：`wrangler.toml [assets]` 显式 `run_worker_first = true` + 重部署；验证无 token `/api/health`=200、`/api/admin/settings`=401 JSON（Worker 接管）。**此修复独立 scoped commit**。
 > - **生产验证**：`scripts/v14-prod-verify.mjs` **11/11 PASS**（admin 登录→PATCH 品牌→anon 直读反映→还原→上传 1x1 PNG logo→GitHub 仓出现→DELETE→清空+审计命中）；生产残留 = 默认（brand_text/title="ACMERD · 探知"、logo 空、GitHub `branding/` 空）。
 > - **线上**：Worker ver `b10be398-d2c0-4e9a-8ad4-90b444a412b8`（100% 流量，2026-09-08T07:06Z）；回滚锚点 = 前一部署 `8d214ddf-9c54-422a-a7ac-3e899d785aed`（`wrangler rollback` 整体回退，无需动库）。
-> - **待 Owner 决定**：本 Agent 收尾**未 push**（授权为「迁移+部署+验证」未含 push）→ 用可靠模式（§三#2）确认；其余开口同 V1.3.1（邮件闭环暂缓 / registration_enabled 默认）。
+> - **待 Owner 决定**：本 Agent 收尾 **push 已完成**（2026-09-08 Owner 授权，可靠模式 `48577dc..7fdffdb` 推 origin/main；git ls-remote 复核一致）；其余开口同 V1.3.1（邮件闭环暂缓 / registration_enabled 默认）。
 
 > ### 🟢 V1.2 当前态（2026-09-07）— 新 Agent 必读
 > - **A 多层 Folder（CLOSED，35f9c10）**：0015 = `collections.parent_id`（自引用 FK RESTRICT）+ 守卫触发器（自引用/环/深度≤5/子树随迁溢出）+ `published_collections` 递归链重建（全链 published 才公开；`asset_count` 仍只数直接子资产）；Worker create/patch `parentId` + 删父预检 409 `collection_has_children` + guard 400 映射；Admin 树形 + 父级选择器、首页仅根级、详情页面包屑+子合集卡。冒烟 13/13（曾抓出守卫 2 个真 bug 已修）+ 沙箱 13/13。
