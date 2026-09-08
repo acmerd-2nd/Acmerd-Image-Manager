@@ -11,6 +11,9 @@ export interface SiteSettings {
   single_image_download_cost: number
   zip_download_cost_per_image: number
   package_download_cost: number
+  brand_text: string
+  brand_title: string
+  brand_logo_path: string
 }
 
 export async function getSiteSettings(): Promise<SiteSettings> {
@@ -25,5 +28,8 @@ export async function getSiteSettings(): Promise<SiteSettings> {
     single_image_download_cost: Number(map.get('single_image_download_cost') ?? 1),
     zip_download_cost_per_image: Number(map.get('zip_download_cost_per_image') ?? 1),
     package_download_cost: Number(map.get('package_download_cost') ?? 15),
+    brand_text: typeof map.get('brand_text') === 'string' ? (map.get('brand_text') as string) : 'ACMERD · 探知',
+    brand_title: typeof map.get('brand_title') === 'string' ? (map.get('brand_title') as string) : 'ACMERD · 探知',
+    brand_logo_path: typeof map.get('brand_logo_path') === 'string' ? (map.get('brand_logo_path') as string) : '',
   }
 }

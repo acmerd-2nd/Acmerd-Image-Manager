@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { RefreshCw } from 'lucide-react'
-import { getAdminStats, getPlatformSettings, updatePlatformSettings, type AdminStats, type PlatformSettings } from '@/features/admin/api'
+import { getAdminStats, getPlatformSettings, updatePlatformSettings, uploadBrandLogo, deleteBrandLogo, type AdminStats, type PlatformSettings } from '@/features/admin/api'
+import { getSiteSettings } from '@/features/settings/api'
+import { brandLogoUrl } from '@/lib/image-source'
 import { LANGUAGE_CODES, LANGUAGE_LABELS, type AssetStatus } from '@/types/database'
 import { useAuth } from '@/features/auth/AuthProvider'
 import { useLocale } from '@/i18n'
@@ -235,6 +237,169 @@ function PlatformControlsCard() {
   )
 }
 
+/** V1.4 站点品牌：导航/标题文字 + GitHub 图仓库 Logo（无需新端点：文字走 /api/admin/settings，Logo 走新端点） */
+function BrandingCard() {
+  const { t } = useLocale()
+  const [brandText, setBrandText] = useState('ACMERD · 探知')
+  const [brandTitle, setBrandTitle] = useState('ACMERD · 探知')
+  const [logoPath, setLogoPath] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [saved, setSaved] = useState(false)
+  const [logoFile, setLogoFile] = useState<File | null>(null)
+  const [preview, setPreview] = useState<string | null>(null)
+
+  useEffect(() => {
+    getSiteSettings()
+      .then((s) => {
+        setBrandText(s.brand_text || 'ACMERD · 探知')
+        setBrandTitle(s.brand_title || 'ACMERD · 探知')
+        setLogoPath(s.brand_logo_path || '')
+      })
+      .catch((e) => setError(e instanceof Error ? e.message : String(e)))
+  }, [])
+
+  const saveText = async () => {
+    if (!brandText.trim() || !brandTitle.trim()) {
+      setError(t('admin.brand.brandTextRequired'))
+      return
+    }
+    if (brandText.length > 60 || brandTitle.length > 60) {
+      setError(t('admin.brand.tooLong'))
+      return
+    }
+    setBusy(true)
+    setError(null)
+    setSaved(false)
+    try {
+      await updatePlatformSettings({ brand_text: brandText, brand_title: brandTitle })
+      setSaved(true)
+    } catch (e) {
+      setError(t('admin.brand.saveFailed', { msg: e instanceof Error ? e.message : String(e) }))
+    }
+    setBusy(false)
+  }
+
+  const onFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0]
+    if (f) {
+      setLogoFile(f)
+      setPreview(URL.createObjectURL(f))
+      setError(null)
+    }
+  }
+
+  const uploadLogo = async () => {
+    if (!logoFile) return
+    setUploading(true)
+    setError(null)
+    try {
+      const r = await uploadBrandLogo(logoFile)
+      setLogoPath(r.path)
+      setLogoFile(null)
+      if (preview) URL.revokeObjectURL(preview)
+      setPreview(null)
+    } catch (e) {
+      setError(t('admin.brand.uploadFailed', { msg: e instanceof Error ? e.message : String(e) }))
+    }
+    setUploading(false)
+  }
+
+  const removeLogo = async () => {
+    setUploading(true)
+    setError(null)
+    try {
+      await deleteBrandLogo()
+      setLogoPath('')
+      if (preview) URL.revokeObjectURL(preview)
+      setPreview(null)
+      setLogoFile(null)
+    } catch (e) {
+      setError(t('admin.brand.uploadFailed', { msg: e instanceof Error ? e.message : String(e) }))
+    }
+    setUploading(false)
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{t('admin.brand.title')}</CardTitle>
+        <CardDescription>{t('admin.brand.brandTextHint')}</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <label className="block space-y-1">
+          <span className="text-sm font-medium">{t('admin.brand.brandText')}</span>
+          <Input
+            value={brandText}
+            maxLength={60}
+            disabled={busy}
+            onChange={(e) => {
+              setBrandText(e.target.value)
+              setError(null)
+              setSaved(false)
+            }}
+          />
+        </label>
+        <label className="block space-y-1">
+          <span className="text-sm font-medium">{t('admin.brand.brandTitle')}</span>
+          <Input
+            value={brandTitle}
+            maxLength={60}
+            disabled={busy}
+            onChange={(e) => {
+              setBrandTitle(e.target.value)
+              setError(null)
+              setSaved(false)
+            }}
+          />
+        </label>
+
+        <div className="flex items-center gap-3">
+          <Button size="sm" disabled={busy} onClick={saveText}>
+            {busy ? <Spinner className="mr-1 h-4 w-4" /> : null}
+            {t('admin.brand.saveText')}
+          </Button>
+          {saved && <span className="text-xs text-muted-foreground">{t('admin.brand.saved')}</span>}
+        </div>
+
+        <div className="border-t pt-4">
+          <div className="text-sm font-medium">{t('admin.brand.logoLabel')}</div>
+          <p className="mt-0.5 text-xs text-muted-foreground">{t('admin.brand.logoHint')}</p>
+
+          <div className="mt-3 flex items-center gap-4">
+            {logoPath ? (
+              <img src={brandLogoUrl(logoPath)} alt="logo" className="h-10 w-auto rounded border bg-muted p-1" />
+            ) : preview ? (
+              <img src={preview} alt="preview" className="h-10 w-auto rounded border bg-muted p-1" />
+            ) : (
+              <div className="flex h-10 w-20 items-center justify-center rounded border border-dashed text-xs text-muted-foreground">
+                {t('admin.brand.noLogo')}
+              </div>
+            )}
+            <div className="flex flex-col gap-2">
+              <Input type="file" accept="image/jpeg,image/png,image/webp" disabled={uploading} onChange={onFile} />
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant="outline" disabled={!logoFile || uploading} onClick={uploadLogo}>
+                  {uploading ? <Spinner className="mr-1 h-4 w-4" /> : null}
+                  {t('admin.brand.uploadLogo')}
+                </Button>
+                {logoPath && (
+                  <Button size="sm" variant="ghost" disabled={uploading} onClick={removeLogo}>
+                    {t('admin.brand.removeLogo')}
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {error && <p className="text-xs text-destructive">{error}</p>}
+      </CardContent>
+    </Card>
+  )
+}
+
 /** Dashboard：统计卡 + 语言分布；全部来自一次 getAdminStats()（D5 + 约束 4 单一端点） */
 export function AdminDashboardPage() {
   const { isAdmin } = useAuth()
@@ -313,6 +478,8 @@ export function AdminDashboardPage() {
           </div>
 
           <PlatformControlsCard />
+
+          <BrandingCard />
 
           <Card>
             <CardHeader>

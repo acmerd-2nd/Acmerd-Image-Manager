@@ -147,6 +147,9 @@ export interface PlatformSettings {
   single_image_download_cost: number
   zip_download_cost_per_image: number
   package_download_cost: number
+  brand_text: string
+  brand_title: string
+  brand_logo_path: string
 }
 
 export async function getPlatformSettings(): Promise<PlatformSettings> {
@@ -158,6 +161,9 @@ export async function getPlatformSettings(): Promise<PlatformSettings> {
     single_image_download_cost: Number(s.single_image_download_cost ?? 1),
     zip_download_cost_per_image: Number(s.zip_download_cost_per_image ?? 1),
     package_download_cost: Number(s.package_download_cost ?? 15),
+    brand_text: typeof s.brand_text === 'string' ? s.brand_text : 'ACMERD · 探知',
+    brand_title: typeof s.brand_title === 'string' ? s.brand_title : 'ACMERD · 探知',
+    brand_logo_path: typeof s.brand_logo_path === 'string' ? s.brand_logo_path : '',
   }
 }
 
@@ -191,4 +197,52 @@ export async function batchAdjustCredits(
     method: 'POST',
     body: JSON.stringify({ user_ids: userIds, delta, reason }),
   })
+}
+
+// ---------------- V1.4：站点品牌 Logo（GitHub 图仓库；写仅经 Worker admin 端点） ----------------
+
+export interface BrandLogoResult {
+  ok: boolean
+  path: string
+}
+
+export interface BrandLogoDeleteResult {
+  ok: boolean
+  removed: string | null
+  github_deleted: boolean
+}
+
+/** POST /api/admin/branding/logo —— multipart(file) 上传站点 Logo（≤1MB JPEG/PNG/WebP） */
+export async function uploadBrandLogo(file: File): Promise<BrandLogoResult> {
+  const jwt = await getJwt()
+  if (!jwt) throw new AdminApiError(t('admin.api.unauthorized'), 401, 'unauthorized')
+  const form = new FormData()
+  form.append('file', file)
+  const res = await fetch('/api/admin/branding/logo', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${jwt}` },
+    body: form,
+  })
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { error?: { code?: string; message?: string } } | null
+    const code = body?.error?.code ?? 'error'
+    throw new AdminApiError(toUserMessage(code, body?.error?.message ?? null, res.status), res.status, code)
+  }
+  return (await res.json()) as BrandLogoResult
+}
+
+/** DELETE /api/admin/branding/logo —— 移除站点 Logo（GitHub 对象 + 清空 setting） */
+export async function deleteBrandLogo(): Promise<BrandLogoDeleteResult> {
+  const jwt = await getJwt()
+  if (!jwt) throw new AdminApiError(t('admin.api.unauthorized'), 401, 'unauthorized')
+  const res = await fetch('/api/admin/branding/logo', {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${jwt}` },
+  })
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { error?: { code?: string; message?: string } } | null
+    const code = body?.error?.code ?? 'error'
+    throw new AdminApiError(toUserMessage(code, body?.error?.message ?? null, res.status), res.status, code)
+  }
+  return (await res.json()) as BrandLogoDeleteResult
 }

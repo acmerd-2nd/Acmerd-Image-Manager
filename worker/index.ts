@@ -2170,10 +2170,20 @@ const SETTING_KEYS = [
   'single_image_download_cost',
   'zip_download_cost_per_image',
   'package_download_cost',
+  'brand_text',
+  'brand_title',
+  'brand_logo_path',
 ] as const
 
 const BOOLEAN_KEYS = new Set(['registration_enabled', 'schedule_navigation_enabled'])
 const NUMBER_KEYS = new Set(['single_image_download_cost', 'zip_download_cost_per_image', 'package_download_cost'])
+// V1.4 字符串 key：brand_text/brand_title 1..60；brand_logo_path 允许空串（移除 logo）且 ≤200
+const STRING_KEYS = new Set(['brand_text', 'brand_title', 'brand_logo_path'])
+const STRING_MAX: Record<string, number> = {
+  brand_text: 60,
+  brand_title: 60,
+  brand_logo_path: 200,
+}
 
 app.get('/api/admin/settings', async (c) => {
   const auth = await requireAdmin(c)
@@ -2227,6 +2237,20 @@ app.patch('/api/admin/settings', async (c) => {
         return c.json({ error: { code: 'bad_request', message: `setting ${k} must be a non-negative integer` } }, 400)
       }
       patch[k] = v
+    } else if (STRING_KEYS.has(k)) {
+      if (typeof v !== 'string') {
+        return c.json({ error: { code: 'bad_request', message: `setting ${k} must be a string` } }, 400)
+      }
+      const trimmed = v.trim()
+      const max = STRING_MAX[k] ?? 200
+      // brand_logo_path 允许空串（移除 logo）；其余字符串 key 不得为空
+      if (k !== 'brand_logo_path' && trimmed.length === 0) {
+        return c.json({ error: { code: 'bad_request', message: `setting ${k} must not be empty` } }, 400)
+      }
+      if (trimmed.length > max) {
+        return c.json({ error: { code: 'bad_request', message: `setting ${k} exceeds ${max} chars` } }, 400)
+      }
+      patch[k] = trimmed
     }
   }
   if (Object.keys(patch).length === 0) {
@@ -2251,6 +2275,134 @@ app.patch('/api/admin/settings', async (c) => {
     values: patch,
   })
   return c.json({ ok: true, settings: patch })
+})
+
+// ===========================================================================
+// V1.4 站点品牌 Logo（GitHub 图仓库；复用 ghPutFile/ghDeleteFile）
+//   POST   /api/admin/branding/logo  —— multipart(file) → branding/logo.{ext} → settings
+//   DELETE /api/admin/branding/logo  —— 删 GitHub + 清空 brand_logo_path
+//   写仅 Worker service_role；新端点 requireAdmin（Gate §7 红线圈）
+// ===========================================================================
+
+const BRANDING_MAX_FILE_SIZE = 1 * 1024 * 1024
+
+/** 读取当前 brand_logo_path（供旧图替换时删除 / DELETE 时清理） */
+async function readBrandLogoPath(env: Env): Promise<string> {
+  const res = await fetch(`${env.SUPABASE_URL}/rest/v1/site_settings?key=eq.brand_logo_path&select=value`, {
+    headers: svc(env),
+  })
+  if (!res.ok) return ''
+  const rows = (await res.json()) as Array<{ value: unknown }>
+  const v = rows[0]?.value
+  return typeof v === 'string' ? v : ''
+}
+
+/** 写 brand_logo_path（0019 已种子该 key；PATCH 0 行则 POST 兜底） */
+async function writeBrandLogoPath(env: Env, userId: string, path: string): Promise<void> {
+  const patch = await fetch(`${env.SUPABASE_URL}/rest/v1/site_settings?key=eq.brand_logo_path`, {
+    method: 'PATCH',
+    headers: svc(env),
+    body: JSON.stringify({ value: path, updated_by: userId }),
+  })
+  if (patch.ok) return
+  const ins = await fetch(`${env.SUPABASE_URL}/rest/v1/site_settings`, {
+    method: 'POST',
+    headers: svc(env),
+    body: JSON.stringify({ key: 'brand_logo_path', value: path, updated_by: userId }),
+  })
+  if (!ins.ok) throw new Error(`brand_logo_path write failed: ${ins.status}`)
+}
+
+app.post('/api/admin/branding/logo', async (c) => {
+  const auth = await requireAdmin(c)
+  if (!auth.ok) return c.json({ error: authErrBody(auth) }, auth.status)
+
+  const cfg = ghConfig(c.env)
+  if (!cfg) return githubNotConfigured(c)
+
+  let form: FormData
+  try {
+    form = await c.req.formData()
+  } catch {
+    return c.json({ error: { code: 'bad_request', message: 'multipart/form-data body required' } }, 400)
+  }
+  const file = form.get('file')
+  if (!(file instanceof File)) {
+    return c.json({ error: { code: 'bad_request', message: 'file field required' } }, 400)
+  }
+  if (!GITHUB_MIME_EXT[file.type]) {
+    return c.json({ error: { code: 'bad_request', message: `Unsupported type: ${file.type} (JPEG/PNG/WebP only)` } }, 400)
+  }
+  if (file.size > BRANDING_MAX_FILE_SIZE) {
+    return c.json({ error: { code: 'bad_request', message: 'File too large (max 1 MB)' } }, 413)
+  }
+
+  const ext = GITHUB_MIME_EXT[file.type]
+  const sourcePath = `branding/logo.${ext}`
+  const bytes = new Uint8Array(await file.arrayBuffer())
+  const expectedSha = await computeGitBlobSha(bytes)
+
+  // 旧 logo 不同扩展名则先删（避免 branding/ 下残留多份）
+  const oldPath = await readBrandLogoPath(c.env)
+  if (oldPath && oldPath !== sourcePath) {
+    try {
+      await ghDeleteFile(cfg, oldPath)
+    } catch (e) {
+      console.error('Old brand logo delete failed:', e)
+    }
+  }
+
+  try {
+    await withNetworkRetry(() => ghPutFile(cfg, sourcePath, bytes, expectedSha))
+  } catch (e) {
+    console.error('Brand logo upload failed:', e)
+    return c.json({ error: { code: 'upstream_error', message: 'GitHub upload failed' } }, 502)
+  }
+
+  try {
+    await writeBrandLogoPath(c.env, auth.userId, sourcePath)
+  } catch (e) {
+    console.error('brand_logo_path write failed:', e)
+    return c.json({ error: { code: 'internal', message: 'Failed to persist branding setting' } }, 500)
+  }
+
+  await writeAudit(c.env, 'settings.updated', 'site_settings', 'platform', auth.userId, {
+    brand_logo_path: sourcePath,
+  })
+  return c.json({ ok: true, path: sourcePath })
+})
+
+app.delete('/api/admin/branding/logo', async (c) => {
+  const auth = await requireAdmin(c)
+  if (!auth.ok) return c.json({ error: authErrBody(auth) }, auth.status)
+
+  const cfg = ghConfig(c.env)
+  const oldPath = await readBrandLogoPath(c.env)
+
+  // best-effort 删除 GitHub 对象（配置缺失或无旧图时跳过）
+  let githubDeleted = false
+  if (cfg && oldPath) {
+    try {
+      await ghDeleteFile(cfg, oldPath)
+      githubDeleted = true
+    } catch (e) {
+      console.error('Brand logo GitHub delete failed:', e)
+    }
+  }
+
+  try {
+    await writeBrandLogoPath(c.env, auth.userId, '')
+  } catch (e) {
+    console.error('brand_logo_path clear failed:', e)
+    return c.json({ error: { code: 'internal', message: 'Failed to clear branding setting' } }, 500)
+  }
+
+  await writeAudit(c.env, 'settings.updated', 'site_settings', 'platform', auth.userId, {
+    brand_logo_path: '',
+    github_deleted: githubDeleted,
+    previous_path: oldPath || null,
+  })
+  return c.json({ ok: true, removed: oldPath || null, github_deleted: githubDeleted })
 })
 
 // ===========================================================================

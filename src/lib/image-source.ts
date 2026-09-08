@@ -55,3 +55,12 @@ export function makeImageUrl(image: Pick<ImageSourceRow, 'provider' | 'storage_p
       return null
   }
 }
+
+/**
+ * V1.4 站点品牌 Logo URL 出口（与图片同源，统一走 githubRawUrl / CDN 切换口）。
+ * path 为空（未配置 logo）返回 undefined，调用方回落纯文字（<img src> 接受 undefined）。
+ */
+export function brandLogoUrl(path: string | null | undefined): string | undefined {
+  if (!path) return undefined
+  return githubRawUrl(path)
+}

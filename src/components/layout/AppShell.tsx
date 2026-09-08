@@ -3,6 +3,7 @@ import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { LogOut, User } from 'lucide-react'
 import { useAuth } from '@/features/auth/AuthProvider'
 import { getSiteSettings } from '@/features/settings/api'
+import { brandLogoUrl } from '@/lib/image-source'
 import { useLocale } from '@/i18n'
 import { LocaleSwitch } from '@/components/LocaleSwitch'
 import { CreditsBadge } from '@/components/CreditsBadge'
@@ -15,13 +16,21 @@ export function AppShell() {
   const navigate = useNavigate()
   const { t } = useLocale()
   const [scheduleEnabled, setScheduleEnabled] = useState(false)
+  // V1.4 站点品牌（导航文字 + 浏览器标题 + Logo；读失败回落硬编码默认）
+  const [brandText, setBrandText] = useState('ACMERD · 探知')
+  const [brandLogoPath, setBrandLogoPath] = useState('')
 
   // V1.1 PC-3：排期导航显隐由 site_settings.schedule_navigation_enabled 控制（anon 可读）
   useEffect(() => {
     let cancelled = false
     getSiteSettings()
       .then((s) => {
-        if (!cancelled) setScheduleEnabled(s.schedule_navigation_enabled)
+        if (cancelled) return
+        setScheduleEnabled(s.schedule_navigation_enabled)
+        // V1.4：品牌设置（缺省回落硬编码默认，符合产品态）
+        setBrandText(s.brand_text || 'ACMERD · 探知')
+        setBrandLogoPath(s.brand_logo_path || '')
+        document.title = s.brand_title || 'ACMERD · 探知'
       })
       .catch(() => {
         /* 读失败按隐藏处理（默认 false 语义） */
@@ -41,11 +50,12 @@ export function AppShell() {
       <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur">
         <div className="mx-auto flex h-14 w-full max-w-7xl items-center justify-between px-4 sm:px-6">
           <div className="flex items-center gap-6">
-            <Link to="/" className="flex items-baseline gap-2">
-              <span className="text-sm font-semibold tracking-[0.18em] text-muted-foreground">
-                ACMERD
-              </span>
-              <span className="text-lg font-bold tracking-tight">{t('home.brand')}</span>
+            <Link to="/" className="flex items-center gap-2">
+              {brandLogoPath ? (
+                <img src={brandLogoUrl(brandLogoPath)} alt={brandText} className="h-8 w-auto" />
+              ) : (
+                <span className="text-lg font-bold tracking-tight">{brandText}</span>
+              )}
             </Link>
             <LocaleSwitch className="hidden sm:flex" />
             <nav className="hidden items-center gap-6 text-sm font-medium text-muted-foreground sm:flex">
