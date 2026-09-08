@@ -3,6 +3,7 @@ import { Download, HardDrive } from 'lucide-react'
 import {
   fetchDownloadSources,
   authorizePackageDownload,
+  fetchMyCredits,
   DownloadError,
   type DownloadSourceRow,
 } from '@/features/downloads/api'
@@ -33,6 +34,7 @@ export function PackageDownloadPanel({ assetId }: { assetId: string }) {
   const [sources, setSources] = useState<DownloadSourceRow[] | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const [cost, setCost] = useState<number | null>(null)
+  const [unlimited, setUnlimited] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -53,10 +55,18 @@ export function PackageDownloadPanel({ assetId }: { assetId: string }) {
       .catch(() => {
         if (!cancelled) setCost(15)
       })
+    // V1.3.1 G6：无限积分用户成本标签显示 ♾
+    fetchMyCredits()
+      .then((v) => {
+        if (!cancelled && v) setUnlimited(v.unlimited)
+      })
+      .catch(() => {})
     return () => {
       cancelled = true
     }
   }, [assetId, session])
+
+  const costLabel = cost !== null ? (unlimited ? '♾' : t('credits.packageCost', { n: cost })) : null
 
   const providerLabel = (provider: string) =>
     provider === 'quark' ? t('download.packageQuark') : provider === 'baidu' ? t('download.packageBaidu') : provider
@@ -106,8 +116,8 @@ export function PackageDownloadPanel({ assetId }: { assetId: string }) {
         <Button className="w-full" disabled={busy} onClick={() => authorizeAndOpen(sources[0].id, sources[0].url)}>
           <Download className="mr-2 h-4 w-4" />
           {t('download.packageTitle')}
-          {cost !== null && (
-            <span className="ml-2 text-xs opacity-80">{t('credits.packageCost', { n: cost })}</span>
+          {costLabel && (
+            <span className="ml-2 text-xs opacity-80">{costLabel}</span>
           )}
         </Button>
         {error && <p className="text-xs text-destructive">{error}</p>}
@@ -121,8 +131,8 @@ export function PackageDownloadPanel({ assetId }: { assetId: string }) {
       <Button className="w-full" disabled={busy} onClick={() => setMenuOpen((v) => !v)}>
         <Download className="mr-2 h-4 w-4" />
         {t('download.packageTitle')}
-        {cost !== null && (
-          <span className="ml-2 text-xs opacity-80">{t('credits.packageCost', { n: cost })}</span>
+        {costLabel && (
+          <span className="ml-2 text-xs opacity-80">{costLabel}</span>
         )}
       </Button>
       {menuOpen && (

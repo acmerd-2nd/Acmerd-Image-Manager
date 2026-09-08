@@ -100,26 +100,31 @@ export interface PublishedCollectionRow {
 /** V1.1 D10：账号来源标记（仅标记字段，不构成特殊权限类别） */
 export type AccountOrigin = 'registered' | 'seed'
 
-/** V1.2-B D6：排期条目（Admin 全量行） */
+/** V1.3.1 G1：进度三状态（与发布态 status 正交） */
+export type ScheduleProgress = 'not_started' | 'in_progress' | 'completed'
+
+/** V1.2-B D6 + V1.3.1 G1：排期条目（Admin 全量行） */
 export interface ScheduleItemRow {
   id: string
   title: string
   description: string | null
   event_date: string | null
   status: AssetStatus
+  progress: ScheduleProgress
   sort_order: number
   created_by: string | null
   created_at: string
   updated_at: string
 }
 
-/** published_schedule_items 视图行（D7：仅 published，event_date asc nulls last + sort_order asc） */
+/** published_schedule_items 视图行（D7 + G1：仅 published，event_date asc nulls last + sort_order asc） */
 export interface PublishedScheduleItemRow {
   id: string
   title: string
   description: string | null
   event_date: string | null
   sort_order: number
+  progress: ScheduleProgress
 }
 
 /** V1.1 D7：积分账户（balance 由 RPC 维护，user 侧只读） */

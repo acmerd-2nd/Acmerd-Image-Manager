@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { CalendarClock } from 'lucide-react'
+import type { ScheduleProgress } from '@/types/database'
 import type { PublishedScheduleItemRow } from '@/types/database'
 import { listPublishedScheduleItems } from '@/features/schedule/api'
 import { useLocale } from '@/i18n'
@@ -10,6 +11,13 @@ import { useLocale } from '@/i18n'
  * 空态 → Coming Soon（总纲 §23 既有产品态）。
  * 导航显隐由 site_settings.schedule_navigation_enabled 控制（AppShell）；本页始终可直达。
  */
+/** V1.3.1 G1：进度圆点语义（🟢 完成 / 🔵 进行中 / 🔴 未开始） */
+const PROGRESS_DOT: Record<ScheduleProgress, string> = {
+  completed: 'bg-green-500',
+  in_progress: 'bg-blue-500',
+  not_started: 'bg-red-500',
+}
+
 export function SchedulePage() {
   const { t } = useLocale()
   const [items, setItems] = useState<PublishedScheduleItemRow[] | null>(null)
@@ -42,24 +50,42 @@ export function SchedulePage() {
         </div>
       ) : (
         <div className="mt-8 space-y-3">
-          {items.map((item) => (
-            <article
-              key={item.id}
-              className="rounded-xl border bg-card p-5 text-card-foreground shadow-sm"
-            >
-              <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <h2 className="font-semibold">{item.title}</h2>
-                {item.event_date && (
-                  <time className="text-sm text-muted-foreground" dateTime={item.event_date}>
-                    {item.event_date}
-                  </time>
+          {items.map((item) => {
+            // G1：completed → 删除线 + 灰色 + 整体降权；仍保留在列表，不隐藏
+            const done = item.progress === 'completed'
+            const dot = PROGRESS_DOT[item.progress] ?? 'bg-red-500'
+            const label = item.progress === 'completed'
+              ? t('schedule.progress.completed')
+              : item.progress === 'in_progress'
+                ? t('schedule.progress.inProgress')
+                : t('schedule.progress.notStarted')
+            return (
+              <article
+                key={item.id}
+                className={`rounded-xl border bg-card p-5 text-card-foreground shadow-sm ${done ? 'opacity-70' : ''}`}
+              >
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <h2 className="flex items-center gap-2 font-semibold">
+                    <span className={`inline-block h-2.5 w-2.5 shrink-0 rounded-full ${dot}`} />
+                    <span className={done ? 'text-muted-foreground line-through' : ''}>{item.title}</span>
+                  </h2>
+                  <span className="flex items-center gap-3">
+                    <span className="text-xs text-muted-foreground">{label}</span>
+                    {item.event_date && (
+                      <time className={`text-sm text-muted-foreground ${done ? 'line-through' : ''}`} dateTime={item.event_date}>
+                        {item.event_date}
+                      </time>
+                    )}
+                  </span>
+                </div>
+                {item.description && (
+                  <p className={`mt-2 whitespace-pre-line pl-[18px] text-sm text-muted-foreground ${done ? 'line-through' : ''}`}>
+                    {item.description}
+                  </p>
                 )}
-              </div>
-              {item.description && (
-                <p className="mt-2 whitespace-pre-line text-sm text-muted-foreground">{item.description}</p>
-              )}
-            </article>
-          ))}
+              </article>
+            )
+          })}
         </div>
       )}
     </div>

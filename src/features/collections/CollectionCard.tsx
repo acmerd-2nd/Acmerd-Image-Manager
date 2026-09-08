@@ -35,8 +35,9 @@ export function CollectionCard({ collection }: { collection: PublishedCollection
               className="h-full w-full object-cover"
             />
           ) : (
-            <div className="flex h-full w-full items-center justify-center">
-              <FolderOpen className="h-10 w-10 text-muted-foreground/60" />
+            <div className="flex h-full w-full flex-col items-center justify-center gap-1">
+              <FolderOpen className="h-8 w-8 text-muted-foreground/60" />
+              <span className="text-xs text-muted-foreground/80">{t('collection.noCover')}</span>
             </div>
           )}
         </div>

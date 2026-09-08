@@ -191,6 +191,8 @@ export function updateCollection(
     sort_order?: number
     /** V1.2-A D1：null=升根；uuid=换父（环/深度由 DB 触发器终审） */
     parentId?: string | null
+    /** V1.3.1 G2：封面（uuid=本合集内资产的图片；null=移除；归属 DB 守卫终审） */
+    coverImageId?: string | null
   },
 ) {
   return collectionRequest<AdminCollectionMutationResult>(`/api/admin/collections/${id}`, patch, 'PATCH')

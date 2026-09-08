@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Plus } from 'lucide-react'
+import { ImagePlus, Plus } from 'lucide-react'
 import type { AssetRow, CollectionRow } from '@/types/database'
 import {
   assignAssetToCollection,
@@ -10,7 +10,7 @@ import {
   listUngroupedAssets,
   updateCollection,
 } from '@/features/collections/api'
-import { slugify } from '@/features/assets/api'
+import { getCoverUrls, slugify } from '@/features/assets/api'
 import { useAuth } from '@/features/auth/AuthProvider'
 import { useLocale } from '@/i18n'
 import { Badge } from '@/components/ui/badge'
@@ -92,6 +92,9 @@ export function AdminCollectionsPage() {
   const [assetQuery, setAssetQuery] = useState('')
 
   const [confirmDelete, setConfirmDelete] = useState<CollectionRow | null>(null)
+  // V1.3.1 G2：封面选图 Dialog（成员资产图片网格）
+  const [coverPickerOpen, setCoverPickerOpen] = useState(false)
+  const [memberCovers, setMemberCovers] = useState<Map<string, string>>(new Map())
 
   const reload = useCallback(async () => {
     try {
@@ -123,6 +126,11 @@ export function AdminCollectionsPage() {
     listAssetsInCollection(selectedId)
       .then((rows) => {
         if (!cancelled) setMembers(rows)
+        // G2：成员封面图 URL（选图 Dialog 用）
+        const ids = rows.map((r) => r.cover_image_id).filter((v): v is string => !!v)
+        getCoverUrls(ids).then((m) => {
+          if (!cancelled) setMemberCovers(m)
+        }).catch(() => undefined)
       })
       .catch(() => {
         if (!cancelled) setMembers([])
@@ -195,6 +203,20 @@ export function AdminCollectionsPage() {
       await updateCollection(target.id, { sort_order: col.sort_order })
     })
   }
+
+  // V1.3.1 G2：设置/移除封面（本合集资产图片；归属越界由 DB 守卫终审）
+  const onSetCover = (imageId: string | null) =>
+    run(async () => {
+      try {
+        if (selected) await updateCollection(selected.id, { coverImageId: imageId })
+        setCoverPickerOpen(false)
+      } catch (e) {
+        if ((e as Error & { code?: string }).code === 'collection_guard') {
+          throw new Error(t('admin.collections.moveGuard'))
+        }
+        throw e
+      }
+    })
 
   // V1.2-A：换父（null=升根；客户端先排除自身+子孙，环/深度由 DB 触发器终审）
   const onChangeParent = (col: CollectionRow, parentId: string) =>
@@ -403,6 +425,44 @@ export function AdminCollectionsPage() {
               </select>
             </div>
 
+            {/* V1.3.1 G2：封面管理卡（无封面明确空态 / 有封面预览+更换+移除） */}
+            <div className="border-t pt-3">
+              <div className="text-sm font-medium">{t('admin.collections.coverManageTitle')}</div>
+              {selected.cover_image_id ? (
+                <div className="mt-2 flex flex-wrap items-center gap-3">
+                  <div className="h-20 w-32 overflow-hidden rounded-md border bg-muted">
+                    {memberCovers.get(selected.cover_image_id) ? (
+                      <img
+                        src={memberCovers.get(selected.cover_image_id)}
+                        alt={selected.name}
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <div className="flex h-full items-center justify-center">
+                        <Spinner className="h-4 w-4" />
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="outline" disabled={busy || !members || members.length === 0} onClick={() => setCoverPickerOpen(true)}>
+                      {t('admin.collections.coverChange')}
+                    </Button>
+                    <Button size="sm" variant="outline" disabled={busy} onClick={() => onSetCover(null)}>
+                      {t('admin.collections.coverRemove')}
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-2 flex flex-wrap items-center gap-3 rounded-md border border-dashed p-4">
+                  <div className="text-sm text-muted-foreground">{t('admin.collections.coverNone')}</div>
+                  <Button size="sm" disabled={busy || !members || members.length === 0} onClick={() => setCoverPickerOpen(true)}>
+                    <ImagePlus className="mr-1 h-4 w-4" />
+                    {t('admin.collections.coverSetBtn')}
+                  </Button>
+                </div>
+              )}
+            </div>
+
             {members === null ? (
               <Spinner className="h-5 w-5" />
             ) : members.length === 0 ? (
@@ -455,6 +515,56 @@ export function AdminCollectionsPage() {
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {/* V1.3.1 G2：可视化选图（仅本合集资产的图片；点击选中 → 设为封面） */}
+      {coverPickerOpen && selected && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setCoverPickerOpen(false)}>
+          <div
+            className="max-h-[80vh] w-full max-w-2xl overflow-y-auto rounded-lg border bg-background p-6 shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+          >
+            <h3 className="text-lg font-semibold">{t('admin.collections.coverPickTitle')}</h3>
+            {members && members.length > 0 && members.some((a) => a.cover_image_id) ? (
+              <>
+                <div className="mt-4 grid grid-cols-3 gap-3 sm:grid-cols-4">
+                  {members
+                    .filter((a) => a.cover_image_id && memberCovers.get(a.cover_image_id))
+                    .map((a) => {
+                      const url = memberCovers.get(a.cover_image_id!)
+                      const isCurrent = selected.cover_image_id === a.cover_image_id
+                      return (
+                        <button
+                          key={a.id}
+                          type="button"
+                          className={'relative overflow-hidden rounded-md border-2 ' + (isCurrent ? 'border-primary' : 'border-transparent hover:border-muted-foreground/40')}
+                          onClick={() => onSetCover(a.cover_image_id)}
+                        >
+                          <img src={url} alt={a.name} className="aspect-[4/3] w-full object-cover" />
+                          <div className="truncate px-1 py-1 text-xs text-muted-foreground">{a.name}</div>
+                          {isCurrent && (
+                            <span className="absolute right-1 top-1 rounded-full bg-primary px-1.5 py-0.5 text-xs text-primary-foreground">
+                              ✓
+                            </span>
+                          )}
+                        </button>
+                      )
+                    })}
+                </div>
+                <p className="mt-3 text-xs text-muted-foreground">{t('admin.collections.coverPickHint')}</p>
+              </>
+            ) : (
+              <p className="mt-4 text-sm text-muted-foreground">{t('admin.collections.coverEmpty')}</p>
+            )}
+            <div className="mt-6 flex justify-end">
+              <Button variant="outline" onClick={() => setCoverPickerOpen(false)}>
+                {t('common.cancel')}
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
 
       <ConfirmDialog

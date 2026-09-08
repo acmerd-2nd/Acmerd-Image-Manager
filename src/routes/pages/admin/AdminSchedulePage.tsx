@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Plus } from 'lucide-react'
-import type { ScheduleItemRow } from '@/types/database'
+import type { ScheduleItemRow, ScheduleProgress } from '@/types/database'
 import {
   createScheduleItem,
   deleteScheduleItem,
@@ -97,6 +97,13 @@ export function AdminSchedulePage() {
         eventDate: editDate || null,
       })
       setEditingId(null)
+    })
+
+  // V1.3.1 G1：进度三段切换（与发布态正交；成功后 reload 同步）
+  const onProgress = (item: ScheduleItemRow, progress: ScheduleProgress) =>
+    run(async () => {
+      if (item.progress === progress) return
+      await updateScheduleItem(item.id, { progress })
     })
 
   const onTransition = (item: ScheduleItemRow, to: 'draft' | 'published' | 'archived') =>
@@ -236,6 +243,34 @@ export function AdminSchedulePage() {
                             ? t('admin.status.draft')
                             : t('admin.status.archived')}
                       </Badge>
+                      {/* V1.3.1 G1：三段式进度切换（🟢🔵🔴） */}
+                      <div className="flex shrink-0 overflow-hidden rounded-md border" role="group" aria-label={t('admin.schedule.progressLabel')}>
+                        {(['completed', 'in_progress', 'not_started'] as const).map((pv) => {
+                          const active = item.progress === pv
+                          const dot = pv === 'completed' ? 'bg-green-500' : pv === 'in_progress' ? 'bg-blue-500' : 'bg-red-500'
+                          return (
+                            <button
+                              key={pv}
+                              type="button"
+                              disabled={busy}
+                              title={pv === 'completed'
+                                ? t('schedule.progress.completed')
+                                : pv === 'in_progress'
+                                  ? t('schedule.progress.inProgress')
+                                  : t('schedule.progress.notStarted')}
+                              className={`flex h-8 items-center gap-1.5 px-2 text-xs ${active ? 'bg-muted font-medium' : 'hover:bg-muted/60'}`}
+                              onClick={() => onProgress(item, pv)}
+                            >
+                              <span className={`inline-block h-2 w-2 rounded-full ${dot}`} />
+                              {active ? (pv === 'completed'
+                                ? t('schedule.progress.completed')
+                                : pv === 'in_progress'
+                                  ? t('schedule.progress.inProgress')
+                                  : t('schedule.progress.notStarted')) : ''}
+                            </button>
+                          )
+                        })}
+                      </div>
                       <div className="flex shrink-0 gap-1">
                         <Button size="sm" variant="outline" disabled={busy || !canUp} onClick={() => onMove(item, -1)}>
                           ↑

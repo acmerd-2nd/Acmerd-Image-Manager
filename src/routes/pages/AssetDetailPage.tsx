@@ -24,6 +24,7 @@ import {
   DownloadError,
   downloadSingleImage,
   downloadZip,
+  fetchMyCredits,
 } from '@/features/downloads/api'
 import { PackageDownloadPanel } from '@/features/downloads/PackageDownloadPanel'
 import { getSiteSettings } from '@/features/settings/api'
@@ -71,6 +72,22 @@ export function AssetDetailPage() {
       cancelled = true
     }
   }, [])
+
+  // V1.3.1 G6：当前用户是否无限积分（成本标签显示 ♾ 而非扣分数字）
+  const [unlimited, setUnlimited] = useState(false)
+  useEffect(() => {
+    let cancelled = false
+    setUnlimited(false)
+    if (!session) return
+    fetchMyCredits()
+      .then((v) => {
+        if (!cancelled && v) setUnlimited(v.unlimited)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [session])
 
   // 下载 UI 状态
   const [selectionMode, setSelectionMode] = useState(false)
@@ -352,16 +369,23 @@ export function AssetDetailPage() {
                         {isSelected && <Check className="h-4 w-4" />}
                       </button>
                     )}
-                    {/* 单图下载（非选择模式时 hover 显示；成本透出 总纲 §59） */}
+                    {/* 单图下载（非选择模式时 hover 显示；成本透出 总纲 §59 + V1.3.1 §12：♾/N 积分） */}
                     {!selectionMode && (
-                      <button
-                        type="button"
-                        onClick={() => onSingleDownload(img)}
-                        aria-label="Download image"
-                        className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-background/90 shadow opacity-0 transition-opacity group-hover:opacity-100"
-                      >
-                        {busy ? <Spinner className="h-4 w-4" /> : <Download className="h-4 w-4" />}
-                      </button>
+                      <div className="absolute right-2 top-2 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                        {costs && (
+                          <span className="rounded-full bg-background/90 px-2 py-0.5 text-xs shadow">
+                            {unlimited ? '♾' : t('credits.singleCost', { n: costs.single })}
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => onSingleDownload(img)}
+                          aria-label="Download image"
+                          className="flex h-7 w-7 items-center justify-center rounded-full bg-background/90 shadow"
+                        >
+                          {busy ? <Spinner className="h-4 w-4" /> : <Download className="h-4 w-4" />}
+                        </button>
+                      </div>
                     )}
                     <figcaption className="flex items-center gap-1 truncate px-2 py-1.5 text-xs text-muted-foreground">
                       <ImageIcon className="h-3 w-3 shrink-0" />
@@ -392,7 +416,7 @@ export function AssetDetailPage() {
               {t('download.zipSelected', { n: selected.size })}
             {costs && (
               <span className="ml-2 text-muted-foreground">
-                · {t('credits.zipCost', { n: selected.size * costs.zipPer })}
+                · {unlimited ? `♾ ${t('credits.unlimited')}` : t('credits.zipCost', { n: selected.size * costs.zipPer })}
               </span>
             )}
               {selected.size >= MAX_ZIP && (

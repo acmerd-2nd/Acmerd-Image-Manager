@@ -1386,6 +1386,7 @@ interface CreditsBody {
   balance?: unknown
   unlimited?: unknown
   reason?: unknown
+  operation?: unknown
 }
 
 app.post('/api/admin/users/:userId/credits', async (c) => {
@@ -1438,6 +1439,12 @@ app.post('/api/admin/users/:userId/credits', async (c) => {
       console.error('Unlimited update failed:', res.status)
       return c.json({ error: { code: 'upstream_error', message: 'Unlimited update failed' } }, 502)
     }
+    // V1.3.1 BUG-A 修复：命中 0 行（用户无 credit_accounts）时 PostgREST 返回 200+空数组，
+    // 旧逻辑会记审计"成功"但 DB 实际未变 → 静默 no-op。这里显式判 404。
+    const rows = (await res.json()) as Array<Record<string, unknown>>
+    if (!Array.isArray(rows) || rows.length === 0) {
+      return c.json({ error: { code: 'credit_account_missing', message: 'Credit account missing' } }, 404)
+    }
     await writeAudit(c.env, 'credits.unlimited_changed', 'profiles', targetId, auth.userId, {
       unlimited,
     })
@@ -1454,13 +1461,14 @@ app.post('/api/admin/users/:userId/credits', async (c) => {
         p_balance: balance,
         p_reason: reason,
         p_actor_id: auth.userId,
+        p_operation: typeof body.operation === 'string' && body.operation ? body.operation : 'set_balance',
       }),
     })
     if (!res.ok) {
       const errBody = (await res.json().catch(() => null)) as { message?: string } | null
       const msg = errBody?.message ?? ''
       if (/CREDIT_ACCOUNT_MISSING/.test(msg)) {
-        return c.json({ error: { code: 'not_found', message: 'Credit account missing' } }, 404)
+        return c.json({ error: { code: 'credit_account_missing', message: 'Credit account missing' } }, 404)
       }
       console.error('adjust_credits failed:', res.status, msg)
       return c.json({ error: { code: 'upstream_error', message: 'Balance update failed' } }, 502)
@@ -1472,6 +1480,86 @@ app.post('/api/admin/users/:userId/credits', async (c) => {
 })
 
 // ===========================================================================
+// V1.3.1 G4: 批量调整积分（整批原子）
+//   POST /api/admin/users/credits/batch { user_ids: uuid[], delta: number, reason: string }
+//   → admin_batch_adjust_credits RPC（0017；SECURITY DEFINER 内两段循环：
+//     先全锁校验再逐个 update+流水，任一失败 raise → 单事务整体回滚）。
+//   ledger 每用户一条 admin_adjustment（metadata.operation='batch'）；
+//   审计一行 credits.adjusted（allowlist 零新增）。
+// ===========================================================================
+
+interface BatchCreditsBody {
+  user_ids?: unknown
+  delta?: unknown
+  reason?: unknown
+}
+
+app.post('/api/admin/users/credits/batch', async (c) => {
+  const auth = await requireAdmin(c)
+  if (!auth.ok) return c.json({ error: authErrBody(auth) }, auth.status)
+
+  let body: BatchCreditsBody
+  try {
+    body = await c.req.json<BatchCreditsBody>()
+  } catch {
+    return c.json({ error: { code: 'bad_request', message: 'Invalid JSON body' } }, 400)
+  }
+  if (!Array.isArray(body.user_ids) || body.user_ids.length === 0) {
+    return c.json({ error: { code: 'bad_request', message: 'user_ids must be a non-empty array' } }, 400)
+  }
+  if (body.user_ids.length > 100) {
+    return c.json({ error: { code: 'bad_request', message: 'batch limit is 100 users' } }, 400)
+  }
+  const ids = body.user_ids.map(String)
+  for (const id of ids) {
+    if (!UUID_RE.test(id)) {
+      return c.json({ error: { code: 'bad_request', message: 'invalid user id in user_ids' } }, 400)
+    }
+  }
+  if (new Set(ids).size !== ids.length) {
+    return c.json({ error: { code: 'bad_request', message: 'duplicate user ids' } }, 400)
+  }
+  if (typeof body.delta !== 'number' || !Number.isFinite(body.delta) || body.delta === 0) {
+    return c.json({ error: { code: 'bad_request', message: 'delta must be a non-zero number' } }, 400)
+  }
+  const reason = typeof body.reason === 'string' && body.reason.trim() ? body.reason.trim() : null
+  if (!reason) {
+    return c.json({ error: { code: 'bad_request', message: 'reason is required' } }, 400)
+  }
+
+  const res = await fetch(`${c.env.SUPABASE_URL}/rest/v1/rpc/admin_batch_adjust_credits`, {
+    method: 'POST',
+    headers: svc(c.env),
+    body: JSON.stringify({
+      p_user_ids: ids,
+      p_delta: body.delta,
+      p_reason: reason,
+      p_actor_id: auth.userId,
+    }),
+  })
+  if (!res.ok) {
+    const errBody = (await res.json().catch(() => null)) as { message?: string } | null
+    const msg = errBody?.message ?? ''
+    console.error('Batch adjust failed:', res.status, msg)
+    if (/CREDIT_ACCOUNT_MISSING/.test(msg)) {
+      return c.json({ error: { code: 'credit_account_missing', message: msg } }, 404)
+    }
+    if (/INSUFFICIENT_CREDITS/.test(msg)) {
+      return c.json({ error: { code: 'insufficient_credits', message: msg } }, 409)
+    }
+    return c.json({ error: { code: 'upstream_error', message: 'Batch adjust failed' } }, 502)
+  }
+  const out = (await res.json()) as { adjusted?: number }
+
+  await writeAudit(c.env, 'credits.adjusted', 'profiles', ids.join(','), auth.userId, {
+    operation: 'batch',
+    delta: body.delta,
+    reason,
+    user_count: ids.length,
+  })
+  return c.json({ ok: true, adjusted: out?.adjusted ?? ids.length, delta: body.delta })
+})
+
 // GET /api/admin/stats —— 单一聚合统计（D5 + 约束 4）
 //   一次 service_role admin_stats() RPC（DB 原子快照）；storage 口径按 DB 记账估算。
 // ===========================================================================
@@ -1578,6 +1666,8 @@ interface CollectionUpdateBody {
   description?: unknown
   status?: unknown
   parentId?: unknown
+  /** V1.3.1 G2：封面（uuid=本合集内资产图片；null=移除；归属由 DB 守卫 COLLECTION_COVER_MISMATCH 终审） */
+  coverImageId?: unknown
 }
 
 const SLUG_RE = /^[a-z0-9\u4e00-\u9fff]+(-[a-z0-9\u4e00-\u9fff]+)*$/
@@ -1700,6 +1790,16 @@ app.patch('/api/admin/collections/:collectionId', async (c) => {
       return c.json({ error: { code: 'bad_request', message: 'invalid status' } }, 400)
     }
     patch.status = body.status
+  }
+  if (body.coverImageId !== undefined) {
+    // V1.3.1 G2：封面写路径（此前缺失——发布门槛要求封面却无法设置）
+    if (body.coverImageId === null) {
+      patch.cover_image_id = null
+    } else if (typeof body.coverImageId === 'string' && UUID_RE.test(body.coverImageId)) {
+      patch.cover_image_id = body.coverImageId
+    } else {
+      return c.json({ error: { code: 'bad_request', message: 'invalid coverImageId' } }, 400)
+    }
   }
   if (body.parentId !== undefined) {
     // V1.2-A D1：parentId=null 升根；uuid 换父（自引用/环/深度由 0015 触发器拒绝）
@@ -1872,6 +1972,7 @@ interface ScheduleItemUpdateBody {
   eventDate?: unknown
   status?: unknown
   sortOrder?: unknown
+  progress?: unknown
 }
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
@@ -1984,6 +2085,13 @@ app.patch('/api/admin/schedule-items/:itemId', async (c) => {
       return c.json({ error: { code: 'bad_request', message: 'invalid status' } }, 400)
     }
     patch.status = body.status
+  }
+  if (body.progress !== undefined) {
+    // V1.3.1 G1：进度三状态（与发布态正交；DB CHECK 终审）
+    if (body.progress !== 'not_started' && body.progress !== 'in_progress' && body.progress !== 'completed') {
+      return c.json({ error: { code: 'bad_request', message: 'invalid progress' } }, 400)
+    }
+    patch.progress = body.progress
   }
   if (Object.keys(patch).length === 0) {
     return c.json({ error: { code: 'bad_request', message: 'nothing to update' } }, 400)

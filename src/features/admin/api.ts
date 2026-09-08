@@ -173,10 +173,22 @@ export async function updatePlatformSettings(
 /** PC-4：Admin 设定用户余额/无限积分（balance=设定值语义；unlimited 可只传其一） */
 export async function updateUserCredits(
   userId: string,
-  patch: { balance?: number; unlimited?: boolean; reason?: string },
+  patch: { balance?: number; unlimited?: boolean; reason?: string; operation?: string },
 ): Promise<void> {
   await request<{ ok: boolean }>(`/api/admin/users/${userId}/credits`, {
     method: 'POST',
     body: JSON.stringify(patch),
+  })
+}
+
+/** V1.3.1 G4：批量调整积分（整批原子——任一用户失败则全部不生效） */
+export async function batchAdjustCredits(
+  userIds: string[],
+  delta: number,
+  reason: string,
+): Promise<{ adjusted: number; delta: number }> {
+  return request<{ ok: boolean; adjusted: number; delta: number }>('/api/admin/users/credits/batch', {
+    method: 'POST',
+    body: JSON.stringify({ user_ids: userIds, delta, reason }),
   })
 }

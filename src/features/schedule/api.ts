@@ -1,6 +1,6 @@
 import { supabase } from '@/lib/supabase/client'
 import { t } from '@/i18n'
-import type { PublishedScheduleItemRow, ScheduleItemRow } from '@/types/database'
+import type { PublishedScheduleItemRow, ScheduleItemRow, ScheduleProgress } from '@/types/database'
 
 /**
  * V1.2-B D7/D8：Schedule 数据访问层（镜像 collections/api 范式）。
@@ -53,6 +53,8 @@ export interface ScheduleItemInput {
   /** YYYY-MM-DD 或 null（无日期条目沉底，视图 nulls last） */
   eventDate?: string | null
   sortOrder?: number
+  /** V1.3.1 G1：进度三状态（与发布态正交） */
+  progress?: ScheduleProgress
 }
 
 export function createScheduleItem(input: ScheduleItemInput) {
@@ -61,7 +63,7 @@ export function createScheduleItem(input: ScheduleItemInput) {
 
 export function updateScheduleItem(
   id: string,
-  patch: Partial<ScheduleItemInput> & { status?: 'draft' | 'published' | 'archived' },
+  patch: Partial<ScheduleItemInput> & { status?: 'draft' | 'published' | 'archived'; progress?: ScheduleProgress },
 ) {
   return scheduleRequest<{ ok: true; item: ScheduleItemRow }>(`/api/admin/schedule-items/${id}`, patch, 'PATCH')
 }
