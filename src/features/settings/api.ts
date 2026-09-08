@@ -10,7 +10,7 @@ export interface SiteSettings {
   schedule_navigation_enabled: boolean
   single_image_download_cost: number
   zip_download_cost_per_image: number
-  package_download_cost: number
+  package_download_cost_per_image: number
   brand_text: string
   brand_title: string
   brand_logo_path: string
@@ -27,7 +27,7 @@ export async function getSiteSettings(): Promise<SiteSettings> {
     schedule_navigation_enabled: map.get('schedule_navigation_enabled') === true,
     single_image_download_cost: Number(map.get('single_image_download_cost') ?? 1),
     zip_download_cost_per_image: Number(map.get('zip_download_cost_per_image') ?? 1),
-    package_download_cost: Number(map.get('package_download_cost') ?? 15),
+    package_download_cost_per_image: Number(map.get('package_download_cost_per_image') ?? 0.5),
     brand_text: typeof map.get('brand_text') === 'string' ? (map.get('brand_text') as string) : 'AcmerdImage',
     brand_title: typeof map.get('brand_title') === 'string' ? (map.get('brand_title') as string) : 'AcmerdImage',
     brand_logo_path: typeof map.get('brand_logo_path') === 'string' ? (map.get('brand_logo_path') as string) : '',

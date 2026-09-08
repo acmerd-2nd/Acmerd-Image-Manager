@@ -150,8 +150,16 @@ export interface CreditTransactionRow {
   created_at: string
 }
 
-/** V1.1 D6：站点设置（5 个固定 key，anon/authenticated 只读） */
-export type SiteSettingKey = 'single_image_cost' | 'zip_per_image_cost' | 'package_download_cost' | 'registration_enabled' | 'schedule_navigation_enabled'
+/** 站点设置 key（0011 + 0019 + 0020；anon/authenticated 只读） */
+export type SiteSettingKey =
+  | 'registration_enabled'
+  | 'schedule_navigation_enabled'
+  | 'single_image_download_cost'
+  | 'zip_download_cost_per_image'
+  | 'package_download_cost_per_image'
+  | 'brand_text'
+  | 'brand_title'
+  | 'brand_logo_path'
 
 export interface SiteSettingRow {
   key: SiteSettingKey

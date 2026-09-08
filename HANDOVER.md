@@ -1,9 +1,9 @@
 # 🔄 HANDOVER — ACMERD Image Manager 交接文档
 
-> **最后更新**: 2026-09-08（**V1.4 站点品牌可配置 CLOSED**：生产 Worker ver `b10be398-…`，bundle `index-LDC4ezwS.js`，迁移 0001–0019 全 applied + 0019 种子已应用）
-> **当前状态**: ✅ **V1.0/V1.1 冻结基线未破坏** · 🟢 **V1.2 A/B/C/D 全部 CLOSED**（D12 终裁：维持 raw）· 🟢 **V1.3 积分流水页 CLOSED** · 🟢 **V1.3.1 + 走查跟进 CLOSED**（排期三状态/封面 UX/积分修复+快捷+批量/Switch/管理员备注；回滚锚点 `85180f65`）· 🟢 **V1.4 站点品牌可配置 CLOSED**（生产 ver `b10be398-…`，0019 已应用，生产验证 11/11 PASS）· 远端 main 与本地一致（待 Owner 授权 push）
-> **线上**: https://image.acmerd.com 运行中（`/api/health` 200；迁移 **0001–0019** 全 applied）
-> **Truth Source**: 本地 main 含 V1.4 全部（HEAD 含 V1.4 实现 `456abab` + wrangler `run_worker_first` 修复 + 收口文档 `docs/v1.4/02`）；**push 待 Owner 授权**（授权仅含迁移+部署+验证）；V1.4 收口 = `docs/v1.4/02`
+> **最后更新**: 2026-09-08（**V1.4.1 Package 动态计价 CLOSED**：生产 Worker ver `1d0c454b-…`，0020 已应用，生产价格矩阵验证 **23/23 PASS**；前序同日：V1.4 品牌 CLOSED + 全站 rebrand 探知→AcmerdImage CLOSED，均已 push）
+> **当前状态**: ✅ **V1.0/V1.1 冻结基线未破坏** · 🟢 V1.2/V1.3/V1.3.1 全 CLOSED · 🟢 V1.4 站点品牌 CLOSED（生产验证 11/11）· 🟢 全站 rebrand（探知→AcmerdImage，commit `bf7f2e6` 已推）· 🟢 **V1.4.1 Package 动态计价 CLOSED**（D1–D4 全批；Single=1/ZIP=1每图/**Package=0.5每图**；金额=整个Asset已发布ready图数×每图成本，服务端唯一权威）
+> **线上**: https://image.acmerd.com 运行中（`/api/health` 200；迁移 **0001–0020** 全 applied——0020 为 KV 种子级）
+> **Truth Source**: 远端 main 与本地一致（`bf7f2e6…`，git ls-remote 复核）；V1.4.1 收口 = `docs/v1.4.1/02`（**本地 commit 待 Owner 授权 push**）
 > **V1.2 证据链（`docs/v1.2/01…04`，全链 CLOSED）**: 01 Design Gate（D1–D12 Owner 全批）→ 02 CDN 评估（jsDelivr 不可行；Owner 终裁维持 raw）→ 03 部署记录 → 04 收口报告
 > **V1.3 证据链（`docs/v1.3/01`）**: Change Proposal（C1–C5 Owner 全批）→ §9 执行记录回填（CLOSED）
 > **V1.3.1 证据链（`docs/v1.3.1/01…03`，全链 CLOSED）**: 01 Design Gate（G1–G6 Owner「全按建议」批；含 BUG-B 证伪更正）→ 02 收口报告（冒烟 16/16 + 生产结构 8/8 + RPC 回滚实测零残留）→ 03 走查跟进（0018 冒烟 13/13 + UI 走查）
@@ -18,6 +18,16 @@
 > - **生产回归**：结构 8/8（`scripts/v131-prod-verify.mjs`）+ RPC 回滚实测零残留（`scripts/v131-prod-rpc-test.mjs`）+ 未登录 401 门禁 + 前台排期进度已生效。冒烟 `scripts/v131-smoke.mjs` 16/16。
 > - **走查跟进（2026-09-08 晚，CLOSED，`docs/v1.3.1/03`）**：Owner 反馈「无法改积分/无法开无限积分」真根因 = 0012 `credit_accounts` SELECT 策略漏 admin 分支（admin 客户端只读到 1 行 → 积分列 `—`、调整按钮灰、Dialog 打不开；Worker 开关链路实测健康）→ **0018** 修为 own-or-admin（只读放宽；写仍 Worker 独占）+ `user_admin_notes` 管理员备注（RLS 仅 is_admin + 审计 `users.notes_updated`，allowlist 43→44）。前端：苹果 Switch（`ui/switch.tsx`；列表 Unlimited 列直接可切 + Dialog 内）+ ⋯菜单「备注」（`UserNotesDialog`）。冒烟 `v1311-smoke.mjs` **13/13**；生产验证：admin 读 9 行、开关回环 200、备注回滚零残留、UI 走查「调整积分」不再置灰 + demo01 开关 Toast 回环。
 > - **待 Owner 走查（登录态）**：批量调整走查；其余项已由 Agent UI 走查覆盖。
+
+> ### 🟢 V1.4.1 当前态（2026-09-08）— 新 Agent 必读
+> - **Gate**：`docs/v1.4.1/01-design-gate.md`（Owner D1–D4 全批 + 附加价格矩阵测试要求）；收口 `docs/v1.4.1/02-implementation-report.md`。
+> - **语义变更（Owner 裁决覆盖 V1.1「Package=固定」冻结）**：Package 总价 = 整个 Asset 跨全部已发布语言 ready 图数 × `package_download_cost_per_image`（D4 口径 = `published_assets.image_count` 同源，与 `?lang=` 无关）。初值 Single=1 / ZIP每图=1 / **Package每图=0.5**。
+> - **0020（KV 种子级，生产已 applied）**：新增 `package_download_cost_per_image='0.5'`；旧键 `package_download_cost=15` 保留不删（D1 回滚兼容），新代码零读写、已移出 PATCH allowlist。
+> - **P0 实证（矩阵验证拦截）**：`published_assets` 视图 grant 仅 anon/authenticated，service_role 直查 42501 → 初版 Worker 查视图会 500 打挂全部 Package 下载。已改为基础表直查计数（`asset_languages(published)`→`images(ready)` + `Prefer: count=exact`），口径同视图，零 grant 扩张。**后续任何 svc 查该视图都需先在 SQL Editor grant（开口留档）**。
+> - **安全不变量（实测）**：客户端仅发 `{sourceId}`，计数/成本/金额全服务端权威（伪造字段无效）；`image_count<1` → 404 `not_available` 零扣费；H2 幂等保留（同 key 重放 ledger 仅 1 条）；unlimited 旁路/一次性授权跳转/语言无关全部不变。UI 徽标 `{count} 张 · {n} 积分`（无限 `{count} 张 · ♾`）。
+> - **生产验证**：`scripts/v141-package-pricing-verify.mjs` **23/23 PASS**（矩阵 7→3.5/9→4.5/20→10/30→15 + 多语言 EN7+DE8+IT9=24→12 + 0图守卫 + 篡改 + 幂等 + finally 零残留 + 余额还原）。e2e7 前缀测试实体已全清。
+> - **线上**：Worker ver `1d0c454b-b2ce-431c-90a5-842fdebb848c`（100%）；回滚锚点 = 前一部署（rebrand 版）。
+> - **待 Owner**：本地 commit push 授权；`schema_migrations` 0020 记账自愈（DNS 恢复）；可选清理迁移删旧键。
 
 > ### 🟢 V1.4 当前态（2026-09-08）— 新 Agent 必读
 > - **Gate 来源**：`docs/v1.4/01-design-gate.md`（Owner 裁决落档）；收口 `docs/v1.4/02-implementation-report.md`。
@@ -89,13 +99,13 @@
 
 **关键红线（违反会被 Owner 打回）**：Service Role Key 只进 Worker Secret / 本地脚本，绝不进前端 bundle / Git / wrangler.toml；权限只靠 UI 隐藏无效，必须 RLS/服务端兜底；改设计先交 Change Proposal；两份中文规划文档 + `.workbuddy/` 不推公开仓库；**未提供证据前不得宣布 Gate PASS**；不扩大 Scope、不重构已完成 Phase。
 
-### 当前状态快照（2026-09-08，V1.3.1 收口后）
+### 当前状态快照（2026-09-08，V1.4.1 收口后）
 | 维度 | 值 |
 | --- | --- |
-| HEAD / 远端 | `73e5aab`（走查跟进）之后随 docs commit 同步 origin/main |
-| 生产 Worker | ver `b10be398-d2c0-4e9a-8ad4-90b444a412b8`（2026-09-08 部署；run_worker_first=true 修复；回滚锚点 `8d214ddf-9c54-422a-a7ac-3e899d785aed`；bundle `index-LDC4ezwS.js`） |
-| 工作树 | 未跟踪：`.workbuddy/`、`.qoder/`、规划文档 + 总纲1.1/看板1.1 [故意不推]；已提交 V1.4 全部代码+文档，**push 待 Owner 授权** |
-| 已应用迁移 | 0001–0008（V1.0）+ 0009–0014（V1.1）+ 0015–0016（V1.2）+ 0017（V1.3.1）+ **0018（走查跟进）** + **0019（V1.4 品牌种子：site_settings 3 brand 行，幂等）** |
+| HEAD / 远端 | 远端 main = `bf7f2e6`（rebrand，git ls-remote 复核一致）；V1.4.1 本地 commit **待 Owner 授权 push** |
+| 生产 Worker | ver `1d0c454b-b2ce-431c-90a5-842fdebb848c`（2026-09-08 V1.4.1 部署；run_worker_first=true；回滚锚点 = 前一部署；bundle `index-D_e27djE.js`） |
+| 工作树 | 未跟踪：`.workbuddy/`、`.qoder/`、规划文档 + 总纲1.1/看板1.1 [故意不推]；V1.4.1 代码+文档已 commit，**push 待 Owner 授权** |
+| 已应用迁移 | 0001–0008（V1.0）+ 0009–0014（V1.1）+ 0015–0016（V1.2）+ 0017–0018（V1.3.1）+ 0019（V1.4 品牌种子）+ **0020（V1.4.1：`package_download_cost_per_image=0.5` KV 种子；旧固定键保留）** |
 | Worker 端点 | V1.0–V1.3.1 全量保留。全部经 `authenticate()` |
 | Worker Secret | `SUPABASE_SERVICE_ROLE_KEY` 已 `wrangler secret put`；本地 `worker/.dev.vars` 同步 |
 | 管理员账号 | `1902768564@qq.com`（密码见 `.env` 的 `ADMIN_PASSWORD`），角色 admin |
@@ -231,10 +241,13 @@ React 18 + TS + Vite + Tailwind + shadcn 风格 UI；Hono Worker + `[assets]` SP
 
 **V1.4 站点品牌可配置（CLOSED）**：代码 + 0019 迁移本地提交（HEAD `456abab`）+ wrangler `run_worker_first=true` 部署修复；Worker 已部署 ver `b10be398-…`；0019 种子已应用（site_settings 3 brand 行，默认态）；生产功能验证 `scripts/v14-prod-verify.mjs` **11/11 PASS**；收口 `docs/v1.4/02-implementation-report.md`。详见下方「🟢 V1.4 当前态」。
 
+**V1.4.1 Package 动态计价（CLOSED，2026-09-08）**：Owner D1–D4 全批（`docs/v1.4.1/01`）；0020 KV 种子（`package_download_cost_per_image=0.5`，旧键保留）+ Worker 动态计价（基础表直查计数，服务端唯一权威）+ UI 动态价徽标 + Admin 每图积分输入（两位小数）；生产价格矩阵验证 `scripts/v141-package-pricing-verify.mjs` **23/23 PASS**（含多语言 24→12、0 图守卫、篡改、幂等、零残留）；生产 ver `1d0c454b-…`；收口 `docs/v1.4.1/02-implementation-report.md`。**本地 commit 待 Owner 授权 push**。
+
 **当前开口（均 Owner 决定，Agent 不得擅自推进）**：
-1. **邮件闭环验证（Owner 明示暂缓）**：需 1 个真实可收信邮箱；SMTP（D10③）可选后补（内置 mailer 限速 ~2 封/小时）。
-2. **生产 `registration_enabled` 现为 true**。若要默认关闭：Admin Dashboard → 平台控制一键（即时生效）。
-3. **后续需求未发起**。任何新需求走 Change Proposal → 新 Phase/版本流程（惯例：Gate 落 `docs/vN.N/NN`，Owner 逐项裁决后才动代码）。
+1. **V1.4.1 push 授权**：本地 commit（0020 + Worker/前端/i18n + 002 收口报告 + 验证脚本）待 Owner 确认后按可靠模式推 origin/main。
+2. **邮件闭环验证（Owner 明示暂缓）**：需 1 个真实可收信邮箱；SMTP（D10③）可选后补（内置 mailer 限速 ~2 封/小时）。
+3. **生产 `registration_enabled` 现为 true**。若要默认关闭：Admin Dashboard → 平台控制一键（即时生效）。
+4. **后续需求未发起**。任何新需求走 Change Proposal → 新 Phase/版本流程（惯例：Gate 落 `docs/vN.N/NN`，Owner 逐项裁决后才动代码）。
 
 **技术债/留档事项（非阻塞）**：
 - 0009–0014 曾不在 `schema_migrations`（V1.1 经其他通道应用），2026-09-07 migrator 幂等重放补记，核验零副作用——后续勿重复执行非幂等变更。
@@ -242,7 +255,7 @@ React 18 + TS + Vite + Tailwind + shadcn 风格 UI；Hono Worker + `[assets]` SP
 - GoTrue 公开 signup 可被 anon key 直连绕过（PD-3 已批 A，记录在案）。
 - wrangler deploy routes 步 10000 报错 = cosmetic（token 缺 zone routes 读权限；消除需 Owner 在 CF 补权限）。
 
-**验证脚本索引（可复跑）**：V1.1 = `scripts/v11-pc4-sandbox.mjs`（PC4_BASE）、`v11-pc5-verify.mjs`、`v11-pc6-seed.mjs`（幂等 seed，勿重跑重发密码；G: 盘已不在，凭据找 Owner 重发）、`v11-pc7-prod-verify.mjs`；**V1.2 = `v12-a-folder-smoke.mjs`（隔离库 13/13）、`v12-a-worker-sandbox.mjs`（本地 worker 13/13）、`v12-b-schedule-smoke.mjs`（隔离库 10/10）**；**V1.3.1 = `v131-smoke.mjs`（隔离冒烟 16/16）、`v131-prod-verify.mjs`（生产结构 8/8 只读）、`v131-prod-rpc-test.mjs`（生产 RPC 回滚实测，零残留）、`v1311-smoke.mjs`（0018 跟进冒烟 13/13）**；**V1.4 = `v14-prod-verify.mjs`（生产功能 11/11：品牌 PATCH→anon 直读→上传/删 Logo→GitHub 仓→审计，幂等还原默认）**；V1.3 = 纯读功能，走查即可（无脚本）；证据 `docs/v1.2/`、`docs/v1.3/`、`docs/v1.3.1/`、`docs/v1.4/`。
+**验证脚本索引（可复跑）**：V1.1 = `scripts/v11-pc4-sandbox.mjs`（PC4_BASE）、`v11-pc5-verify.mjs`、`v11-pc6-seed.mjs`（幂等 seed，勿重跑重发密码；G: 盘已不在，凭据找 Owner 重发）、`v11-pc7-prod-verify.mjs`；**V1.2 = `v12-a-folder-smoke.mjs`（隔离库 13/13）、`v12-a-worker-sandbox.mjs`（本地 worker 13/13）、`v12-b-schedule-smoke.mjs`（隔离库 10/10）**；**V1.3.1 = `v131-smoke.mjs`（隔离冒烟 16/16）、`v131-prod-verify.mjs`（生产结构 8/8 只读）、`v131-prod-rpc-test.mjs`（生产 RPC 回滚实测，零残留）、`v1311-smoke.mjs`（0018 跟进冒烟 13/13）**；**V1.4 = `v14-prod-verify.mjs`（生产功能 11/11：品牌 PATCH→anon 直读→上传/删 Logo→GitHub 仓→审计，幂等还原默认）**；**V1.4.1 = `v141-package-pricing-verify.mjs`（生产价格矩阵 23/23：7/9/20/30 单语言 + 多语言 24 + 0 图守卫 + 篡改 + 幂等，e2e7 实体 finally 全清 + 余额还原）**；V1.3 = 纯读功能，走查即可（无脚本）；证据 `docs/v1.2/`、`docs/v1.3/`、`docs/v1.3.1/`、`docs/v1.4/`、`docs/v1.4.1/`。
 
 ---
 

@@ -146,7 +146,7 @@ export interface PlatformSettings {
   schedule_navigation_enabled: boolean
   single_image_download_cost: number
   zip_download_cost_per_image: number
-  package_download_cost: number
+  package_download_cost_per_image: number
   brand_text: string
   brand_title: string
   brand_logo_path: string
@@ -160,7 +160,7 @@ export async function getPlatformSettings(): Promise<PlatformSettings> {
     schedule_navigation_enabled: s.schedule_navigation_enabled === true,
     single_image_download_cost: Number(s.single_image_download_cost ?? 1),
     zip_download_cost_per_image: Number(s.zip_download_cost_per_image ?? 1),
-    package_download_cost: Number(s.package_download_cost ?? 15),
+    package_download_cost_per_image: Number(s.package_download_cost_per_image ?? 0.5),
     brand_text: typeof s.brand_text === 'string' ? s.brand_text : 'AcmerdImage',
     brand_title: typeof s.brand_title === 'string' ? s.brand_title : 'AcmerdImage',
     brand_logo_path: typeof s.brand_logo_path === 'string' ? s.brand_logo_path : '',

@@ -109,7 +109,7 @@ function PlatformControlsCard() {
         setPrices({
           single: String(s.single_image_download_cost),
           zip: String(s.zip_download_cost_per_image),
-          package: String(s.package_download_cost),
+          package: String(s.package_download_cost_per_image),
         })
       })
       .catch((e) => setError(e instanceof Error ? e.message : String(e)))
@@ -132,10 +132,11 @@ function PlatformControlsCard() {
   const PRICE_FIELDS = [
     { key: 'single', label: 'admin.platform.singleCost' },
     { key: 'zip', label: 'admin.platform.zipCostPerImage' },
-    { key: 'package', label: 'admin.platform.packageCost' },
+    { key: 'package', label: 'admin.platform.packagePerImageCost' },
   ] as const
 
-  const intOk = (s: string) => /^\d+$/.test(s) && Number(s) >= 0 && Number(s) <= 1000000
+  // V1.4.1: 放宽为非负数、最多两位小数（numeric(12,2)），支持 0.5 等 Package per-image 定价
+  const intOk = (s: string) => /^\d+(\.\d{1,2})?$/.test(s) && Number(s) >= 0 && Number(s) <= 1000000
 
   const savePrices = async () => {
     if (!PRICE_FIELDS.every((f) => intOk(prices[f.key]))) {
@@ -145,7 +146,7 @@ function PlatformControlsCard() {
     await apply({
       single_image_download_cost: Number(prices.single),
       zip_download_cost_per_image: Number(prices.zip),
-      package_download_cost: Number(prices.package),
+      package_download_cost_per_image: Number(prices.package),
     })
   }
 
@@ -209,7 +210,7 @@ function PlatformControlsCard() {
                 type="number"
                 min={0}
                 max={1000000}
-                step={1}
+                step={0.01}
                 inputMode="numeric"
                 value={prices[f.key]}
                 disabled={busy}

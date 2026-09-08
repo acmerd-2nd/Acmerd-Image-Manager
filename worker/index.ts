@@ -1585,6 +1585,10 @@ app.get('/api/admin/stats', async (c) => {
 //   requireUser → source 校验（enabled + host 白名单 DB 触发器已保证）→ 原子扣分
 //   → 返回 url（前端 window.open）。跳转即消耗，不追退款（总纲 §46 冻结）。
 //   幂等：X-Idempotency-Key 透传（同一 key 重放 → H2 返回原结果 → 再次放行同一 URL）。
+//   V1.4.1（D2–D4）: 金额 = 整个 Asset 跨全部已发布语言 ready 图数
+//   （基础表直查计数，口径同 published_assets.image_count，与 ?lang= 无关）
+//   × package_download_cost_per_image。
+//   计数/成本/金额全部服务端权威；image_count < 1 → not_available，绝不免费放行。
 // ===========================================================================
 interface PackageBody {
   sourceId?: unknown
@@ -1612,7 +1616,7 @@ app.post('/api/downloads/package', async (c) => {
 
   // source 校验：必须 enabled 且其 asset published（RLS 同语义；service_role 直查）
   const srcRes = await fetch(
-    `${c.env.SUPABASE_URL}/rest/v1/download_sources?id=eq.${sourceId}&select=id,provider,url,enabled,assets!inner(status)&enabled=eq.true`,
+    `${c.env.SUPABASE_URL}/rest/v1/download_sources?id=eq.${sourceId}&select=id,provider,url,enabled,asset_id,assets!inner(status)&enabled=eq.true`,
     { headers: svc(c.env) },
   )
   if (!srcRes.ok) return c.json({ error: { code: 'internal', message: 'Lookup failed' } }, 500)
@@ -1621,6 +1625,7 @@ app.post('/api/downloads/package', async (c) => {
     provider: string
     url: string
     enabled: boolean
+    asset_id: string
     assets: { status: string }
   }>
   const src = srcRows[0]
@@ -1628,11 +1633,52 @@ app.post('/api/downloads/package', async (c) => {
     return c.json({ error: { code: 'not_found', message: 'Download source not available' } }, 404)
   }
 
-  const costRes = await readSettingNumber(c.env, 'package_download_cost')
+  // V1.4.1 动态计价（D4）: 权威计数 = 整个 Asset 跨全部已发布语言的 ready 图数
+  // （与 published_assets.image_count 视图同口径，与当前 ?lang= 完全解耦）。
+  // 实现走基础表 service_role 直查（0001 视图 grant 仅 anon/authenticated，
+  // service_role 42501——矩阵验证实证；不为此扩 grant，遵循最小变更）。
+  // asset_id 源自已校验的 download_sources 行——客户端无从提交/覆盖计数或金额。
+  const langRes = await fetch(
+    `${c.env.SUPABASE_URL}/rest/v1/asset_languages?asset_id=eq.${src.asset_id}&status=eq.published&select=id`,
+    { headers: svc(c.env) },
+  )
+  if (!langRes.ok) return c.json({ error: { code: 'internal', message: 'Language lookup failed' } }, 500)
+  const langRows = (await langRes.json()) as Array<{ id: string }>
+  const langIds = langRows.map((r) => r.id)
+  if (langIds.length === 0) {
+    return c.json({ error: { code: 'not_available', message: 'No published images available for this asset' } }, 404)
+  }
+  const cntRes = await fetch(
+    `${c.env.SUPABASE_URL}/rest/v1/images?asset_language_id=in.(${langIds.join(',')})&status=eq.ready&select=id&limit=1`,
+    { headers: { ...svc(c.env), Prefer: 'count=exact' } },
+  )
+  if (!cntRes.ok) return c.json({ error: { code: 'internal', message: 'Image count lookup failed' } }, 500)
+  const range = cntRes.headers.get('content-range') // 例: "0-0/24"（limit=1 + count=exact）
+  let imageCount = range && range.includes('/') ? Number(range.split('/')[1]) : NaN
+  if (!Number.isFinite(imageCount)) {
+    // 兜底：全量拉 id 计数（PostgREST max-rows 内）
+    const allRes = await fetch(
+      `${c.env.SUPABASE_URL}/rest/v1/images?asset_language_id=in.(${langIds.join(',')})&status=eq.ready&select=id`,
+      { headers: svc(c.env) },
+    )
+    const all = allRes.ok ? ((await allRes.json()) as unknown[]) : []
+    imageCount = Array.isArray(all) ? all.length : 0
+  }
+  if (!Number.isFinite(imageCount) || imageCount < 1) {
+    // 无可下载的已发布图片 → not_available，绝不 0 成本放行
+    return c.json({ error: { code: 'not_available', message: 'No published images available for this asset' } }, 404)
+  }
+
+  const costRes = await readSettingNumber(c.env, 'package_download_cost_per_image')
   if (!costRes.ok) return c.json({ error: { code: costRes.code, message: costRes.message } }, 500)
+  const amount = Math.round(imageCount * costRes.value * 100) / 100
+  if (!(amount > 0)) {
+    return c.json({ error: { code: 'not_available', message: 'Package price unavailable' } }, 500)
+  }
   const ded = await deductCredits(
-    c.env, auth.userId, 'package_download', costRes.value, idemKey ?? null,
-    'download_source', sourceId, { provider: src.provider },
+    c.env, auth.userId, 'package_download', amount, idemKey ?? null,
+    'download_source', sourceId,
+    { provider: src.provider, asset_id: src.asset_id, image_count: imageCount, per_image_cost: costRes.value },
   )
   if (!ded.ok) {
     if (ded.code === 'insufficient_credits') {
@@ -2169,14 +2215,16 @@ const SETTING_KEYS = [
   'schedule_navigation_enabled',
   'single_image_download_cost',
   'zip_download_cost_per_image',
-  'package_download_cost',
+  'package_download_cost_per_image',
   'brand_text',
   'brand_title',
   'brand_logo_path',
 ] as const
 
 const BOOLEAN_KEYS = new Set(['registration_enabled', 'schedule_navigation_enabled'])
-const NUMBER_KEYS = new Set(['single_image_download_cost', 'zip_download_cost_per_image', 'package_download_cost'])
+// V1.4.1: package_download_cost_per_image（020）替代旧固定键 package_download_cost
+// （旧键按 D1 裁决保留 DB 行作回滚兼容，但代码零读写、移出 PATCH 名单）
+const NUMBER_KEYS = new Set(['single_image_download_cost', 'zip_download_cost_per_image', 'package_download_cost_per_image'])
 // V1.4 字符串 key：brand_text/brand_title 1..60；brand_logo_path 允许空串（移除 logo）且 ≤200
 const STRING_KEYS = new Set(['brand_text', 'brand_title', 'brand_logo_path'])
 const STRING_MAX: Record<string, number> = {
@@ -2233,8 +2281,9 @@ app.patch('/api/admin/settings', async (c) => {
       }
       patch[k] = v
     } else if (NUMBER_KEYS.has(k)) {
-      if (typeof v !== 'number' || !Number.isInteger(v) || v < 0 || v > 1000000) {
-        return c.json({ error: { code: 'bad_request', message: `setting ${k} must be a non-negative integer` } }, 400)
+      // V1.4.1: 放宽为非负数、最多两位小数（numeric(12,2)）——Package per-image 支持 0.5
+      if (typeof v !== 'number' || !Number.isFinite(v) || v < 0 || v > 1000000 || Math.round(v * 100) !== v * 100) {
+        return c.json({ error: { code: 'bad_request', message: `setting ${k} must be a non-negative number with up to 2 decimals` } }, 400)
       }
       patch[k] = v
     } else if (STRING_KEYS.has(k)) {

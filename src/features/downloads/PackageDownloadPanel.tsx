@@ -17,6 +17,9 @@ import { Spinner } from '@/components/spinner'
 /**
  * Package Download（网盘）—— 与当前语言完全解耦：
  * 只订阅 assetId，不接收 language state。
+ * V1.4.1（D2/D4）: 动态价格徽标 = imageCount × package_download_cost_per_image；
+ * imageCount 为整个 Asset 跨全部已发布语言 ready 图数（与 ?lang= 无关），
+ * 与服务端计费口径同源（published_assets.image_count）。
  * 规则：0 源隐藏 / 1 源直接跳转 / 2 源弹选择器。
  * URL 仅来自 RLS 过滤后的 DB 记录，且 window.open 前再过 isSafePackageUrl（二次防御）。
  */
@@ -28,12 +31,12 @@ function openExternal(url: string) {
   window.open(url, '_blank', 'noopener,noreferrer')
 }
 
-export function PackageDownloadPanel({ assetId }: { assetId: string }) {
+export function PackageDownloadPanel({ assetId, imageCount }: { assetId: string; imageCount: number }) {
   const { session } = useAuth()
   const { t } = useLocale()
   const [sources, setSources] = useState<DownloadSourceRow[] | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
-  const [cost, setCost] = useState<number | null>(null)
+  const [perImage, setPerImage] = useState<number | null>(null)
   const [unlimited, setUnlimited] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -50,10 +53,10 @@ export function PackageDownloadPanel({ assetId }: { assetId: string }) {
     })
     getSiteSettings()
       .then((st) => {
-        if (!cancelled) setCost(st.package_download_cost)
+        if (!cancelled) setPerImage(st.package_download_cost_per_image)
       })
       .catch(() => {
-        if (!cancelled) setCost(15)
+        if (!cancelled) setPerImage(0.5)
       })
     // V1.3.1 G6：无限积分用户成本标签显示 ♾
     fetchMyCredits()
@@ -66,7 +69,15 @@ export function PackageDownloadPanel({ assetId }: { assetId: string }) {
     }
   }, [assetId, session])
 
-  const costLabel = cost !== null ? (unlimited ? '♾' : t('credits.packageCost', { n: cost })) : null
+  // V1.4.1 D2: N images · X credits（普通）/ N images · ♾（无限）
+  const displayCost =
+    perImage !== null ? Math.round(imageCount * perImage * 100) / 100 : null
+  const costLabel =
+    displayCost !== null
+      ? unlimited
+        ? t('credits.packageCostUnlimited', { count: imageCount })
+        : t('credits.packageCost', { count: imageCount, n: displayCost })
+      : null
 
   const providerLabel = (provider: string) =>
     provider === 'quark' ? t('download.packageQuark') : provider === 'baidu' ? t('download.packageBaidu') : provider

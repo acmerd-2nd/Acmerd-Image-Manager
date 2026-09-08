@@ -404,7 +404,7 @@ export function AssetDetailPage() {
             <DownloadCloud className="h-4 w-4" />
             {t('download.packageTitle')}
           </div>
-          <PackageDownloadPanel assetId={asset.id} />
+          <PackageDownloadPanel assetId={asset.id} imageCount={asset.image_count} />
         </aside>
       </div>
 
