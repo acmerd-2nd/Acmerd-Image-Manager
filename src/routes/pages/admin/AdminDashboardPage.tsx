@@ -240,8 +240,8 @@ function PlatformControlsCard() {
 /** V1.4 站点品牌：导航/标题文字 + GitHub 图仓库 Logo（无需新端点：文字走 /api/admin/settings，Logo 走新端点） */
 function BrandingCard() {
   const { t } = useLocale()
-  const [brandText, setBrandText] = useState('ACMERD · 探知')
-  const [brandTitle, setBrandTitle] = useState('ACMERD · 探知')
+  const [brandText, setBrandText] = useState('AcmerdImage')
+  const [brandTitle, setBrandTitle] = useState('AcmerdImage')
   const [logoPath, setLogoPath] = useState('')
   const [busy, setBusy] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -253,8 +253,8 @@ function BrandingCard() {
   useEffect(() => {
     getSiteSettings()
       .then((s) => {
-        setBrandText(s.brand_text || 'ACMERD · 探知')
-        setBrandTitle(s.brand_title || 'ACMERD · 探知')
+        setBrandText(s.brand_text || 'AcmerdImage')
+        setBrandTitle(s.brand_title || 'AcmerdImage')
         setLogoPath(s.brand_logo_path || '')
       })
       .catch((e) => setError(e instanceof Error ? e.message : String(e)))

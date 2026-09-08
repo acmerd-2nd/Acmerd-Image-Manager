@@ -41,15 +41,15 @@ export const zh = {
     label: '切换界面语言',
   },
   home: {
-    eyebrow: 'ACMERD · 探知',
-    brand: '探知',
+    eyebrow: 'AcmerdImage',
+    brand: 'AcmerdImage',
     title: '图库',
     subtitle: '浏览视觉资源。',
     searchPlaceholder: '搜索资产…',
     emptyTitle: '暂无已发布资产',
     emptySubtitle: '图库为空，管理员可在后台创建第一个资产。',
     loadFailed: '加载失败',
-    footerTagline: 'ACMERD · 探知 — Research · Discover · Create',
+    footerTagline: 'AcmerdImage — Research · Discover · Create',
   },
   search: {
     title: '搜索',

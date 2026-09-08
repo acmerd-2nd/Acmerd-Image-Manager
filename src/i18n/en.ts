@@ -39,15 +39,15 @@ export const en: Dictionary = {
     label: 'Switch interface language',
   },
   home: {
-    eyebrow: 'ACMERD · 探知',
-    brand: '探知',
+    eyebrow: 'AcmerdImage',
+    brand: 'AcmerdImage',
     title: 'Image Library',
     subtitle: 'Browse visual resources.',
     searchPlaceholder: 'Search assets...',
     emptyTitle: 'No assets published yet',
     emptySubtitle: 'The library is empty. Admin can create the first asset in the console.',
     loadFailed: 'Failed to load',
-    footerTagline: 'ACMERD · 探知 — Research · Discover · Create',
+    footerTagline: 'AcmerdImage — Research · Discover · Create',
   },
   search: {
     title: 'Search',

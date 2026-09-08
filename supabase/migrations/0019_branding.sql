@@ -15,8 +15,8 @@
 
 -- ---------- 品牌设置（幂等种子；不覆盖生产已调整值） ----------
 insert into public.site_settings (key, value) values
-  ('brand_text',       '"ACMERD · 探知"'::jsonb),
-  ('brand_title',      '"ACMERD · 探知"'::jsonb),
+  ('brand_text',       '"AcmerdImage"'::jsonb),
+  ('brand_title',      '"AcmerdImage"'::jsonb),
   ('brand_logo_path',  '""'::jsonb)
 on conflict (key) do nothing;
 

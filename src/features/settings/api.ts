@@ -28,8 +28,8 @@ export async function getSiteSettings(): Promise<SiteSettings> {
     single_image_download_cost: Number(map.get('single_image_download_cost') ?? 1),
     zip_download_cost_per_image: Number(map.get('zip_download_cost_per_image') ?? 1),
     package_download_cost: Number(map.get('package_download_cost') ?? 15),
-    brand_text: typeof map.get('brand_text') === 'string' ? (map.get('brand_text') as string) : 'ACMERD · 探知',
-    brand_title: typeof map.get('brand_title') === 'string' ? (map.get('brand_title') as string) : 'ACMERD · 探知',
+    brand_text: typeof map.get('brand_text') === 'string' ? (map.get('brand_text') as string) : 'AcmerdImage',
+    brand_title: typeof map.get('brand_title') === 'string' ? (map.get('brand_title') as string) : 'AcmerdImage',
     brand_logo_path: typeof map.get('brand_logo_path') === 'string' ? (map.get('brand_logo_path') as string) : '',
   }
 }

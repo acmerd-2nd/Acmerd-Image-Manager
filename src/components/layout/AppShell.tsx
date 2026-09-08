@@ -17,7 +17,7 @@ export function AppShell() {
   const { t } = useLocale()
   const [scheduleEnabled, setScheduleEnabled] = useState(false)
   // V1.4 站点品牌（导航文字 + 浏览器标题 + Logo；读失败回落硬编码默认）
-  const [brandText, setBrandText] = useState('ACMERD · 探知')
+  const [brandText, setBrandText] = useState('AcmerdImage')
   const [brandLogoPath, setBrandLogoPath] = useState('')
 
   // V1.1 PC-3：排期导航显隐由 site_settings.schedule_navigation_enabled 控制（anon 可读）
@@ -28,9 +28,9 @@ export function AppShell() {
         if (cancelled) return
         setScheduleEnabled(s.schedule_navigation_enabled)
         // V1.4：品牌设置（缺省回落硬编码默认，符合产品态）
-        setBrandText(s.brand_text || 'ACMERD · 探知')
+        setBrandText(s.brand_text || 'AcmerdImage')
         setBrandLogoPath(s.brand_logo_path || '')
-        document.title = s.brand_title || 'ACMERD · 探知'
+        document.title = s.brand_title || 'AcmerdImage'
       })
       .catch(() => {
         /* 读失败按隐藏处理（默认 false 语义） */
