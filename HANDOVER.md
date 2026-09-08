@@ -73,8 +73,8 @@
    curl -s -o /dev/null -w "%{http_code}\n" https://image.acmerd.com/api/health   # 200
    npm run db:migrate            # 全部 skip（幂等）即 DB 状态正确
    ```
-5. **确认 DB 状态**：`supabase/migrations/` 有 **0001–0017**（V1.1/V1.2/V1.3.1 全部已 applied），`schema_migrations` 全记录。**不要在 Supabase Dashboard 手改生产库**——结构变更只许新增 `supabase/migrations/XXXX_*.sql` 后跑 `npm run db:migrate`。
-6. **确认 V1.2/V1.3/V1.3.1 现状**：均生产运行（ver `efb2c05d`，远端 main 同步）。待 Owner 决定项见「第六节」。**严禁在未获 Owner 裁决前实施任何新需求/新代码。**
+5. **确认 DB 状态**：`supabase/migrations/` 有 **0001–0018**（V1.1/V1.2/V1.3.1+跟进 全部已 applied），`schema_migrations` 全记录。**不要在 Supabase Dashboard 手改生产库**——结构变更只许新增 `supabase/migrations/XXXX_*.sql` 后跑 `npm run db:migrate`。
+6. **确认 V1.2/V1.3/V1.3.1 现状**：均生产运行（ver `ad5dfa69`，远端 main 同步）。待 Owner 决定项见「第六节」。**严禁在未获 Owner 裁决前实施任何新需求/新代码。**
 
 **关键红线（违反会被 Owner 打回）**：Service Role Key 只进 Worker Secret / 本地脚本，绝不进前端 bundle / Git / wrangler.toml；权限只靠 UI 隐藏无效，必须 RLS/服务端兜底；改设计先交 Change Proposal；两份中文规划文档 + `.workbuddy/` 不推公开仓库；**未提供证据前不得宣布 Gate PASS**；不扩大 Scope、不重构已完成 Phase。
 
@@ -88,7 +88,7 @@
 | Worker 端点 | V1.0–V1.3.1 全量保留。全部经 `authenticate()` |
 | Worker Secret | `SUPABASE_SERVICE_ROLE_KEY` 已 `wrangler secret put`；本地 `worker/.dev.vars` 同步 |
 | 管理员账号 | `1902768564@qq.com`（密码见 `.env` 的 `ADMIN_PASSWORD`），角色 admin |
-| 冻结基线 | 双层可见性（Asset+Language published，0007 后语义经 NO-DRIFT 证明未漂移）、多语言模型、三套下载解耦、ZIP ≤30/≤100MB/并发4、public bucket（残余风险已记录，见 D5/5a）、audit allowlist=43、last-admin 原子保护、disabled 门禁对偶（Worker 403 + RLS `is_admin` 含 `disabled=false`） |
+| 冻结基线 | 双层可见性（Asset+Language published，0007 后语义经 NO-DRIFT 证明未漂移）、多语言模型、三套下载解耦、ZIP ≤30/≤100MB/并发4、public bucket（残余风险已记录，见 D5/5a）、audit allowlist=44、last-admin 原子保护、disabled 门禁对偶（Worker 403 + RLS `is_admin` 含 `disabled=false`） |
 | 数据现状 | 生产库极小：1 asset（Ecosonique）/1 image（tu1.jpg, provider=github）/0 tags/0 collections/1 schedule_item（progress=not_started）+ **seed 用户 demo01–08@acmerd.com（user 角色，余额 0）+ admin**。admin 有 credit_accounts（0 余额）+ V1.3/V1.3.1 验证调分行（生产 RPC 回滚实测零残留）。大列表/分页/层级验收仍须在隔离库造数，不许拿生产小数据集充数 |
 
 ---
@@ -214,9 +214,9 @@ React 18 + TS + Vite + Tailwind + shadcn 风格 UI；Hono Worker + `[assets]` SP
 
 ---
 
-## 六、当前待办（2026-09-07 更新）
+## 六、当前待办（2026-09-08 更新）
 
-**已全部完成**：V1.0（Phase 0–10）；**V1.1 全链**（`docs/v1.1/01…13`）；**V1.2 全链**（`docs/v1.2/01…04`，含 D12 终裁「维持 raw」）；**V1.3 积分流水页**（`docs/v1.3/01`，C1–C5 全批 → 实施 → 部署 ver `85180f65`）。
+**已全部完成**：V1.0（Phase 0–10）；**V1.1 全链**（`docs/v1.1/01…13`）；**V1.2 全链**（`docs/v1.2/01…04`，含 D12 终裁「维持 raw」）；**V1.3 积分流水页**（`docs/v1.3/01`，C1–C5 全批 → 实施 → 部署 ver `85180f65`）；**V1.3.1 全链 + 走查跟进**（`docs/v1.3.1/01…03`：排期三状态 / 合集封面 UX / 积分修复+快捷+批量 / 苹果 Switch / 管理员备注；生产 ver `ad5dfa69`，迁移 0001–0018）。
 
 **当前开口（均 Owner 决定，Agent 不得擅自推进）**：
 1. **邮件闭环验证（Owner 明示暂缓）**：需 1 个真实可收信邮箱；SMTP（D10③）可选后补（内置 mailer 限速 ~2 封/小时）。
@@ -225,7 +225,7 @@ React 18 + TS + Vite + Tailwind + shadcn 风格 UI；Hono Worker + `[assets]` SP
 
 **技术债/留档事项（非阻塞）**：
 - 0009–0014 曾不在 `schema_migrations`（V1.1 经其他通道应用），2026-09-07 migrator 幂等重放补记，核验零副作用——后续勿重复执行非幂等变更。
-- 本机 DNS 间歇故障（WARP/IPv6-only）：`db.*.supabase.co` ENOTFOUND + pooler tenant 异常时，隔离冒烟/生产 DDL 须等待恢复；pooler 候选用户名必须 `postgres.<ref>`。
+- 本机 DNS 间歇故障（WARP/IPv6-only）：`db.*.supabase.co` ENOTFOUND（该主机**纯 IPv6**，本机 IPv6 TCP 出网可能被阻）+ pooler 全 region `XX000 tenant/user not found` 时，隔离冒烟/生产 DDL 须等待恢复（2026-09-08 实测约 1 小时后自愈）；**HTTPS 通道（Supabase REST/GoTrue）通常仍可用**，可作替代诊断（admin JWT 经 `POST /auth/v1/token?grant_type=password` 获取）。pooler 候选用户名必须 `postgres.<ref>`。
 - GoTrue 公开 signup 可被 anon key 直连绕过（PD-3 已批 A，记录在案）。
 - wrangler deploy routes 步 10000 报错 = cosmetic（token 缺 zone routes 读权限；消除需 Owner 在 CF 补权限）。
 
