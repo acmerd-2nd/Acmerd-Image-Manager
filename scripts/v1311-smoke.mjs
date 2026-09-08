@@ -115,15 +115,36 @@ try {
   // 用户桩：ADMIN1（admin 角色）+ U1/U2（普通）——触发器自动建 profiles/credit_accounts
   await q(`insert into auth.users (id, email) values
     ('${ADMIN1}','admin1@v1311.test'), ('${U1}','u1@v1311.test'), ('${U2}','u2@v1311.test')`)
-  await q(`insert into public.user_roles (user_id, role) values ('${ADMIN1}','admin')`)
+  // ADMIN1 升 admin（handle_new_user 触发器可能已建默认 role 行 → upsert）
+  await q(`insert into public.user_roles (user_id, role) values ('${ADMIN1}','admin')
+           on conflict (user_id) do update set role = 'admin'`)
 
   const asUser = async (uid, fn) => {
     await q('begin')
     try {
-      await q(`select set_config('request.jwt.claim.sub', $1, true), set_config('request.jwt.claim.role', 'authenticated', true)`, [uid])
+      await dbC.query(
+        `select set_config('request.jwt.claim.sub', $1, true), set_config('request.jwt.claim.role', 'authenticated', true)`,
+        [uid],
+      )
       await q('set local role authenticated')
       return await fn()
     } finally { await q('rollback') }
+  }
+
+  // 写路径专用：COMMIT 事务（审计断言需真实落库，同 0017 冒烟 T4a 教训）
+  const asUserCommit = async (uid, fn) => {
+    await q('begin')
+    await dbC.query(
+      `select set_config('request.jwt.claim.sub', $1, true), set_config('request.jwt.claim.role', 'authenticated', true)`,
+      [uid],
+    )
+    await q('set local role authenticated')
+    try {
+      return await fn()
+    } finally {
+      await q('commit')
+      await q('reset role')
+    }
   }
 
   // ---- T1 结构 ----
@@ -150,11 +171,11 @@ try {
   const seenU1 = await asUser(U1, () => q('select user_id from public.credit_accounts'))
   ok('T5b 普通用户仅见自己（1 行=U1）', seenU1.rows.length === 1 && seenU1.rows[0].user_id === U1)
 
-  // ---- T6 备注写路径 ----
-  await asUser(ADMIN1, () => q(`insert into public.user_admin_notes (user_id, notes) values ('${U1}', '第一批内测用户')`))
+  // ---- T6 备注写路径（commit 事务：审计断言需真实落库） ----
+  await asUserCommit(ADMIN1, () => q(`insert into public.user_admin_notes (user_id, notes) values ('${U1}', '第一批内测用户')`))
   const aud1 = (await q(`select actor_id, target_id, metadata->>'op' op from public.audit_logs where action='users.notes_updated' order by created_at desc limit 1`)).rows[0]
-  ok('T6a admin 写备注成功 + 审计落档', !!aud1 && aud1.target_id === U1 && aud1.op === 'INSERT' && aud1.actor_id === ADMIN1)
-  await asUser(ADMIN1, () => q(`insert into public.user_admin_notes (user_id, notes) values ('${U1}', '更新后的备注') on conflict (user_id) do update set notes = excluded.notes, updated_by = excluded.updated_by`))
+  ok('T6a admin 写备注成功 + 审计落档', !!aud1 && aud1.target_id === U1 && aud1.op === 'INSERT' && aud1.actor_id === ADMIN1, JSON.stringify(aud1 ?? null))
+  await asUserCommit(ADMIN1, () => q(`insert into public.user_admin_notes (user_id, notes) values ('${U1}', '更新后的备注') on conflict (user_id) do update set notes = excluded.notes, updated_by = excluded.updated_by`))
   const aud2 = (await q(`select metadata->>'op' op from public.audit_logs where action='users.notes_updated' order by created_at desc limit 1`)).rows[0]
   const readBack = (await q(`select notes from public.user_admin_notes where user_id='${U1}'`)).rows[0]
   ok('T6b upsert 更新生效 + 审计 UPDATE', aud2?.op === 'UPDATE' && readBack.notes === '更新后的备注')
