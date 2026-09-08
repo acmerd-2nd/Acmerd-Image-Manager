@@ -462,6 +462,11 @@ export const en: Dictionary = {
       batchConfirmTitle: 'Confirm batch credit adjustment?',
       batchConfirmBody: 'Will adjust {delta} credits for each of {n} users, with a ledger entry per user. All-or-nothing.',
       batchDone: 'Batch adjusted {delta} credits for {n} users',
+      notes: 'Notes',
+      notesTitle: 'Notes: {name}',
+      notesHint: 'Visible to admins only; the user cannot see it.',
+      notesPlaceholder: 'Write a note… (max 2000 chars)',
+      notesSaved: 'Note saved',
     },
     credits: {
       dialogTitle: 'Adjust credits: {name}',

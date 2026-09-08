@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/spinner'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
+import { Switch } from '@/components/ui/switch'
 
 /**
  * V1.3.1 G3：积分调整 Dialog（AdminUsersPage 内嵌）。
@@ -174,12 +175,15 @@ export function CreditsAdjustDialog({
           )}
         </div>
 
-        {/* Unlimited switch（免确认 + Toast） */}
+        {/* Unlimited switch（免确认 + Toast；不改 balance 既有 RPC 语义） */}
         <div className="mt-4 flex items-center justify-between border-t pt-4">
           <span className="text-sm font-medium">{t('admin.users.toggleUnlimited')}</span>
-          <Button size="sm" variant={unlimited ? 'default' : 'outline'} disabled={busy} onClick={() => toggleUnlimited(!unlimited)}>
-            {busy ? <Spinner className="h-4 w-4" /> : unlimited ? t('admin.platform.on') : t('admin.platform.off')}
-          </Button>
+          <Switch
+            checked={unlimited}
+            disabled={busy}
+            aria-label={t('admin.users.toggleUnlimited')}
+            onCheckedChange={(next) => toggleUnlimited(next)}
+          />
         </div>
 
         {err && <p className="mt-3 text-sm text-destructive">{err}</p>}

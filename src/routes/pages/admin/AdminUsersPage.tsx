@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
-import { RefreshCw, ChevronLeft, ChevronRight, MoreHorizontal } from 'lucide-react'
+import { RefreshCw, ChevronLeft, ChevronRight, MoreHorizontal, NotebookText } from 'lucide-react'
 import {
   batchAdjustCredits,
   changeUserRole,
   listAdminUsers,
   setUserDisabled,
+  updateUserCredits,
   type AdminUserSummary,
   type AdminUsersEnvelope,
 } from '@/features/admin/api'
@@ -16,8 +17,10 @@ import { Badge } from '@/components/ui/badge'
 import { Spinner } from '@/components/spinner'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { Input } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
 import { useToast } from '@/components/ToastProvider'
 import { CreditsAdjustDialog } from './CreditsAdjustDialog'
+import { UserNotesDialog } from './UserNotesDialog'
 
 const PAGE_SIZE = 20
 
@@ -50,9 +53,11 @@ export function AdminUsersPage() {
   const [confirmTarget, setConfirmTarget] = useState<AdminUserSummary | null>(null)
   // PC-4：credits 状态（envelope 无此字段，单独按页维护；key=userId）
   const [creditsMap, setCreditsMap] = useState<Map<string, { balance: number; unlimited: boolean }> | null>(null)
-  // V1.3.1：积分调整 Dialog / 行菜单 / 批量选择
+  // V1.3.1：积分调整 Dialog / 行菜单 / 批量选择 / 备注
   const [creditTarget, setCreditTarget] = useState<AdminUserSummary | null>(null)
+  const [notesTarget, setNotesTarget] = useState<AdminUserSummary | null>(null)
   const [menuFor, setMenuFor] = useState<string | null>(null)
+  const [togglingId, setTogglingId] = useState<string | null>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [batchDelta, setBatchDelta] = useState('')
   const [batchReason, setBatchReason] = useState('')
@@ -169,6 +174,21 @@ export function AdminUsersPage() {
       else next.delete(id)
       return next
     })
+  }
+
+  // V1.3.1 跟进（F1/F2）：列表列直接切换 Unlimited（苹果 Switch；写路径仍 Worker 独占）
+  const onToggleUnlimited = async (u: AdminUserSummary, next: boolean) => {
+    setTogglingId(u.id)
+    setError(null)
+    try {
+      await updateUserCredits(u.id, { unlimited: next, reason: 'admin_toggle_unlimited', operation: 'toggle_unlimited' })
+      toast.success(next ? t('admin.credits.toastUnlimitedOn') : t('admin.credits.toastUnlimitedOff'))
+      await reload(page)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+      toast.error(t('admin.credits.toastFailed'))
+    }
+    setTogglingId(null)
   }
 
   const pageUserIds = envelope?.users.map((u) => u.id) ?? []
@@ -338,9 +358,12 @@ export function AdminUsersPage() {
                         </span>
                       </td>
                       <td className="px-4 py-3">
-                        <Badge variant={credits?.unlimited ? 'default' : 'outline'}>
-                          {credits?.unlimited ? t('admin.platform.on') : t('admin.platform.off')}
-                        </Badge>
+                        <Switch
+                          checked={credits?.unlimited ?? false}
+                          disabled={!credits || togglingId === u.id}
+                          aria-label={`${t('admin.users.toggleUnlimited')} · ${displayNameOf(u)}`}
+                          onCheckedChange={(next) => onToggleUnlimited(u, next)}
+                        />
                       </td>
                       <td className="px-4 py-3 text-muted-foreground">{fmtDate(u.created_at)}</td>
                       <td className="px-4 py-3">
@@ -379,6 +402,17 @@ export function AdminUsersPage() {
                                 }}
                               >
                                 {t('admin.usersPage.adjust')}
+                              </button>
+                              <button
+                                type="button"
+                                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-muted"
+                                onClick={() => {
+                                  setMenuFor(null)
+                                  setNotesTarget(u)
+                                }}
+                              >
+                                <NotebookText className="h-4 w-4 text-muted-foreground" />
+                                {t('admin.usersPage.notes')}
                               </button>
                               {u.role === 'admin' ? (
                                 <button
@@ -455,6 +489,15 @@ export function AdminUsersPage() {
           unlimited={creditsMap?.get(creditTarget.id)?.unlimited ?? false}
           onClose={() => setCreditTarget(null)}
           onChanged={() => reload(page)}
+        />
+      )}
+
+      {/* V1.3.1 跟进（F3）：管理员备注 Dialog */}
+      {notesTarget && (
+        <UserNotesDialog
+          userId={notesTarget.id}
+          displayName={displayNameOf(notesTarget)}
+          onClose={() => setNotesTarget(null)}
         />
       )}
 

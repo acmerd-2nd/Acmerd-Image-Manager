@@ -464,6 +464,11 @@ export const zh = {
       batchConfirmTitle: '确认批量调整积分？',
       batchConfirmBody: '将为 {n} 名用户每人调整 {delta} 积分，并逐人写入积分流水。整批成功或整批失败。',
       batchDone: '已为 {n} 名用户批量调整积分 {delta}',
+      notes: '备注',
+      notesTitle: '备注：{name}',
+      notesHint: '此备注仅管理员可见，用户不可见。',
+      notesPlaceholder: '填写备注…（不超过 2000 字）',
+      notesSaved: '备注已保存',
     },
     credits: {
       dialogTitle: '调整积分：{name}',
