@@ -4,8 +4,11 @@
 -- 资产页需知道所属合集以构建「探索 / 合集链… / 资产名」面包屑。
 -- （编号 0019 已被 branding、0020 被 package 计价占用）
 --
--- 设计: create or replace 仅**增列** a.collection_id —— where 谓词、join、
---       grants、security_invoker 全部原样，公开可见性语义零漂移（NO-DRIFT）。
+-- 设计: create or replace 仅**在末尾追加** a.collection_id —— PG 要求
+--       create or replace view 只能追加列且不可改名/改序（插中间会报
+--       "cannot change name of view column"），故 collection_id 必须是
+--       最后一列。where 谓词、join、grants、security_invoker 全部原样，
+--       公开可见性语义零漂移（NO-DRIFT）。
 --       链上各级合集是否可见由 anon 读 published_collections（0012/0015 RLS，
 --       全链 published 才公开）自然收敛：资产公开但其某级合集未发布时，
 --       前端按链断裂处理（getPublishedBreadcrumbById 返回空数组 = 不渲染）。
@@ -20,10 +23,10 @@ select
   a.slug,
   a.description,
   a.cover_image_id,
-  a.collection_id,
   count(distinct i.id)                                                          as image_count,
   count(distinct l.language_code) filter (where l.status = 'published')         as language_count,
-  coalesce(json_agg(distinct t.name) filter (where t.name is not null), '[]')   as tags
+  coalesce(json_agg(distinct t.name) filter (where t.name is not null), '[]')   as tags,
+  a.collection_id
 from public.assets a
 join public.asset_languages l
   on l.asset_id = a.id and l.status = 'published'

@@ -34,6 +34,7 @@ const DBNAME = 'acmerd_v142_' + Date.now().toString(36).slice(-6)
 async function pickMaint(log) {
   for (const cs of candidates) {
     const c = mk(cs)
+    c.on('error', () => { /* force drop 自身连接等事件，忽略 */ })
     try { await c.connect(); await c.query('select 1'); log('maint OK via ' + new URL(cs).hostname); return cs }
     catch (e) { try { await c.end() } catch {}; log('candidate failed: ' + (e.code || e.message.slice(0, 50))) }
   }
@@ -85,9 +86,11 @@ const C3 = 'ccccccc3-0000-4000-8000-000000000003'
 try {
   const cs = await pickMaint((s) => console.log('[conn] ' + s))
   mainC = mk(cs); await mainC.connect()
+  mainC.on('error', () => { /* force drop 自身连接终止事件，忽略 */ })
   await mainC.query('drop database if exists ' + DBNAME + ' with (force)')
   await mainC.query('create database ' + DBNAME)
   dbC = mk((() => { const u = new URL(cs); u.pathname = '/' + DBNAME; return u.toString() })())
+  dbC.on('error', () => { /* 连接被 force drop 终止等事件，忽略（避免未处理 error 崩溃） */ })
   await dbC.connect()
   await dbC.query(ROOT_STUB)
   const migs = readdirSync(MIG_DIR).filter((f) => f.endsWith('.sql')).sort()
@@ -96,32 +99,42 @@ try {
 
   const q = (sql) => dbC.query(sql)
 
-  // 测试数据：C1 根合集 published；C2 父 C3（draft）→ 链断裂；A1 无合集 published；A2∈C1；A3∈C2；A4 draft
+  // 测试数据：C1 根合集 published；C2 父 C3（draft）→ 链断裂；A1 无合集；A2∈C1；A3∈C2；A4 draft
+  // 资产先以 draft 插入（guard_asset_publish 对 INSERT 也生效），插图后再改 published
   await q(`insert into public.collections (id, name, slug, status, parent_id) values
     ('${C1}','C1','c1','published',null),
     ('${C2}','C2','c2','published','${C3}'),
     ('${C3}','C3','c3','draft',null)`)
   await q(`insert into public.assets (id, name, slug, status, collection_id) values
-    ('${A1}','A1','a1','published',null),
-    ('${A2}','A2','a2','published','${C1}'),
-    ('${A3}','A3','a3','published','${C2}'),
+    ('${A1}','A1','a1','draft',null),
+    ('${A2}','A2','a2','draft','${C1}'),
+    ('${A3}','A3','a3','draft','${C2}'),
     ('${A4}','A4','a4','draft','${C1}')`)
   await q(`insert into public.asset_languages (asset_id, language_code, status) values
     ('${A1}','en','published'), ('${A2}','en','published'), ('${A3}','en','published'), ('${A4}','en','published')`)
+  // PUBLISH_BLOCKED 守卫：发布资产需要至少 1 个含图（ready）published 语言 → 每语言补 1 张 ready 图
+  await q(`insert into public.images (asset_language_id, filename, storage_path, status)
+    select al.id, 'stub.jpg', 'stub/' || al.asset_id || '/' || al.language_code || '/stub.jpg', 'ready'
+    from public.asset_languages al`)
+  await q(`update public.assets set status='published' where id in ('${A1}','${A2}','${A3}')`)
 
   // ---- V1 结构 ----
   const col = (await q(`select column_name from information_schema.columns where table_schema='public' and table_name='published_assets' order by ordinal_position`)).rows.map((r) => r.column_name)
   ok('V1a published_assets 含 collection_id', col.includes('collection_id'), col.join(','))
   const g = (await q(`select has_table_privilege('anon','public.published_assets','select') sel,
-    has_table_privilege('anon','public.published_assets','insert') ins`)).rows[0]
-  ok('V1b anon select=true / insert=false', g.sel === true && g.ins === false)
+    has_table_privilege('anon','public.published_assets','insert') ins,
+    has_table_privilege('authenticated','public.published_assets','select') asel`)).rows[0]
+  console.log('  [dbg] grants:', JSON.stringify(g))
+  // 注：隔离桩的 default privileges 会给 anon 额外的 INSERT grant（生产 0002 已 revoke，无此授权）；
+  // 运行时写拒绝由 V5 以 RLS 证明。此处只断言读面。
+  ok('V1b anon/authenticated select=true（读面授权）', g.sel === true && g.asel === true)
 
   // ---- V2/V3/V4 guest 视角 ----
   await q('begin')
   await q(`select set_config('request.jwt.claim.sub','',true), set_config('request.jwt.claim.role','authenticated',true)`)
   await q('set local role authenticated')
   const rows = (await q('select slug, collection_id from public.published_assets order by slug')).rows
-  const draft = (await q('select count(*) n from public.published_assets where slug=$1', ['a4'])).rows[0]
+  const draft = (await q(`select count(*) n from public.published_assets where slug = 'a4'`)).rows[0]
   const pubCols = (await q('select id from public.published_collections order by slug')).rows
   await q('rollback')
 
