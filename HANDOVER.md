@@ -1,9 +1,9 @@
 # 🔄 HANDOVER — ACMERD Image Manager 交接文档
 
-> **最后更新**: 2026-09-08（**V1.4.1 Package 动态计价 CLOSED**：生产 Worker ver `1d0c454b-…`，0020 已应用，生产价格矩阵验证 **23/23 PASS**；前序同日：V1.4 品牌 CLOSED + 全站 rebrand 探知→AcmerdImage CLOSED，均已 push）
+> **最后更新**: 2026-09-09（**V1.4.2 资产详情页面包屑 CLOSED**：0021 视图增列 collection_id，Worker ver `6f4e43ad`，冒烟 8/8 + 生产 UI 走查绿；前序：V1.4 品牌 + rebrand + V1.4.1 Package 动态计价 全 CLOSED）
 > **当前状态**: ✅ **V1.0/V1.1 冻结基线未破坏** · 🟢 V1.2/V1.3/V1.3.1 全 CLOSED · 🟢 V1.4 站点品牌 CLOSED（生产验证 11/11）· 🟢 全站 rebrand（探知→AcmerdImage，commit `bf7f2e6` 已推）· 🟢 **V1.4.1 Package 动态计价 CLOSED**（D1–D4 全批；Single=1/ZIP=1每图/**Package=0.5每图**；金额=整个Asset已发布ready图数×每图成本，服务端唯一权威）
-> **线上**: https://image.acmerd.com 运行中（`/api/health` 200；迁移 **0001–0020** 全 applied——0020 为 KV 种子级）
-> **Truth Source**: 远端 main 与本地一致（`bf7f2e6…`，git ls-remote 复核）；V1.4.1 收口 = `docs/v1.4.1/02`（**本地 commit 待 Owner 授权 push**）
+> **线上**: https://image.acmerd.com 运行中（`/api/health` 200；迁移 **0001–0021** 全 applied）
+> **Truth Source**: 远端 main 与本地一致（`a957b2f`+docs）；V1.4.2 证据 = `docs/v1.4.2/01`（设计注记+验证结果单文档）
 > **V1.2 证据链（`docs/v1.2/01…04`，全链 CLOSED）**: 01 Design Gate（D1–D12 Owner 全批）→ 02 CDN 评估（jsDelivr 不可行；Owner 终裁维持 raw）→ 03 部署记录 → 04 收口报告
 > **V1.3 证据链（`docs/v1.3/01`）**: Change Proposal（C1–C5 Owner 全批）→ §9 执行记录回填（CLOSED）
 > **V1.3.1 证据链（`docs/v1.3.1/01…03`，全链 CLOSED）**: 01 Design Gate（G1–G6 Owner「全按建议」批；含 BUG-B 证伪更正）→ 02 收口报告（冒烟 16/16 + 生产结构 8/8 + RPC 回滚实测零残留）→ 03 走查跟进（0018 冒烟 13/13 + UI 走查）

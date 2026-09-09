@@ -27,3 +27,15 @@
 
 - 隔离库冒烟 `scripts/v142-asset-breadcrumb-smoke.mjs`：视图列/grants、guest 可见性零漂移（draft 不可见）、collection_id 取值、链断裂语义、anon 禁写
 - typecheck + build；生产部署（单独授权）后：UI 走查资产页面包屑 + 未发布链不渲染
+
+## 验证结果（2026-09-09）— **CLOSED**
+
+| 层 | 结果 |
+| --- | --- |
+| 隔离冒烟 | **8/8 PASS**（视图列、guest 读授权、可见性零漂移、collection_id 取值、链断裂语义、anon 写拒绝）。期间冒烟抓出 0021 初版真 Bug：`create or replace view` 不允许把新列插在中间（"cannot change name of view column"）→ 修为**末尾追加**；测试数据另需绕过 `guard_asset_publish`（先 draft 插入 + 补 ready 图后再发布） |
+| typecheck/build | 绿（bundle `index-ClhKmdK2.js`） |
+| 生产 | 0021 applied（连同补记 0020）；Worker ver **`6f4e43ad`**；REST 实证 `published_assets` 返回 `collection_id`（ED15W=db80b6a5…，其余 null） |
+| 生产 UI 走查（浏览器） | `/asset/ecosonique-15w`：标题上方渲染 **探索 / ECO / Ecosonique ED15W**，链接 `["/", "/collection/eco"]` 可点击；无合集资产 `/asset/ecosonique-ed60w` 正确不渲染页内面包屑（全局「探索 / 资产名」兜底） |
+| push | `e75e5a6..a957b2f`（含 dd4fcb5 实装 + a957b2f 冒烟修正） |
+
+**结论**：功能 CLOSED。后续任何 `published_assets` 列变更须遵守 PG 限制（只能末尾追加列）。
