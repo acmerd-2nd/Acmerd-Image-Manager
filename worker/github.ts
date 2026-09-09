@@ -291,6 +291,330 @@ export function githubRawUrl(cfg: GithubConfig, sourcePath: string): string {
   return `https://raw.githubusercontent.com/${cfg.owner}/${cfg.repo}/${cfg.branch}/${sourcePath}`
 }
 
+// ---------------------------------------------------------------------------
+// V1.5 B1 — Git Data API 批量通道（360 序列专用；普通图继续走 Contents API）
+// 设计依据: docs/v1.5/02-design-gate.md §G3（Owner 批准方案 B）:
+//   blobs 内容寻址幂等（同内容同 sha）→ 单 tree（base_tree 重定基）→ 单 commit
+//   → ref 更新；冲突 → 以新 head 重建重试 ≤2。N 帧序列 = N+4 请求 / 1 commit。
+// ---------------------------------------------------------------------------
+
+/** 当前分支 head commit sha（树/提交的基点） */
+export async function ghGetHeadCommit(cfg: GithubConfig, budget?: SubrequestBudget): Promise<string> {
+  const b = budget ?? new SubrequestBudget(8)
+  const url = `${API}/repos/${cfg.owner}/${cfg.repo}/git/ref/heads/${cfg.branch}`
+  let res: Response
+  try {
+    res = await ghFetch(cfg, url, { method: 'GET', headers: { Accept: 'application/vnd.github+json' } }, b)
+  } catch (e) {
+    throw new GithubError('GITHUB_NETWORK', `ref GET failed: ${String(e)}`)
+  }
+  if (res.status === 403 && res.headers.get('x-ratelimit-remaining') === '0') {
+    throw new GithubError('GITHUB_RATE_LIMITED', 'GitHub rate limit exhausted')
+  }
+  if (res.status === 401) throw new GithubError('GITHUB_AUTH_FAILED', 'GitHub token rejected')
+  if (!res.ok) throw new GithubError('GITHUB_UNEXPECTED', `ref GET status ${res.status}`)
+  const body = (await res.json()) as { object?: { sha?: string } }
+  if (!body.object?.sha) throw new GithubError('GITHUB_UNEXPECTED', 'ref GET missing object sha')
+  return body.object.sha
+}
+
+/**
+ * 上传单个 blob（幂等：同内容 GitHub 返回同 sha）。
+ * 校验响应 sha === 本地预计算 sha（H3：与 ghPutFile 同级的内容一致性要求）。
+ */
+export async function ghPutBlob(
+  cfg: GithubConfig,
+  bytes: Uint8Array,
+  expectedSha: string,
+  budget?: SubrequestBudget,
+): Promise<void> {
+  const b = budget ?? new SubrequestBudget(8)
+  const url = `${API}/repos/${cfg.owner}/${cfg.repo}/git/blobs`
+  let res: Response
+  try {
+    res = await ghFetch(
+      cfg,
+      url,
+      {
+        method: 'POST',
+        headers: { Accept: 'application/vnd.github+json' },
+        body: JSON.stringify({ content: bytesToBase64(bytes), encoding: 'base64' }),
+      },
+      b,
+    )
+  } catch (e) {
+    throw new GithubError('GITHUB_NETWORK', `blob POST failed: ${String(e)}`)
+  }
+  if (res.status === 403 && res.headers.get('x-ratelimit-remaining') === '0') {
+    throw new GithubError('GITHUB_RATE_LIMITED', 'GitHub rate limit exhausted')
+  }
+  if (res.status === 401) throw new GithubError('GITHUB_AUTH_FAILED', 'GitHub token rejected')
+  if (!res.ok) {
+    if (res.status >= 500 && !budget) {
+      // 独立调用（非批内）时按重试矩阵退避重试 ≤3
+      await sleep(500)
+      return ghPutBlob(cfg, bytes, expectedSha, b)
+    }
+    throw new GithubError('GITHUB_UNEXPECTED', `blob POST status ${res.status}`)
+  }
+  const body = (await res.json()) as { sha?: string }
+  if (body.sha !== expectedSha) {
+    throw new GithubError('GITHUB_PATH_CONFLICT', `blob sha mismatch: got ${body.sha}, expected ${expectedSha}`)
+  }
+}
+
+export interface TreeEntry {
+  path: string
+  sha: string
+}
+
+/**
+ * 以 head 为基提交一棵树并更新分支（一次 commit）。
+ * - base_tree = head commit 的 tree（冲突时调用方重取 head 重试 ≤2）
+ * - 重名路径覆盖 base_tree 既有条目（新建/更新统一）；删除走 ghRemoveDir。
+ */
+export async function ghCommitTree(
+  cfg: GithubConfig,
+  headCommit: string,
+  entries: TreeEntry[],
+  message: string,
+  budget?: SubrequestBudget,
+): Promise<{ commitSha: string }> {
+  const b = budget ?? new SubrequestBudget(8)
+  // [1] head commit → tree sha
+  let res: Response
+  try {
+    res = await ghFetch(cfg, `${API}/repos/${cfg.owner}/${cfg.repo}/git/commits/${headCommit}`, { method: 'GET', headers: { Accept: 'application/vnd.github+json' } }, b)
+  } catch (e) {
+    throw new GithubError('GITHUB_NETWORK', `commit GET failed: ${String(e)}`)
+  }
+  if (!res.ok) throw new GithubError('GITHUB_UNEXPECTED', `commit GET status ${res.status}`)
+  const commitBody = (await res.json()) as { tree?: { sha?: string } }
+  const baseTree = commitBody.tree?.sha
+  if (!baseTree) throw new GithubError('GITHUB_UNEXPECTED', 'commit GET missing tree sha')
+
+  // [2] 建 tree（base_tree 重定基；嵌套路径自动展开）
+  let treeRes: Response
+  try {
+    treeRes = await ghFetch(
+      cfg,
+      `${API}/repos/${cfg.owner}/${cfg.repo}/git/trees`,
+      {
+        method: 'POST',
+        headers: { Accept: 'application/vnd.github+json' },
+        body: JSON.stringify({
+          base_tree: baseTree,
+          tree: entries.map((e) => ({ path: e.path, mode: '100644', type: 'blob', sha: e.sha })),
+        }),
+      },
+      b,
+    )
+  } catch (e) {
+    throw new GithubError('GITHUB_NETWORK', `tree POST failed: ${String(e)}`)
+  }
+  if (treeRes.status === 403 && treeRes.headers.get('x-ratelimit-remaining') === '0') {
+    throw new GithubError('GITHUB_RATE_LIMITED', 'GitHub rate limit exhausted')
+  }
+  if (treeRes.status === 401) throw new GithubError('GITHUB_AUTH_FAILED', 'GitHub token rejected')
+  if (!treeRes.ok) throw new GithubError('GITHUB_UNEXPECTED', `tree POST status ${treeRes.status}`)
+  const treeBody = (await treeRes.json()) as { sha?: string }
+  if (!treeBody.sha) throw new GithubError('GITHUB_UNEXPECTED', 'tree POST missing sha')
+
+  // [3] commit
+  let commitRes: Response
+  try {
+    commitRes = await ghFetch(
+      cfg,
+      `${API}/repos/${cfg.owner}/${cfg.repo}/git/commits`,
+      {
+        method: 'POST',
+        headers: { Accept: 'application/vnd.github+json' },
+        body: JSON.stringify({ message, tree: treeBody.sha, parents: [headCommit] }),
+      },
+      b,
+    )
+  } catch (e) {
+    throw new GithubError('GITHUB_NETWORK', `commit POST failed: ${String(e)}`)
+  }
+  if (!commitRes.ok) throw new GithubError('GITHUB_UNEXPECTED', `commit POST status ${commitRes.status}`)
+  const newCommit = (await commitRes.json()) as { sha?: string }
+  if (!newCommit.sha) throw new GithubError('GITHUB_UNEXPECTED', 'commit POST missing sha')
+
+  // [4] ref 更新（force=false；前移冲突由调用方重取 head 重试）
+  let refRes: Response
+  try {
+    refRes = await ghFetch(
+      cfg,
+      `${API}/repos/${cfg.owner}/${cfg.repo}/git/refs/heads/${cfg.branch}`,
+      {
+        method: 'PATCH',
+        headers: { Accept: 'application/vnd.github+json' },
+        body: JSON.stringify({ sha: newCommit.sha, force: false }),
+      },
+      b,
+    )
+  } catch (e) {
+    throw new GithubError('GITHUB_NETWORK', `ref PATCH failed: ${String(e)}`)
+  }
+  if (refRes.status === 409 || refRes.status === 422) {
+    throw new GithubError('GITHUB_PATH_CONFLICT', `ref update conflict: ${refRes.status}`)
+  }
+  if (!refRes.ok) throw new GithubError('GITHUB_UNEXPECTED', `ref PATCH status ${refRes.status}`)
+  return { commitSha: newCommit.sha }
+}
+
+/** 带冲突重试的完整提交（Gate §G3：ref 冲突 → 重取 head 重建 ≤2） */
+export async function withTreeCommitRetry(
+  cfg: GithubConfig,
+  entries: TreeEntry[],
+  message: string,
+): Promise<{ commitSha: string }> {
+  let lastErr: unknown
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const b = new SubrequestBudget(8 + entries.length)
+    try {
+      const head = await ghGetHeadCommit(cfg, b)
+      return await ghCommitTree(cfg, head, entries, message, b)
+    } catch (e) {
+      lastErr = e
+      if (e instanceof GithubError && e.code === 'GITHUB_PATH_CONFLICT' && attempt < 2) {
+        await sleep(500 * (attempt + 1))
+        continue
+      }
+      throw e
+    }
+  }
+  throw lastErr
+}
+
+/** 删除型 tree 提交（sha:null 删除条目；相对 base_tree 删除任意嵌套路径） */
+async function ghCommitTreeDeletes(
+  cfg: GithubConfig,
+  headCommit: string,
+  deletePaths: string[],
+  message: string,
+  b: SubrequestBudget,
+): Promise<string> {
+  // [1] head commit → tree sha
+  let res: Response
+  try {
+    res = await ghFetch(cfg, `${API}/repos/${cfg.owner}/${cfg.repo}/git/commits/${headCommit}`, { method: 'GET', headers: { Accept: 'application/vnd.github+json' } }, b)
+  } catch (e) {
+    throw new GithubError('GITHUB_NETWORK', `commit GET failed: ${String(e)}`)
+  }
+  if (!res.ok) throw new GithubError('GITHUB_UNEXPECTED', `commit GET status ${res.status}`)
+  const commitBody = (await res.json()) as { tree?: { sha?: string } }
+  const baseTree = commitBody.tree?.sha
+  if (!baseTree) throw new GithubError('GITHUB_UNEXPECTED', 'commit GET missing tree sha')
+
+  // [2] sha:null 删除条目
+  let treeRes: Response
+  try {
+    treeRes = await ghFetch(
+      cfg,
+      `${API}/repos/${cfg.owner}/${cfg.repo}/git/trees`,
+      {
+        method: 'POST',
+        headers: { Accept: 'application/vnd.github+json' },
+        body: JSON.stringify({
+          base_tree: baseTree,
+          tree: deletePaths.map((p) => ({ path: p, mode: '100644', type: 'blob', sha: null })),
+        }),
+      },
+      b,
+    )
+  } catch (e) {
+    throw new GithubError('GITHUB_NETWORK', `tree POST (delete) failed: ${String(e)}`)
+  }
+  if (!treeRes.ok) throw new GithubError('GITHUB_UNEXPECTED', `tree POST (delete) status ${treeRes.status}`)
+  const treeBody = (await treeRes.json()) as { sha?: string }
+  if (!treeBody.sha) throw new GithubError('GITHUB_UNEXPECTED', 'tree POST (delete) missing sha')
+
+  // [3] commit
+  let commitRes: Response
+  try {
+    commitRes = await ghFetch(
+      cfg,
+      `${API}/repos/${cfg.owner}/${cfg.repo}/git/commits`,
+      {
+        method: 'POST',
+        headers: { Accept: 'application/vnd.github+json' },
+        body: JSON.stringify({ message, tree: treeBody.sha, parents: [headCommit] }),
+      },
+      b,
+    )
+  } catch (e) {
+    throw new GithubError('GITHUB_NETWORK', `commit POST (delete) failed: ${String(e)}`)
+  }
+  if (!commitRes.ok) throw new GithubError('GITHUB_UNEXPECTED', `commit POST (delete) status ${commitRes.status}`)
+  const newCommit = (await commitRes.json()) as { sha?: string }
+  if (!newCommit.sha) throw new GithubError('GITHUB_UNEXPECTED', 'commit POST (delete) missing sha')
+
+  // [4] ref
+  let refRes: Response
+  try {
+    refRes = await ghFetch(
+      cfg,
+      `${API}/repos/${cfg.owner}/${cfg.repo}/git/refs/heads/${cfg.branch}`,
+      { method: 'PATCH', headers: { Accept: 'application/vnd.github+json' }, body: JSON.stringify({ sha: newCommit.sha, force: false }) },
+      b,
+    )
+  } catch (e) {
+    throw new GithubError('GITHUB_NETWORK', `ref PATCH (delete) failed: ${String(e)}`)
+  }
+  if (refRes.status === 409 || refRes.status === 422) {
+    throw new GithubError('GITHUB_PATH_CONFLICT', `ref update conflict: ${refRes.status}`)
+  }
+  if (!refRes.ok) throw new GithubError('GITHUB_UNEXPECTED', `ref PATCH (delete) status ${refRes.status}`)
+  return newCommit.sha
+}
+
+/**
+ * 删除整个目录（一 tree + 一 commit；Gate §G3 回滚语义）。
+ * 目录清单来自 Contents API GET（≤1000 条足够：单序列 ≤360 帧）。
+ * 404 = 目标态已达 → 成功（幂等，同 ghDeleteFile）。
+ */
+export async function ghRemoveDir(
+  cfg: GithubConfig,
+  dirPath: string,
+  message: string,
+): Promise<{ removed: number; commitSha: string | null }> {
+  const b = new SubrequestBudget(16)
+  let listing: Array<{ path: string }> = []
+  {
+    let res: Response
+    try {
+      res = await ghFetch(cfg, `${API}/repos/${cfg.owner}/${cfg.repo}/contents/${dirPath}?ref=${cfg.branch}`, { method: 'GET', headers: { Accept: 'application/vnd.github+json' } }, b)
+    } catch (e) {
+      throw new GithubError('GITHUB_NETWORK', `contents dir GET failed: ${String(e)}`)
+    }
+    if (res.status === 404) return { removed: 0, commitSha: null }
+    if (res.status === 403 && res.headers.get('x-ratelimit-remaining') === '0') {
+      throw new GithubError('GITHUB_RATE_LIMITED', 'GitHub rate limit exhausted')
+    }
+    if (res.status === 401) throw new GithubError('GITHUB_AUTH_FAILED', 'GitHub token rejected')
+    if (!res.ok) throw new GithubError('GITHUB_UNEXPECTED', `contents dir GET status ${res.status}`)
+    const body = (await res.json()) as Array<{ path?: string }>
+    listing = (body ?? []).filter((f): f is { path: string } => !!f.path)
+  }
+  if (listing.length === 0) return { removed: 0, commitSha: null }
+  const head = await ghGetHeadCommit(cfg, b)
+  let commitSha: string | null = null
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      commitSha = await ghCommitTreeDeletes(cfg, head, listing.map((f) => f.path), message, b)
+      break
+    } catch (e) {
+      if (e instanceof GithubError && e.code === 'GITHUB_PATH_CONFLICT' && attempt < 2) {
+        await sleep(500 * (attempt + 1))
+        continue
+      }
+      throw e
+    }
+  }
+  return { removed: listing.length, commitSha }
+}
+
 function bytesToBase64(bytes: Uint8Array): string {
   let bin = ''
   const CHUNK = 0x8000

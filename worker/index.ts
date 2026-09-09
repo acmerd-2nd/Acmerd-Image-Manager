@@ -6,10 +6,14 @@ import {
   ghConfig,
   ghDeleteFile,
   ghGetMeta,
+  ghPutBlob,
   ghPutFile,
+  ghRemoveDir,
   githubRawUrl,
   releaseLease,
   withNetworkRetry,
+  withTreeCommitRetry,
+  type TreeEntry,
 } from './github'
 
 export interface Env {
@@ -1067,6 +1071,377 @@ app.post('/api/admin/images/github-delete', async (c) => {
 })
 
 // ===========================================================================
+// ===========================================================================
+// V1.5 B1 — 360° Sequence 管理（Gate docs/v1.5/02 §G1–G3，Owner 批准方案 B）
+//   Git Data API：blob 幂等（内容寻址）+ 单 tree/commit（withTreeCommitRetry 冲突重试 ≤2）
+//   H3：blob sha 本地预计算 = DB 登记 = GitHub 响应校验；complete 抽验首帧；
+//       崩溃窗口交 360 sweeper（同 images 语义）
+//   路径冻结: assets/{asset-id}/360/{sequence-id}/{frame-index 4位}.png（禁 slug）
+//   审计: 360.sequence.created / activated / deleted / 360.upload.failed（allowlist 48）
+// ===========================================================================
+
+const FRAME_MIME_SET = new Set(Object.keys(GITHUB_MIME_EXT))
+const FRAME_MAX_SIZE = 5 * 1024 * 1024
+const FRAME_BATCH_MAX = 24 // Gate D3：每请求 ≤24 帧 / ≤50MB（请求体限 100MB 内）
+const SEQ_LEASE_TTL = 180
+
+interface SeqRowSvc {
+  id: string
+  asset_id: string
+  frame_count: number
+  status: string
+  source_sha: string | null
+}
+interface FrameRowSvc {
+  id: string
+  frame_index: number
+  source_path: string
+  blob_sha: string | null
+  status: string
+}
+
+function frameSourcePath(assetId: string, seqId: string, index: number): string {
+  return `assets/${assetId}/360/${seqId}/${String(index).padStart(4, '0')}.png`
+}
+
+async function fetchSequence(env: Env, headers: Record<string, string>, seqId: string): Promise<SeqRowSvc | null> {
+  const res = await fetch(`${env.SUPABASE_URL}/rest/v1/asset_360_sequences?id=eq.${seqId}&select=id,asset_id,frame_count,status,source_sha`, { headers })
+  if (!res.ok) throw new Error(`sequence fetch failed: ${res.status}`)
+  const rows = (await res.json()) as SeqRowSvc[]
+  return rows[0] ?? null
+}
+
+async function fetchFrames(env: Env, headers: Record<string, string>, seqId: string): Promise<FrameRowSvc[]> {
+  const res = await fetch(`${env.SUPABASE_URL}/rest/v1/asset_360_frames?sequence_id=eq.${seqId}&select=id,frame_index,source_path,blob_sha,status&order=frame_index.asc`, { headers })
+  if (!res.ok) throw new Error(`frames fetch failed: ${res.status}`)
+  return (await res.json()) as FrameRowSvc[]
+}
+
+async function patchSequence(env: Env, headers: Record<string, string>, seqId: string, patch: Record<string, unknown>): Promise<void> {
+  const res = await fetch(`${env.SUPABASE_URL}/rest/v1/asset_360_sequences?id=eq.${seqId}`, { method: 'PATCH', headers, body: JSON.stringify(patch) })
+  if (!res.ok) throw new Error(`sequence patch failed: ${res.status}`)
+}
+
+async function patchFrame(env: Env, headers: Record<string, string>, frameId: string, patch: Record<string, unknown>): Promise<void> {
+  const res = await fetch(`${env.SUPABASE_URL}/rest/v1/asset_360_frames?id=eq.${frameId}`, { method: 'PATCH', headers, body: JSON.stringify(patch) })
+  if (!res.ok) throw new Error(`frame patch failed: ${res.status}`)
+}
+
+/**
+ * complete 核心（端点与 sweeper 共用）：
+ * 校验帧齐全 → 单 tree/commit → 首帧 meta 抽验（H3）→ frames ready + sequence ready。
+ * 已 ready → 幂等返回。任何失败 → sequence failed + 审计（调用方决定响应）。
+ */
+async function completeSequenceInternal(env: Env, headers: Record<string, string>, cfg: NonNullable<ReturnType<typeof ghConfig>>, seq: SeqRowSvc, actorId: string | null): Promise<{ already: boolean; commitSha: string | null }> {
+  if (seq.status === 'ready') return { already: true, commitSha: seq.source_sha }
+  const frames = await fetchFrames(env, headers, seq.id)
+  const missing = frames.filter((f) => !f.blob_sha).map((f) => f.frame_index)
+  if (frames.length !== seq.frame_count || missing.length > 0) {
+    await patchSequence(env, headers, seq.id, { status: 'failed' })
+    await writeAudit(env, '360.upload.failed', 'asset_360_sequences', seq.id, actorId, { stage: 'complete_missing_frames', expected: seq.frame_count, actual: frames.length, missing })
+    const err = new Error(`missing frames: ${missing.length ? missing.join(',') : 'count mismatch'}`)
+    Object.assign(err, { seqComplete: true })
+    throw err
+  }
+  const entries: TreeEntry[] = frames.map((f) => ({ path: f.source_path, sha: f.blob_sha as string }))
+  const { commitSha } = await withTreeCommitRetry(cfg, entries, `360 sequence ${seq.id} (${frames.length} frames) (acmerd-image-manager)`)
+  // H3 抽验：首帧远端 sha 必须与登记一致（tree 用登记 sha 构建，正常恒等；防登记被污染）
+  const spot = await ghGetMeta(cfg, frames[0].source_path).catch(() => null)
+  if (!spot || spot.sha !== frames[0].blob_sha) {
+    await patchSequence(env, headers, seq.id, { status: 'failed' })
+    await writeAudit(env, '360.upload.failed', 'asset_360_sequences', seq.id, actorId, { stage: 'complete_spot_check', source_path: frames[0].source_path, remote_sha: spot?.sha ?? null })
+    throw new Error('spot check failed: remote sha mismatch')
+  }
+  await fetch(`${env.SUPABASE_URL}/rest/v1/asset_360_frames?sequence_id=eq.${seq.id}`, { method: 'PATCH', headers, body: JSON.stringify({ status: 'ready' }) })
+  await patchSequence(env, headers, seq.id, { status: 'ready', source_sha: commitSha })
+  await writeAudit(env, '360.sequence.created', 'asset_360_sequences', seq.id, actorId, { stage: 'complete', commit_sha: commitSha, frames: frames.length })
+  return { already: false, commitSha }
+}
+
+/** 序列删除核心（端点与 sweeper 共用）：GitHub 目录单 commit 删除 → 行物理删除 */
+async function deleteSequenceInternal(env: Env, headers: Record<string, string>, cfg: NonNullable<ReturnType<typeof ghConfig>>, seq: SeqRowSvc, actorId: string | null): Promise<{ removed: number }> {
+  const dir = `assets/${seq.asset_id}/360/${seq.id}`
+  await patchSequence(env, headers, seq.id, { status: 'deleting' })
+  const { removed } = await ghRemoveDir(cfg, dir, `delete 360 sequence ${seq.id} (acmerd-image-manager)`)
+  await fetch(`${env.SUPABASE_URL}/rest/v1/asset_360_frames?sequence_id=eq.${seq.id}`, { method: 'DELETE', headers })
+  await fetch(`${env.SUPABASE_URL}/rest/v1/asset_360_sequences?id=eq.${seq.id}`, { method: 'DELETE', headers })
+  await writeAudit(env, '360.sequence.deleted', 'asset_360_sequences', seq.id, actorId, { asset_id: seq.asset_id, remote_removed: removed })
+  return { removed }
+}
+
+// ---- [1] 创建序列（draft + 预生成全部帧行） ----
+app.post('/api/admin/assets/:assetId/360-sequences', async (c) => {
+  const auth = await requireAdmin(c)
+  if (!auth.ok) return c.json({ error: authErrBody(auth) }, auth.status)
+  const cfg = ghConfig(c.env)
+  if (!cfg) return githubNotConfigured(c)
+  const { assetId } = c.req.param()
+
+  let body: { frame_count?: unknown }
+  try { body = await c.req.json() } catch { return c.json({ error: { code: 'bad_request', message: 'Invalid JSON body' } }, 400) }
+  const frameCount = Number(body.frame_count)
+  if (![36, 72, 144, 360].includes(frameCount)) {
+    return c.json({ error: { code: 'bad_request', message: 'frame_count must be one of 36/72/144/360' } }, 400)
+  }
+  const headers = svc(c.env)
+  const aRes = await fetch(`${c.env.SUPABASE_URL}/rest/v1/assets?id=eq.${assetId}&select=id`, { headers })
+  if (!aRes.ok) return c.json({ error: { code: 'internal', message: 'Asset lookup failed' } }, 500)
+  if (((await aRes.json()) as Array<unknown>).length === 0) {
+    return c.json({ error: { code: 'not_found', message: 'Asset not found' } }, 404)
+  }
+
+  const ownerId = auth.userId
+  const resourceKey = `asset360:new:${assetId}`
+  const leased = await claimLease(c.env, headers, resourceKey, ownerId, 60).catch(() => false)
+  if (!leased) return c.json({ error: { code: 'lease_busy', message: 'Another 360 operation is in progress for this asset' } }, 409)
+
+  try {
+    const insRes = await fetch(`${c.env.SUPABASE_URL}/rest/v1/asset_360_sequences`, {
+      method: 'POST',
+      headers: { ...headers, Prefer: 'return=representation' },
+      body: JSON.stringify({ asset_id: assetId, frame_count: frameCount, status: 'draft' }),
+    })
+    if (!insRes.ok) throw new Error(`sequence insert failed: ${insRes.status}`)
+    const seq = ((await insRes.json()) as SeqRowSvc[])[0]
+
+    const frames = Array.from({ length: frameCount }, (_, i) => ({
+      sequence_id: seq.id,
+      frame_index: i + 1,
+      provider: 'github',
+      source_path: frameSourcePath(assetId, seq.id, i + 1),
+      status: 'pending',
+    }))
+    const frRes = await fetch(`${c.env.SUPABASE_URL}/rest/v1/asset_360_frames`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(frames),
+    })
+    if (!frRes.ok) {
+      // 帧行失败 → 序列回收（Cascade 由 DB；此处显式删）
+      await fetch(`${c.env.SUPABASE_URL}/rest/v1/asset_360_sequences?id=eq.${seq.id}`, { method: 'DELETE', headers })
+      throw new Error(`frame rows insert failed: ${frRes.status}`)
+    }
+    await writeAudit(c.env, '360.sequence.created', 'asset_360_sequences', seq.id, auth.userId, { asset_id: assetId, frame_count: frameCount, stage: 'draft' })
+    return c.json({ ok: true, sequence_id: seq.id, frame_count: frameCount, frames: frames.map((f) => ({ frame_index: f.frame_index, source_path: f.source_path })) })
+  } finally {
+    await releaseLease(c.env, headers, resourceKey, ownerId).catch(() => {})
+  }
+})
+
+// ---- [2] 序列清单（admin 全状态） ----
+app.get('/api/admin/assets/:assetId/360-sequences', async (c) => {
+  const auth = await requireAdmin(c)
+  if (!auth.ok) return c.json({ error: authErrBody(auth) }, auth.status)
+  const headers = svc(c.env)
+  const { assetId } = c.req.param()
+  const seqRes = await fetch(`${c.env.SUPABASE_URL}/rest/v1/asset_360_sequences?asset_id=eq.${assetId}&select=id,frame_count,status,source_sha,created_at,updated_at&order=created_at.desc`, { headers })
+  if (!seqRes.ok) return c.json({ error: { code: 'internal', message: 'Fetch failed' } }, 500)
+  const seqs = (await seqRes.json()) as Array<SeqRowSvc & { created_at: string; updated_at: string }>
+  const activeRes = await fetch(`${c.env.SUPABASE_URL}/rest/v1/assets?id=eq.${assetId}&select=active_360_sequence_id`, { headers })
+  const activeId = activeRes.ok ? ((await activeRes.json()) as Array<{ active_360_sequence_id: string | null }>)[0]?.active_360_sequence_id ?? null : null
+  const out = [] as Array<{ id: string; frame_count: number; status: string; is_active: boolean; uploaded_frames: number }>
+  for (const s of seqs) {
+    const cnt = await fetch(`${c.env.SUPABASE_URL}/rest/v1/asset_360_frames?sequence_id=eq.${s.id}&blob_sha=neq.null&select=frame_index`, { headers })
+    const uploaded = cnt.ok ? ((await cnt.json()) as Array<{ frame_index: number }>).length : 0
+    out.push({ id: s.id, frame_count: s.frame_count, status: s.status, is_active: s.id === activeId, uploaded_frames: uploaded })
+  }
+  return c.json({ ok: true, sequences: out, active_sequence_id: activeId })
+})
+
+// ---- [3] 分批传帧（multipart：part 名 = 帧序号，如 "3"） ----
+app.post('/api/admin/360-sequences/:seqId/frames', async (c) => {
+  const auth = await requireAdmin(c)
+  if (!auth.ok) return c.json({ error: authErrBody(auth) }, auth.status)
+  const cfg = ghConfig(c.env)
+  if (!cfg) return githubNotConfigured(c)
+  const { seqId } = c.req.param()
+  const headers = svc(c.env)
+
+  const seq = await fetchSequence(c.env, headers, seqId)
+  if (!seq) return c.json({ error: { code: 'not_found', message: 'Sequence not found' } }, 404)
+  if (seq.status === 'ready' || seq.status === 'deleting') {
+    return c.json({ error: { code: 'invalid_state', message: `Sequence is ${seq.status}; frames cannot be uploaded` } }, 409)
+  }
+
+  let form: FormData
+  try { form = await c.req.formData() } catch {
+    return c.json({ error: { code: 'bad_request', message: 'multipart/form-data body required' } }, 400)
+  }
+  const parts: Array<{ index: number; file: File }> = []
+  for (const [name, value] of form.entries()) {
+    const m = name.match(/^f_(\d+)$/)
+    if (m && value instanceof File) parts.push({ index: Number(m[1]), file: value })
+  }
+  if (parts.length === 0) return c.json({ error: { code: 'bad_request', message: 'No frame parts found (expected part names f_{index})' } }, 400)
+  if (parts.length > FRAME_BATCH_MAX) {
+    return c.json({ error: { code: 'bad_request', message: `Batch too large: max ${FRAME_BATCH_MAX} frames per request` } }, 400)
+  }
+
+  const ownerId = auth.userId
+  const resourceKey = `asset360:${seqId}`
+  const leased = await claimLease(c.env, headers, resourceKey, ownerId, SEQ_LEASE_TTL).catch(() => false)
+  if (!leased) return c.json({ error: { code: 'lease_busy', message: 'Another 360 operation is in progress for this sequence' } }, 409)
+
+  const uploaded: Array<{ frame_index: number; blob_sha: string }> = []
+  const failed: Array<{ frame_index: number; error: string }> = []
+  try {
+    if (seq.status === 'draft') await patchSequence(c.env, headers, seqId, { status: 'uploading' })
+    const frames = await fetchFrames(c.env, headers, seqId)
+    const byIndex = new Map(frames.map((f) => [f.frame_index, f]))
+
+    for (const { index, file } of parts) {
+      try {
+        if (!Number.isInteger(index) || index < 1 || index > seq.frame_count) throw new Error(`frame_index out of range: ${index}`)
+        if (!FRAME_MIME_SET.has(file.type)) throw new Error(`Unsupported type: ${file.type}`)
+        if (file.size > FRAME_MAX_SIZE) throw new Error(`File too large: ${file.size} > ${FRAME_MAX_SIZE}`)
+        const frame = byIndex.get(index)
+        if (!frame) throw new Error(`frame row missing for index ${index}`)
+        const bytes = new Uint8Array(await file.arrayBuffer())
+        const sha = await computeGitBlobSha(bytes)
+        await ghPutBlob(cfg, bytes, sha) // 批内独立异常处理：每帧自带默认预算
+        await patchFrame(c.env, headers, frame.id, { blob_sha: sha, file_size: file.size, status: 'uploading' })
+        uploaded.push({ frame_index: index, blob_sha: sha })
+      } catch (e) {
+        failed.push({ frame_index: index, error: e instanceof Error ? e.message : String(e) })
+      }
+    }
+    return c.json({ ok: failed.length === 0, uploaded, failed })
+  } finally {
+    await releaseLease(c.env, headers, resourceKey, ownerId).catch(() => {})
+  }
+})
+
+// ---- [4] complete（校验齐全 → 单 commit → ready；幂等） ----
+app.post('/api/admin/360-sequences/:seqId/complete', async (c) => {
+  const auth = await requireAdmin(c)
+  if (!auth.ok) return c.json({ error: authErrBody(auth) }, auth.status)
+  const cfg = ghConfig(c.env)
+  if (!cfg) return githubNotConfigured(c)
+  const { seqId } = c.req.param()
+  const headers = svc(c.env)
+
+  const seq = await fetchSequence(c.env, headers, seqId)
+  if (!seq) return c.json({ error: { code: 'not_found', message: 'Sequence not found' } }, 404)
+
+  const ownerId = auth.userId
+  const resourceKey = `asset360:${seqId}`
+  const leased = await claimLease(c.env, headers, resourceKey, ownerId, SEQ_LEASE_TTL).catch(() => false)
+  if (!leased) return c.json({ error: { code: 'lease_busy', message: 'Another 360 operation is in progress for this sequence' } }, 409)
+  try {
+    const frames = await fetchFrames(c.env, headers, seqId)
+    if (seq.status !== 'ready') {
+      const missing = frames.filter((f) => !f.blob_sha).map((f) => f.frame_index)
+      if (frames.length !== seq.frame_count || missing.length > 0) {
+        return c.json({ error: { code: 'frames_incomplete', message: 'Sequence frames incomplete', expected: seq.frame_count, uploaded: frames.length, missing } }, 409)
+      }
+    }
+    const r = await completeSequenceInternal(c.env, headers, cfg, seq, auth.userId)
+    return c.json({ ok: true, already: r.already, commit_sha: r.commitSha })
+  } catch (e) {
+    const mapped = mapGithubError(e)
+    return c.json({ error: { code: mapped.code, message: mapped.message } }, mapped.status)
+  } finally {
+    await releaseLease(c.env, headers, resourceKey, ownerId).catch(() => {})
+  }
+})
+
+// ---- [5] 激活（原子 UPDATE；守卫触发器兜底 same-asset + ready） ----
+app.post('/api/admin/360-sequences/:seqId/activate', async (c) => {
+  const auth = await requireAdmin(c)
+  if (!auth.ok) return c.json({ error: authErrBody(auth) }, auth.status)
+  const { seqId } = c.req.param()
+  const headers = svc(c.env)
+  const seq = await fetchSequence(c.env, headers, seqId)
+  if (!seq) return c.json({ error: { code: 'not_found', message: 'Sequence not found' } }, 404)
+  if (seq.status !== 'ready') {
+    return c.json({ error: { code: 'invalid_state', message: `Sequence is ${seq.status}; only ready sequences can be activated` } }, 409)
+  }
+  const upd = await fetch(`${c.env.SUPABASE_URL}/rest/v1/assets?id=eq.${seq.asset_id}`, {
+    method: 'PATCH',
+    headers,
+    body: JSON.stringify({ active_360_sequence_id: seqId }),
+  })
+  if (!upd.ok) {
+    const detail = await upd.text()
+    const invalid = detail.includes('360_ACTIVE_INVALID')
+    return c.json({ error: { code: invalid ? 'invalid_state' : 'internal', message: invalid ? 'Sequence is not activatable (guard)' : 'Activation failed' } }, invalid ? 409 : 500)
+  }
+  await writeAudit(c.env, '360.sequence.activated', 'assets', seq.asset_id, auth.userId, { sequence_id: seqId })
+  return c.json({ ok: true, asset_id: seq.asset_id, sequence_id: seqId })
+})
+
+// ---- [6] 删除非 active 序列（单 commit 删目录；失败留 deleting 交 sweeper） ----
+app.delete('/api/admin/360-sequences/:seqId', async (c) => {
+  const auth = await requireAdmin(c)
+  if (!auth.ok) return c.json({ error: authErrBody(auth) }, auth.status)
+  const cfg = ghConfig(c.env)
+  if (!cfg) return githubNotConfigured(c)
+  const { seqId } = c.req.param()
+  const headers = svc(c.env)
+  const seq = await fetchSequence(c.env, headers, seqId)
+  if (!seq) return c.json({ error: { code: 'not_found', message: 'Sequence not found' } }, 404)
+
+  const aRes = await fetch(`${c.env.SUPABASE_URL}/rest/v1/assets?id=eq.${seq.asset_id}&select=active_360_sequence_id`, { headers })
+  const activeId = aRes.ok ? ((await aRes.json()) as Array<{ active_360_sequence_id: string | null }>)[0]?.active_360_sequence_id ?? null : null
+  if (activeId === seqId) {
+    return c.json({ error: { code: 'sequence_is_active', message: 'Deactivate (remove active 360) before deleting this sequence' } }, 409)
+  }
+
+  const ownerId = auth.userId
+  const resourceKey = `asset360:${seqId}`
+  const leased = await claimLease(c.env, headers, resourceKey, ownerId, SEQ_LEASE_TTL).catch(() => false)
+  if (!leased) return c.json({ error: { code: 'lease_busy', message: 'Another 360 operation is in progress for this sequence' } }, 409)
+  try {
+    const r = await deleteSequenceInternal(c.env, headers, cfg, seq, auth.userId)
+    return c.json({ ok: true, removed_remote_files: r.removed })
+  } catch (e) {
+    // GitHub 失败 → 行保留 deleting，sweeper 重试（同 images 语义）
+    const mapped = mapGithubError(e)
+    return c.json({ error: { code: 'retry_later', message: 'Remote deletion failed; sequence kept in deleting state for sweeper', detail: mapped.code } }, 502)
+  } finally {
+    await releaseLease(c.env, headers, resourceKey, ownerId).catch(() => {})
+  }
+})
+
+// ---- [7] 移除 active 360（先下线指针 → 删目录 → 删行；规格 §47） ----
+app.delete('/api/admin/assets/:assetId/360', async (c) => {
+  const auth = await requireAdmin(c)
+  if (!auth.ok) return c.json({ error: authErrBody(auth) }, auth.status)
+  const cfg = ghConfig(c.env)
+  if (!cfg) return githubNotConfigured(c)
+  const { assetId } = c.req.param()
+  const headers = svc(c.env)
+
+  const aRes = await fetch(`${c.env.SUPABASE_URL}/rest/v1/assets?id=eq.${assetId}&select=active_360_sequence_id`, { headers })
+  if (!aRes.ok) return c.json({ error: { code: 'internal', message: 'Asset lookup failed' } }, 500)
+  const activeId = ((await aRes.json()) as Array<{ active_360_sequence_id: string | null }>)[0]?.active_360_sequence_id ?? null
+  if (!activeId) return c.json({ ok: true, removed: false, message: 'No active 360 sequence' })
+
+  const seq = await fetchSequence(c.env, headers, activeId)
+  if (!seq) {
+    // 悬垂指针（序列行已删但 FK 未清？理论不可能：on delete set null）→ 直接清指针
+    await fetch(`${c.env.SUPABASE_URL}/rest/v1/assets?id=eq.${assetId}`, { method: 'PATCH', headers, body: JSON.stringify({ active_360_sequence_id: null }) })
+    return c.json({ ok: true, removed: true })
+  }
+
+  const ownerId = auth.userId
+  const resourceKey = `asset360:${activeId}`
+  const leased = await claimLease(c.env, headers, resourceKey, ownerId, SEQ_LEASE_TTL).catch(() => false)
+  if (!leased) return c.json({ error: { code: 'lease_busy', message: 'Another 360 operation is in progress for this sequence' } }, 409)
+  try {
+    // [1] 先下线指针（前台即时消失；单语句原子）
+    await fetch(`${c.env.SUPABASE_URL}/rest/v1/assets?id=eq.${assetId}`, { method: 'PATCH', headers, body: JSON.stringify({ active_360_sequence_id: null }) })
+    // [2] GitHub 删目录 + 删行（失败 → deleting，sweeper 重试；前台已安全退出）
+    const r = await deleteSequenceInternal(c.env, headers, cfg, seq, auth.userId)
+    return c.json({ ok: true, removed: true, removed_remote_files: r.removed })
+  } catch (e) {
+    const mapped = mapGithubError(e)
+    return c.json({ error: { code: 'retry_later', message: '360 module deactivated; remote cleanup scheduled for sweeper', detail: mapped.code } }, 502)
+  } finally {
+    await releaseLease(c.env, headers, resourceKey, ownerId).catch(() => {})
+  }
+})
+
 // Scheduled sweeper（Gate §3 对账清扫；cron 每 10 分钟，单轮 ≤10 行）
 //   uploading: GET sha === source_sha → ready / 404 → failed
 //   failed:    sha 一致 → ready；sha 不一致 → 补偿删除远端（orphan.purged）
@@ -1127,6 +1502,66 @@ async function reconcileSweeper(event: ScheduledController, env: Env, ctx: Execu
           }
         } catch (e) {
           console.error('sweeper row failed:', img.id, e)
+        } finally {
+          if (leased) await releaseLease(env, headers, resourceKey, ownerId).catch(() => {})
+        }
+      }
+    })(),
+  )
+}
+
+// 360 sweeper（Gate §G3：崩溃窗口收敛，语义同 images sweeper）
+//   uploading/failed: 帧全齐（blob_sha 齐备）→ 重试单 commit complete；
+//                     缺帧 → failed + 审计（不重复上传，等待管理端补传）
+//   deleting:         ghRemoveDir 重试（404 即成功）→ 物理删行
+// 单轮 ≤5 序列；lease 冲突（管理端正在操作）→ 本轮跳过
+async function reconcile360Sweeper(event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+  const cfg = ghConfig(env)
+  if (!cfg) return
+  const headers = svc(env)
+
+  const res = await fetch(
+    `${env.SUPABASE_URL}/rest/v1/asset_360_sequences?select=id,asset_id,frame_count,status,source_sha&status=in.(uploading,failed,deleting)&limit=5`,
+    { headers },
+  )
+  if (!res.ok) return
+  const rows = (await res.json()) as SeqRowSvc[]
+
+  ctx.waitUntil(
+    (async () => {
+      for (const seq of rows) {
+        const resourceKey = `asset360:${seq.id}`
+        const ownerId = crypto.randomUUID()
+        let leased = false
+        try {
+          leased = await claimLease(env, headers, resourceKey, ownerId, 60)
+          if (!leased) continue
+          // 行级重读（管理端可能已改变状态）
+          const cur = await fetchSequence(env, headers, seq.id)
+          if (!cur || cur.status === 'ready') continue
+
+          if (cur.status === 'deleting') {
+            await deleteSequenceInternal(env, headers, cfg, cur, null)
+            continue
+          }
+
+          // uploading / failed：先收敛帧登记状态
+          const frames = await fetchFrames(env, headers, cur.id)
+          const missing = frames.filter((f) => !f.blob_sha).map((f) => f.frame_index)
+          if (frames.length !== cur.frame_count || missing.length > 0) {
+            if (cur.status !== 'failed') {
+              await patchSequence(env, headers, cur.id, { status: 'failed' })
+              await writeAudit(env, '360.upload.failed', 'asset_360_sequences', cur.id, null, { stage: 'sweeper_incomplete', expected: cur.frame_count, actual: frames.length, missing })
+            }
+            continue
+          }
+          // 帧全齐 → 重试 complete（内部含 ref 冲突重试 + 抽验；幂等）
+          await completeSequenceInternal(env, headers, cfg, cur, null)
+        } catch (e) {
+          // seqComplete（缺帧/数量不符）→ 已标记 failed，属收敛结果而非故障
+          if (e && typeof e === 'object' && (e as { seqComplete?: boolean }).seqComplete) continue
+          // 其他（网络/ref 冲突重试耗尽等）→ 留待下轮；deleting 状态 GH 失败也走这里
+          console.error('360 sweeper row failed:', seq.id, e)
         } finally {
           if (leased) await releaseLease(env, headers, resourceKey, ownerId).catch(() => {})
         }
@@ -2541,8 +2976,11 @@ app.onError((err, c) => {
 // 非 /api 请求交给静态资源层（未命中资源时按 SPA 规则返回 index.html）
 app.all('*', (c) => c.env.ASSETS.fetch(c.req.raw))
 
-// PB-1: fetch + scheduled（对账 sweeper，cron 见 wrangler.toml [triggers]）
+// PB-1: fetch + scheduled（对账 sweeper + 360 sweeper，cron 见 wrangler.toml [triggers]）
 export default {
   fetch: app.fetch,
-  scheduled: reconcileSweeper,
+  scheduled: (event: ScheduledController, env: Env, ctx: ExecutionContext) => {
+    ctx.waitUntil(reconcileSweeper(event, env, ctx))
+    return reconcile360Sweeper(event, env, ctx)
+  },
 }
