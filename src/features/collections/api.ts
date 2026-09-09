@@ -58,6 +58,24 @@ export async function getPublishedBreadcrumb(
   return chain
 }
 
+/**
+ * V1.4.2：按 collectionId 取面包屑祖先链（资产详情页用，published_assets 0021 增列）。
+ * 合集不存在于 published_collections（未发布 / 链断裂）→ 返回空数组 = 前端不渲染面包屑。
+ */
+export async function getPublishedBreadcrumbById(
+  collectionId: string,
+): Promise<PublishedCollectionRow[]> {
+  const { data, error } = await supabase
+    .from('published_collections')
+    .select('*')
+    .eq('id', collectionId)
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  const collection = data as PublishedCollectionRow | null
+  if (!collection) return []
+  return getPublishedBreadcrumb(collection)
+}
+
 /** Admin：全部状态合集列表（RLS is_admin） */
 export async function listAllCollections(): Promise<CollectionRow[]> {
   const { data, error } = await supabase

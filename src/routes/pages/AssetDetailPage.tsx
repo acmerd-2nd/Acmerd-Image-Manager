@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { Check, CheckCheck, Download, DownloadCloud, Image as ImageIcon, ListChecks, Lock, Tag as TagIcon } from 'lucide-react'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { Check, CheckCheck, ChevronRight, Download, DownloadCloud, Image as ImageIcon, ListChecks, Lock, Tag as TagIcon } from 'lucide-react'
 import {
   getPublishedAssetBySlug,
   imageSrcOf,
@@ -16,6 +16,7 @@ import type {
   ImageRow,
   LanguageCode,
   PublishedAssetRow,
+  PublishedCollectionRow,
   TagRow,
 } from '@/types/database'
 import { LANGUAGE_CODES, LANGUAGE_LABELS } from '@/types/database'
@@ -27,6 +28,7 @@ import {
   fetchMyCredits,
 } from '@/features/downloads/api'
 import { PackageDownloadPanel } from '@/features/downloads/PackageDownloadPanel'
+import { getPublishedBreadcrumbById } from '@/features/collections/api'
 import { getSiteSettings } from '@/features/settings/api'
 import { Lightbox } from '@/components/Lightbox'
 import { useToast } from '@/components/ToastProvider'
@@ -97,6 +99,23 @@ export function AssetDetailPage() {
   const [busy, setBusy] = useState(false)
   const [preview, setPreview] = useState<ImageRow | null>(null)
   const toast = useToast()
+
+  // V1.4.2：资产所属合集面包屑链（探索 / 合集链… / 资产名）；链断裂或无合集 = 不渲染
+  const [assetBreadcrumb, setAssetBreadcrumb] = useState<PublishedCollectionRow[]>([])
+  useEffect(() => {
+    let cancelled = false
+    setAssetBreadcrumb([])
+    const cid = asset?.collection_id
+    if (!cid) return
+    getPublishedBreadcrumbById(cid)
+      .then((chain) => {
+        if (!cancelled) setAssetBreadcrumb(chain)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [asset?.collection_id])
 
   // 1) 载入资产 + published 语言（固定顺序）
   useEffect(() => {
@@ -255,8 +274,27 @@ export function AssetDetailPage() {
   return (
     <div className="mx-auto w-full max-w-7xl px-4 py-12 sm:px-6">
       <div className="grid gap-8 lg:grid-cols-[1fr_260px]">
-        {/* 主区：标题 + 语言 Tab + 图库 */}
+        {/* 主区：面包屑 + 标题 + 语言 Tab + 图库 */}
         <div className="min-w-0">
+          {assetBreadcrumb.length > 0 && (
+            <nav className="mb-2 flex flex-wrap items-center gap-1 text-sm text-muted-foreground" aria-label="Breadcrumb">
+              <Link to="/" className="hover:text-foreground hover:underline">
+                {t('nav.explore')}
+              </Link>
+              {assetBreadcrumb.map((b) => (
+                <span key={b.id} className="flex items-center gap-1">
+                  <ChevronRight className="h-3.5 w-3.5" />
+                  <Link to={`/collection/${b.slug}`} className="hover:text-foreground hover:underline">
+                    {b.name}
+                  </Link>
+                </span>
+              ))}
+              <span className="flex items-center gap-1">
+                <ChevronRight className="h-3.5 w-3.5" />
+                <span className="text-foreground">{asset.name}</span>
+              </span>
+            </nav>
+          )}
           <h1 className="text-3xl font-bold">{asset.name}</h1>
           {asset.description && (
             <p className="mt-2 max-w-2xl text-muted-foreground">{asset.description}</p>

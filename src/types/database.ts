@@ -167,13 +167,14 @@ export interface SiteSettingRow {
   updated_at: string
 }
 
-/** published_assets 视图行（Phase 3 卡片/详情数据源） */
+/** published_assets 视图行（Phase 3 卡片/详情数据源；collection_id 为 0019 增列，供资产页面包屑） */
 export interface PublishedAssetRow {
   id: string
   name: string
   slug: string
   description: string | null
   cover_image_id: string | null
+  collection_id: string | null
   image_count: number
   language_count: number
   tags: string[]
