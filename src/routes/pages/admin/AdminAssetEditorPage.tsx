@@ -25,6 +25,8 @@ import {
   updateAsset,
 } from '@/features/assets/api'
 import { deleteGithubImage, uploadImageGithub } from '@/features/assets/github'
+import { Admin360Card } from '@/features/assets360/Admin360Card'
+import { deleteSequence, listSequences, removeActive360 } from '@/features/assets360/api'
 import {
   addAssetTag,
   createTag,
@@ -184,6 +186,16 @@ export function AdminAssetEditorPage() {
       const storagePaths = images
         .filter((i) => i.provider !== 'github' && i.storage_path)
         .map((i) => i.storage_path as string)
+      // V1.5 B2：360 序列同理——级联删行前必须经 Worker 清远端帧（否则 sweeper 无从追踪）
+      try {
+        const { sequences } = await listSequences(asset.id)
+        for (const s of sequences) {
+          if (s.is_active) await removeActive360(asset.id)
+          else await deleteSequence(s.id)
+        }
+      } catch {
+        setNotice(t('admin.s360.errRetryLater'))
+      }
       await deleteAsset(asset.id)
       await deleteStoragePaths(storagePaths).catch(() => {
         // 孤儿对象仅告警（列表页已有同款兜底）
@@ -457,6 +469,9 @@ export function AdminAssetEditorPage() {
             )}
         </div>
       </section>
+
+      {/* 360° Product Preview（V1.5 B2；Asset 级能力，与语言完全解耦） */}
+      <Admin360Card assetId={asset.id} disabled={busy} onAssetChanged={reload} />
 
       {/* 语言面板 */}
       <section className="space-y-4">

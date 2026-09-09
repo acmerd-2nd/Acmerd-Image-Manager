@@ -64,3 +64,21 @@ export function brandLogoUrl(path: string | null | undefined): string | undefine
   if (!path) return undefined
   return githubRawUrl(path)
 }
+
+/**
+ * V1.5 B2：360° 序列帧 URL 唯一出口（Gate §40/§41）。
+ * 帧与普通图片同仓同分支，故直接复用 makeImageUrl 的 github 分支；
+ * 未来 GitHub → CDN 切换只改本文件，前后台组件零改动。
+ * index 仅为语义携带（播放顺序以数组顺序 = frame_index 为准，绝不依赖文件名排序）。
+ */
+export interface Frame360Source {
+  /** 1-based 帧序号 */
+  index: number
+  /** 仓库内路径，形如 assets/{assetId}/360/{sequenceId}/0001.png */
+  path: string
+}
+
+export function make360FrameUrl(frame: Frame360Source): string | null {
+  if (!frame?.path) return null
+  return makeImageUrl({ provider: 'github', storage_path: null, source_path: frame.path })
+}

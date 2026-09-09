@@ -1289,22 +1289,30 @@ app.post('/api/admin/360-sequences/:seqId/frames', async (c) => {
     const frames = await fetchFrames(c.env, headers, seqId)
     const byIndex = new Map(frames.map((f) => [f.frame_index, f]))
 
-    for (const { index, file } of parts) {
-      try {
-        if (!Number.isInteger(index) || index < 1 || index > seq.frame_count) throw new Error(`frame_index out of range: ${index}`)
-        if (!FRAME_MIME_SET.has(file.type)) throw new Error(`Unsupported type: ${file.type}`)
-        if (file.size > FRAME_MAX_SIZE) throw new Error(`File too large: ${file.size} > ${FRAME_MAX_SIZE}`)
-        const frame = byIndex.get(index)
-        if (!frame) throw new Error(`frame row missing for index ${index}`)
-        const bytes = new Uint8Array(await file.arrayBuffer())
-        const sha = await computeGitBlobSha(bytes)
-        await ghPutBlob(cfg, bytes, sha) // 批内独立异常处理：每帧自带默认预算
-        await patchFrame(c.env, headers, frame.id, { blob_sha: sha, file_size: file.size, status: 'uploading' })
-        uploaded.push({ frame_index: index, blob_sha: sha })
-      } catch (e) {
-        failed.push({ frame_index: index, error: e instanceof Error ? e.message : String(e) })
+    // 批内并发池（4 路）：单帧 GitHub 往返 ~1–3s，串行会让 360 帧耗时 ~20 分钟；
+    // 并发 4 仍远低于 GitHub 次级限流阈值，且每帧各自带 withNetworkRetry 预算。
+    const BLOB_CONCURRENCY = 4
+    let cursor = 0
+    const workerLoop = async () => {
+      while (cursor < parts.length) {
+        const { index, file } = parts[cursor++]
+        try {
+          if (!Number.isInteger(index) || index < 1 || index > seq.frame_count) throw new Error(`frame_index out of range: ${index}`)
+          if (!FRAME_MIME_SET.has(file.type)) throw new Error(`Unsupported type: ${file.type}`)
+          if (file.size > FRAME_MAX_SIZE) throw new Error(`File too large: ${file.size} > ${FRAME_MAX_SIZE}`)
+          const frame = byIndex.get(index)
+          if (!frame) throw new Error(`frame row missing for index ${index}`)
+          const bytes = new Uint8Array(await file.arrayBuffer())
+          const sha = await computeGitBlobSha(bytes)
+          await ghPutBlob(cfg, bytes, sha)
+          await patchFrame(c.env, headers, frame.id, { blob_sha: sha, file_size: file.size, status: 'uploading' })
+          uploaded.push({ frame_index: index, blob_sha: sha })
+        } catch (e) {
+          failed.push({ frame_index: index, error: e instanceof Error ? e.message : String(e) })
+        }
       }
     }
+    await Promise.all(Array.from({ length: Math.min(BLOB_CONCURRENCY, parts.length) }, workerLoop))
     return c.json({ ok: failed.length === 0, uploaded, failed })
   } finally {
     await releaseLease(c.env, headers, resourceKey, ownerId).catch(() => {})

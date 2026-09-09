@@ -22,6 +22,8 @@ export interface AssetRow {
   status: AssetStatus
   /** V1.1 PC-2：所属 Collection（null=未归组；Q3 裁决：未归组不进公域浏览） */
   collection_id: string | null
+  /** V1.5 0022：当前启用的 360° 序列 id（null=无 360，前台零渲染） */
+  active_360_sequence_id: string | null
   created_by: string | null
   created_at: string
   updated_at: string
@@ -208,4 +210,49 @@ export interface AuditLogRow {
   target_id: string | null
   metadata: Record<string, unknown> | null
   created_at: string
+}
+
+/**
+ * V1.5 0022：360° 序列数据模型。
+ * 联合类型与迁移中的 CHECK 约束互为镜像（frame_count 36/72/144/360、两套 status）；
+ * 改 DB 约束时必须同步此处与 features/assets360/api.ts。
+ */
+export type Sequence360Status = 'draft' | 'uploading' | 'ready' | 'failed' | 'deleting'
+export type Frame360Status = 'pending' | 'uploading' | 'ready' | 'failed' | 'deleting'
+export const FRAME_COUNTS_360 = [36, 72, 144, 360] as const
+export type Frame360Count = (typeof FRAME_COUNTS_360)[number]
+
+export interface Asset360SequenceRow {
+  id: string
+  asset_id: string
+  frame_count: number
+  status: Sequence360Status
+  /** 序列完成时的 Git commit sha（对账收敛依据） */
+  source_sha: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface Asset360FrameRow {
+  id: string
+  sequence_id: string
+  /** 播放顺序唯一依据（1-based）；绝不依赖文件名排序 */
+  frame_index: number
+  provider: 'github'
+  source_path: string | null
+  /** Git blob sha（内容寻址；上传时本地计算 = 远端返回 = DB 登记，H3 三方一致） */
+  blob_sha: string | null
+  file_size: number | null
+  width: number | null
+  height: number | null
+  status: Frame360Status
+  created_at: string
+}
+
+/** published_360 视图行（security_invoker：published 资产 ⋈ active ready 序列；一次查询供整个 Viewer） */
+export interface Published360Row {
+  asset_id: string
+  sequence_id: string
+  frame_count: number
+  frames: Array<{ index: number; path: string }>
 }
