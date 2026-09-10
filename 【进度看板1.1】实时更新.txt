@@ -7,7 +7,7 @@
 快速恢复上下文。每次完成实质步骤后必须更新本文件的对应标记与时间戳。
 状态标记：✅ 完成 | 🟡 进行中/待裁决 | 🔴 未开始/待 Owner | 🚫 禁止/未授权
 
-最后更新：2026-09-10（**V1.5 360° Product Viewer ✅ CLOSED（A/B1/B2/C/D 全绿）**——分阶段实施：A 0022 数据模型（序列/帧/active FK+守卫触发器+RLS+published_360+allowlist 44→48）；B1 Worker 7 admin 端点 + Git Data API 单提交 + 360 sweeper（沙箱 36/36、线上 15/15）；B2 Admin 360 卡（分批/行级补传/预览/启用/替换/移除）+ Spin360 共享播放器 + make360FrameUrl 出口；C 前台 AssetDetailPage 360° View（Gallery 前、语言解耦、无 active 零渲染）；D 生产实走发现 CF 单次调用子请求配额（本地 workerd 不演算）→ 0023 整批合并登记 RPC + FRAME_BATCH_MAX 24→20 → 重部署 ver cd0c0bee（前端 chunk index-scfujPTn.js）→ **后端验收矩阵 45/45（四规格 36/72/144/360 全 ready·每目录 1 commit·吞吐≈170–184ms/帧·下载与积分隔离·审计·零残留）**、沙箱 36/36、线上 15/15。0023 经 **IPv4 会话池 ap-south-1**（直连 db 域现 IPv6-only，本机无 IPv6 出口，复现 V1.2 记录的 DNS 故障并给出可行路由）。docs/v1.5/03。待 push。）
+最后更新：2026-09-10（**V1.6.0 优化 ✅ CLOSED（A 后台网盘链接 + B 前台大图翻页）**——Owner 提两项体验优化，AskUserQuestion 定档（只做 quark+百度、前台维持登录可见、Lightbox 按钮+键盘+计数+循环+触摸、A/B 分别 STOP）。**A**：download_sources 读链路 Phase5 起全就绪、唯缺后台写入入口 → 新增 AdminPackageCard + downloads/api 直连 CRUD（list/save upsert onConflict asset_id,provider/delete），零迁移零 Worker；生产集成 v16-a-package-admin-verify **18/18**（写入/更新/停用/删除 + 四类非法URL被0004拒 + 审计 + 隔离资产级联清零）→ 部署 ver 1c11f0b3。**B**：Lightbox 单图→整组 images+index 受控翻页（左右按钮 + 键盘←→/Esc + 第x/共n计数 + 环形回绕 + touch pan-y 左右滑动 + 焦点回归/滚动锁 + 组件内 i18n，新增 previewPrev/Next/Count），AssetDetailPage preview 改索引（切语言不串图）；idxRef 修同帧连按丢步；浏览器实走（本地+生产 ecosonique-15w 9图）全通过 → 部署 ver 080198db（chunk index-tIFtDfNU.js、health 200）。docs/v1.6.0/01+02。提交 92c5cf7(A)+4010f56(B)。**V1.5 已 push（远端 main=59bd95c）**；V1.6.0 两提交**待 push**。）
 
 ════════════════════════════════════════════════════════════════════
 ■ 当前位置（一句话）
