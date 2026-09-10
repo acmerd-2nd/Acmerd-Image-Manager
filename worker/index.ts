@@ -1082,7 +1082,7 @@ app.post('/api/admin/images/github-delete', async (c) => {
 
 const FRAME_MIME_SET = new Set(Object.keys(GITHUB_MIME_EXT))
 const FRAME_MAX_SIZE = 5 * 1024 * 1024
-const FRAME_BATCH_MAX = 24 // Gate D3：每请求 ≤24 帧 / ≤50MB（请求体限 100MB 内）
+const FRAME_BATCH_MAX = 20 // Gate D3 + 生产实测：CF 单次调用子请求配额 50；合并登记后 20 帧/批 ≈ 25 子请求
 const SEQ_LEASE_TTL = 180
 
 interface SeqRowSvc {
@@ -1293,6 +1293,9 @@ app.post('/api/admin/360-sequences/:seqId/frames', async (c) => {
     // 并发 4 仍远低于 GitHub 次级限流阈值，且每帧各自带 withNetworkRetry 预算。
     const BLOB_CONCURRENCY = 4
     let cursor = 0
+    // 整批登记合并为 1 次 RPC（0023）：逐帧 PATCH 会让一批 24 帧吃掉 48+ 子请求，
+    // 在生产撞满 Cloudflare 单次调用配额（本地 workerd 不演算，故 B1 沙箱未暴露）。
+    const registrations: Array<{ id: string; blob_sha: string; file_size: number }> = []
     const workerLoop = async () => {
       while (cursor < parts.length) {
         const { index, file } = parts[cursor++]
@@ -1305,7 +1308,7 @@ app.post('/api/admin/360-sequences/:seqId/frames', async (c) => {
           const bytes = new Uint8Array(await file.arrayBuffer())
           const sha = await computeGitBlobSha(bytes)
           await ghPutBlob(cfg, bytes, sha)
-          await patchFrame(c.env, headers, frame.id, { blob_sha: sha, file_size: file.size, status: 'uploading' })
+          registrations.push({ id: frame.id, blob_sha: sha, file_size: file.size })
           uploaded.push({ frame_index: index, blob_sha: sha })
         } catch (e) {
           failed.push({ frame_index: index, error: e instanceof Error ? e.message : String(e) })
@@ -1313,6 +1316,18 @@ app.post('/api/admin/360-sequences/:seqId/frames', async (c) => {
       }
     }
     await Promise.all(Array.from({ length: Math.min(BLOB_CONCURRENCY, parts.length) }, workerLoop))
+
+    if (registrations.length > 0) {
+      const rpc = await fetch(`${c.env.SUPABASE_URL}/rest/v1/rpc/update_asset_360_frames`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ p_frames: registrations }),
+      })
+      if (!rpc.ok) {
+        // 整批登记失败：远端 blob 属 Gate D5 已接受的可清理孤儿；客户端重发该批即可（内容寻址幂等）
+        return c.json({ error: { code: 'retry_later', message: `frame registration failed (HTTP ${rpc.status}); re-send this batch` } }, 502)
+      }
+    }
     return c.json({ ok: failed.length === 0, uploaded, failed })
   } finally {
     await releaseLease(c.env, headers, resourceKey, ownerId).catch(() => {})

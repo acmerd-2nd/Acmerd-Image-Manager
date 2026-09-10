@@ -47,13 +47,15 @@ const api = async (path, method = 'GET', body) => {
   return { status: res.status, json: await res.json().catch(() => null) }
 }
 
+const LANGS = ['en', 'de', 'it', 'fr', 'es'] // Phase D：五语言夹具，验证「切语言 360 不变」
+
 try {
   // 1) 资产（draft）
   let r = await rest('assets', 'POST', { id: assetId, name: 'e2e-c 360前台走查', slug, status: 'draft' })
   if (r.status >= 300) throw new Error(`asset insert ${r.status} ${JSON.stringify(r.json)}`)
 
-  // 2) 两个语言 + 各一张真实图片（经 Worker 上传 → 真实 GitHub 对象 + ready 行）
-  for (const code of ['en', 'de']) {
+  // 2) 五种语言 + 各一张真实图片（经 Worker 上传 → 真实 GitHub 对象 + ready 行）
+  for (const code of LANGS) {
     const lr = await rest('asset_languages', 'POST', { asset_id: assetId, language_code: code, status: 'draft' }, true)
     if (lr.status >= 300) throw new Error(`lang insert ${lr.status} ${JSON.stringify(lr.json)}`)
     langIds[code] = (lr.json ?? [])[0].id
@@ -66,7 +68,7 @@ try {
   }
 
   // 3) 发布（守卫触发器终审：需 published 语言 + ready 图片）
-  for (const code of ['en', 'de']) {
+  for (const code of LANGS) {
     const p = await rest(`asset_languages?id=eq.${langIds[code]}`, 'PATCH', { status: 'published' })
     if (p.status >= 300) throw new Error(`lang publish ${p.status} ${JSON.stringify(p.json)}`)
   }
@@ -79,9 +81,9 @@ try {
   sequenceId = r.json.sequence_id
   const files = readdirSync(FRAMES_DIR).filter((n) => n.endsWith('.png')).sort()
   const t0 = Date.now()
-  for (let i = 0; i < files.length; i += 24) {
+  for (let i = 0; i < files.length; i += 20) {
     const form = new FormData()
-    files.slice(i, i + 24).forEach((n, k) => form.append(`f_${i + k + 1}`, new Blob([readFileSync(join(FRAMES_DIR, n))], { type: 'image/png' }), n))
+    files.slice(i, i + 20).forEach((n, k) => form.append(`f_${i + k + 1}`, new Blob([readFileSync(join(FRAMES_DIR, n))], { type: 'image/png' }), n))
     const up = await api(`/api/admin/360-sequences/${sequenceId}/frames`, 'POST', form)
     if (!up.json?.ok) throw new Error(`frames batch ${JSON.stringify(up.json?.failed ?? up.status)}`)
   }

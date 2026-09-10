@@ -17,8 +17,8 @@ import type { Frame360Source } from '@/lib/image-source'
 export const FRAME_COUNTS = FRAME_COUNTS_360
 export type { Frame360Count, Sequence360Status }
 
-/** 与 Worker 端 FRAME_BATCH_MAX 一致（Gate D3：≤24 帧 / ≤50MB 每请求） */
-export const FRAME_BATCH_MAX = 24
+/** 与 Worker 端 FRAME_BATCH_MAX 一致：受 CF 单次调用子请求配额（生产实测 50）约束，取 20 */
+export const FRAME_BATCH_MAX = 20
 /** 与 Worker 端 FRAME_MAX_SIZE 一致（单帧 5MB） */
 export const FRAME_MAX_SIZE = 5 * 1024 * 1024
 export const FRAME_MIME = ['image/png', 'image/jpeg', 'image/webp'] as const
