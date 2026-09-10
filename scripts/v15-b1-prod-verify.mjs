@@ -21,10 +21,12 @@ const ok = (name, cond, detail = '') => {
   else { fail++; console.log(`  FAIL  ${name}${detail ? ' — ' + detail : ''}`) }
 }
 
-// ---- V0 静态层未回归：首页仍指向既有 bundle（B1 零前端改动）----
+// ---- V0 静态层：生产首页入口 chunk 必须等于本地 dist 构建（自维护，不写死哈希）----
+const localEntry = (readFileSync('dist/index.html', 'utf8').match(/(index-[A-Za-z0-9_-]+\.js)/) ?? [])[1] ?? ''
 const home = await fetch(`${SITE}/`)
 const html = await home.text()
-ok('V0 首页 200 + bundle index-ClhKmdK2.js 不变', home.status === 200 && html.includes('index-ClhKmdK2.js'))
+const liveEntry = (html.match(/(index-[A-Za-z0-9_-]+\.js)/) ?? [])[1] ?? ''
+ok(`V0 首页 200 + 入口 chunk 与 dist 一致（${liveEntry}）`, home.status === 200 && !!localEntry && liveEntry === localEntry, `local=${localEntry} live=${liveEntry}`)
 const h = await fetch(`${SITE}/api/health`)
 ok('V0b /api/health 200', h.status === 200)
 

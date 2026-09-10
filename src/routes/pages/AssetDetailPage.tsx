@@ -9,12 +9,15 @@ import {
   THUMB_GRID,
 } from '@/features/assets/api'
 import { listAssetTags } from '@/features/tags/api'
+import { getPublished360 } from '@/features/assets360/api'
+import { Spin360 } from '@/features/assets360/Spin360'
 import { parseLanguageCode } from '@/lib/validators'
 import { useLocale } from '@/i18n'
 import type {
   AssetLanguageRow,
   ImageRow,
   LanguageCode,
+  Published360Row,
   PublishedAssetRow,
   PublishedCollectionRow,
   TagRow,
@@ -60,6 +63,10 @@ export function AssetDetailPage() {
 
   const [imagesByLang, setImagesByLang] = useState<Record<string, ImageRow[]>>({})
   const [activeLang, setActiveLang] = useState<LanguageCode | null>(null)
+
+  // V1.5 C：360° View（Asset 级能力，与语言完全解耦）
+  //   undefined = 未加载；null = 该资产无启用序列 → 前台零渲染（规格 §30）
+  const [spin360, setSpin360] = useState<Published360Row | null | undefined>(undefined)
 
   // PC-4：下载成本透出（settings 读，不写死；总纲 §58）
   const [costs, setCosts] = useState<{ single: number; zipPer: number } | null>(null)
@@ -198,6 +205,24 @@ export function AssetDetailPage() {
     }
   }, [asset?.id])
 
+  // 4b) 360° View（V1.5 C）：只按 asset.id 取一次——?lang= 变化不重取、不重置（实现不变量）
+  useEffect(() => {
+    if (!asset?.id) return
+    let cancelled = false
+    setSpin360(undefined)
+    getPublished360(asset.id)
+      .then((row) => {
+        if (!cancelled) setSpin360(row && row.frames?.length ? row : null)
+      })
+      .catch(() => {
+        // 360 读取失败不影响资产页其余能力（下载/图库/语言），按「无 360」静默处理
+        if (!cancelled) setSpin360(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [asset?.id])
+
   // 面包屑末级：资产加载完成后写入真实名称；路由切换/卸载时 cleanup 复位，避免名称串台
   useEffect(() => {
     setLeafName(asset?.name ?? null)
@@ -318,6 +343,15 @@ export function AssetDetailPage() {
                 </button>
               ))}
             </div>
+          )}
+
+          {/* 360° View（V1.5 C）：Asset 级独立模块，位于普通 Gallery 之前、语言 Tab 之外；
+              无启用序列 → 完全不渲染（规格 §30），文案永不出现帧数（规格 §9/§54） */}
+          {spin360 && (
+            <section className="mt-6" aria-label={t('asset.s360.sectionTitle')}>
+              <h2 className="mb-2 text-sm font-medium text-muted-foreground">{t('asset.s360.sectionTitle')}</h2>
+              <Spin360 frames={spin360.frames} />
+            </section>
           )}
 
           {/* 语言 Tab 条 */}
