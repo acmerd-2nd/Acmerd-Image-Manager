@@ -27,6 +27,7 @@ import {
 import { deleteGithubImage, uploadImageGithub } from '@/features/assets/github'
 import { Admin360Card } from '@/features/assets360/Admin360Card'
 import { deleteSequence, listSequences, removeActive360 } from '@/features/assets360/api'
+import { AdminPackageCard } from '@/features/downloads/AdminPackageCard'
 import {
   addAssetTag,
   createTag,
@@ -472,6 +473,9 @@ export function AdminAssetEditorPage() {
 
       {/* 360° Product Preview（V1.5 B2；Asset 级能力，与语言完全解耦） */}
       <Admin360Card assetId={asset.id} disabled={busy} onAssetChanged={reload} />
+
+      {/* 资源包下载 · 网盘链接（V1.6.0-A；Asset 级，直连 download_sources，与语言解耦） */}
+      <AdminPackageCard assetId={asset.id} />
 
       {/* 语言面板 */}
       <section className="space-y-4">

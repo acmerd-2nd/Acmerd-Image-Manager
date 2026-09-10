@@ -187,3 +187,71 @@ export async function fetchDownloadSources(assetId: string): Promise<DownloadSou
   if (error) throw new Error(error.message)
   return (data ?? []) as DownloadSourceRow[]
 }
+
+// ============================================================================
+// V1.6.0-A：后台「网盘链接」写入层
+// 读链路（fetchDownloadSources + Worker 扣分跳转）早已就绪，缺的只是 admin 写入入口。
+// download_sources 的 admin insert/update/delete RLS 策略、URL 安全触发器（0004）、
+// download_source.updated 审计（0001）均已存在，故这里直连 Supabase、零迁移零 Worker 改动。
+// ============================================================================
+
+export type DownloadProvider = 'quark' | 'baidu'
+
+export interface DownloadSourceAdminRow {
+  id: string
+  provider: DownloadProvider
+  url: string
+  enabled: boolean
+}
+
+/** URL 不合法（DB 0004 触发器终审 / 前端二次防御）时抛出的可本地化错误。 */
+export class DownloadSourceError extends Error {
+  code: 'invalid_url' | 'error'
+  constructor(code: 'invalid_url' | 'error', message: string) {
+    super(message)
+    this.code = code
+  }
+}
+
+/** 某资产全部网盘源（含未启用，admin 视角；RLS is_admin 放行）。 */
+export async function listDownloadSourcesAdmin(assetId: string): Promise<DownloadSourceAdminRow[]> {
+  const { data, error } = await supabase
+    .from('download_sources')
+    .select('id, provider, url, enabled')
+    .eq('asset_id', assetId)
+    .order('provider')
+  if (error) throw new DownloadSourceError('error', error.message)
+  return (data ?? []) as DownloadSourceAdminRow[]
+}
+
+/** 按 (asset_id, provider) upsert；URL 合法性由 0004 触发器终审，失败映射为 invalid_url。 */
+export async function saveDownloadSource(input: {
+  assetId: string
+  provider: DownloadProvider
+  url: string
+  enabled: boolean
+}): Promise<void> {
+  const url = input.url.trim()
+  const { error } = await supabase.from('download_sources').upsert(
+    {
+      asset_id: input.assetId,
+      provider: input.provider,
+      url,
+      enabled: input.enabled,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'asset_id,provider' },
+  )
+  if (error) {
+    if (error.message.includes('DOWNLOAD_URL_INVALID')) {
+      throw new DownloadSourceError('invalid_url', error.message)
+    }
+    throw new DownloadSourceError('error', error.message)
+  }
+}
+
+/** 物理删除某条网盘源（写 download_source.updated 审计）。 */
+export async function deleteDownloadSource(id: string): Promise<void> {
+  const { error } = await supabase.from('download_sources').delete().eq('id', id)
+  if (error) throw new DownloadSourceError('error', error.message)
+}
