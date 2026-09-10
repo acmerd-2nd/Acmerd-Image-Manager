@@ -7,7 +7,7 @@
 快速恢复上下文。每次完成实质步骤后必须更新本文件的对应标记与时间戳。
 状态标记：✅ 完成 | 🟡 进行中/待裁决 | 🔴 未开始/待 Owner | 🚫 禁止/未授权
 
-最后更新：2026-09-08（**V1.4.1 Package 动态计价 ✅ CLOSED + 部署 + 生产价格矩阵 23/23 PASS**——Gate docs/v1.4.1/01（Owner D1–D4 全批 + 附加矩阵测试要求）→ 0020 KV 种子（package_download_cost_per_image=0.5，旧固定键保留 D1）→ Worker 动态计价（整个 Asset 已发布 ready 图数 × 每图成本，服务端唯一权威；矩阵验证拦截 P0：published_assets 视图 svc 无授权 42501，改基础表直查）→ 前端动态价徽标 + Admin 每图积分（两位小数）→ 部署 ver 1d0c454b → 生产矩阵 23/23（7/9/20/30 单语言 + 多语言 24→12 + 0 图守卫 + 篡改 + 幂等 + finally 零残留）→ 收口 docs/v1.4.1/02。push ✅（Owner 授权，bf7f2e6..de71e46 推 origin/main，git ls-remote 复核一致））
+最后更新：2026-09-10（**V1.5 360° Product Viewer ✅ CLOSED（A/B1/B2/C/D 全绿）**——分阶段实施：A 0022 数据模型（序列/帧/active FK+守卫触发器+RLS+published_360+allowlist 44→48）；B1 Worker 7 admin 端点 + Git Data API 单提交 + 360 sweeper（沙箱 36/36、线上 15/15）；B2 Admin 360 卡（分批/行级补传/预览/启用/替换/移除）+ Spin360 共享播放器 + make360FrameUrl 出口；C 前台 AssetDetailPage 360° View（Gallery 前、语言解耦、无 active 零渲染）；D 生产实走发现 CF 单次调用子请求配额（本地 workerd 不演算）→ 0023 整批合并登记 RPC + FRAME_BATCH_MAX 24→20 → 重部署 ver cd0c0bee（前端 chunk index-scfujPTn.js）→ **后端验收矩阵 45/45（四规格 36/72/144/360 全 ready·每目录 1 commit·吞吐≈170–184ms/帧·下载与积分隔离·审计·零残留）**、沙箱 36/36、线上 15/15。0023 经 **IPv4 会话池 ap-south-1**（直连 db 域现 IPv6-only，本机无 IPv6 出口，复现 V1.2 记录的 DNS 故障并给出可行路由）。docs/v1.5/03。待 push。）
 
 ════════════════════════════════════════════════════════════════════
 ■ 当前位置（一句话）

@@ -175,7 +175,8 @@ try {
   const dAct = (await auditCount('360.sequence.activated')) - auditBase['360.sequence.activated']
   const dDel = (await auditCount('360.sequence.deleted')) - auditBase['360.sequence.deleted']
   const dFail = (await auditCount('360.upload.failed')) - auditBase['360.upload.failed']
-  ok('D5a 审计 360.sequence.created（draft + complete 两阶段）', dCreated >= 12, `delta=${dCreated}`)
+  // created 每完成序列写 2 行（draft + complete），负样本只 draft：1 + 2×4 = 9（D2 幂等 complete 不再写）
+  ok('D5a 审计 360.sequence.created（neg draft + 四规格 draft&complete = 9）', dCreated === 9, `delta=${dCreated}`)
   ok('D5b 审计 360.sequence.activated ×2（两次激活）', dAct === 2, `delta=${dAct}`)
   ok('D5c 审计 360.sequence.deleted ≥1', dDel >= 1, `delta=${dDel}`)
   ok('D5d 校验型 409 不写故障审计（缺帧/越界均无 360.upload.failed）', dFail === 0, `delta=${dFail}`)

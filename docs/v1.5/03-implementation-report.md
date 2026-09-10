@@ -1,10 +1,10 @@
 # V1.5 360° Product Viewer — Phase B/C/D 实施与验收报告
 
-版本：V1.5 收口稿（Phase D 部分项待 0023 授权后补跑）
+版本：V1.5 收口稿（Phase D 已应用 0023 + 重部署 + 全量验收 45/45 绿）
 日期：2026-09-10
 关联：`01-phasing-plan.md`（阶段与 STOP 点）、`02-design-gate.md`（§G1–G12 裁决、D1–D6 决策）
-生产：Worker ver `1c9b8281`(B1) → B2/C 之后为当前线上版本；前端入口 chunk `index-EquUwtrk.js`
-远端：`main = c8432a9`（28d30d4 B1 → 3105bb8 B2 → c8432a9 C）
+生产：Worker ver `cd0c0bee`（D：合并登记 RPC + 批量 20，100% 流量）；前端入口 chunk `index-scfujPTn.js`
+远端：`main = c8432a9`（28d30d4 B1 → 3105bb8 B2 → c8432a9 C → 51a9293 D 修复）
 
 ---
 
@@ -16,7 +16,7 @@
 | B1 | `worker/github.ts` Git Data API（blob/tree/commit/ref 单提交 + 目录删除）；`worker/index.ts` 7 个 admin 端点 + 360 sweeper | ✅ 已部署，沙箱 36/36、线上 15/15 |
 | B2 | `src/features/assets360/{api,Spin360,Admin360Card}`、`make360FrameUrl`、类型层镜像、编辑器接入、删资产先清 360 | ✅ 已部署 |
 | C | `AssetDetailPage` 前台 360° View（Gallery 之前、语言解耦、无 active 零渲染） | ✅ 已部署 |
-| D | 验收矩阵脚本 `v15-d-acceptance.mjs`、夹具脚本 `v15-c-e2e-{setup,teardown}.mjs`、素材生成器 `tools/gen-360-frames.mjs` | 🟡 后端矩阵待 0023 |
+| D | `0023` 合并登记 RPC + `FRAME_BATCH_MAX` 24→20；验收矩阵 `v15-d-acceptance.mjs`、夹具 `v15-c-e2e-{setup,teardown}.mjs`、素材生成器 `tools/gen-360-frames.mjs` | ✅ 已应用生产 + 重部署 ver `cd0c0bee`，后端矩阵 45/45、沙箱 36/36、线上 15/15 |
 
 ---
 
@@ -41,7 +41,7 @@ blob POST failed: Error: Too many subrequests by single Worker invocation
 24 帧 = 48 子请求 + 租约/取帧/序列状态 ≈ 5 个 → 恰好在第 24 帧撞墙。
 **B1 沙箱未暴露，因为本地 workerd 不演算该配额**（教训：涉及子请求预算的改动必须至少在生产跑一次冒烟）。
 
-修复（已入库待部署）：
+修复（已应用生产 + 重部署 ver `cd0c0bee`，后端矩阵 45/45 验证）：
 - `0023_v15_d_frames_bulk_update.sql`：新增 `update_asset_360_frames(jsonb)` 批量登记 RPC，
   仅 `service_role` 可执行、`security definer`，并用谓词限定「只允许改写 draft/uploading/failed 序列的帧」+ sha 格式校验，
   杜绝篡改线上 ready 序列。
@@ -62,7 +62,7 @@ blob POST failed: Error: Too many subrequests by single Worker invocation
 | 越界帧号 | ✅ | `N1c frame_index out of range` |
 | 批量上限 | ✅ | `N3` 21 帧/请求 → 400 |
 | 36 上传 | ✅ | 生产夹具 36 帧 8.5s → 单 commit `2608933` |
-| 72 / 144 / 360 上传 | ⏳ | 待 0023 部署后 `v15-d-acceptance.mjs` 全量补跑 |
+| 72 / 144 / 360 上传 | ✅ | 生产实跑全 ready、每目录 GitHub commit 数 = 1；吞吐 ≈170–184 ms/帧（4 路并发），首批即验证 0023 合并 RPC 规避子请求配额 |
 | Preview | ✅ | 预览 overlay 内真实播放器，拖拽 0001→0031（180px/6px 精确） |
 | Activate | ✅ | 指针落库 + 审计 `360.sequence.activated` |
 | Replace（旧版保留可回滚） | ✅ | 原子切换后旧序列仍 ready，再单 commit 清理（`removed_remote_files` 精确） |
@@ -106,6 +106,8 @@ blob POST failed: Error: Too many subrequests by single Worker invocation
 2. **行级补传要求重选同一批完整文件**（帧序号按文件名顺序对齐）；只选缺帧会给出明确报错而非错序写入。
 3. **子请求配额是隐性天花板**：任何「每帧一次数据库写」的新端点都会重演 2.3。后续若加多帧批量操作，一律走合并 RPC。
 4. 移动端仅做了指针级手势与轴分离验证，**未做真机实测**（iOS Safari 的 fullscreen 行为差异需人工确认）。
+5. **生产迁移连接需走 IPv4 会话池**：本次执行 0023 时发现直连域 `db.<ref>.supabase.co` 现仅返回 AAAA（A 记录 ENODATA），本环境无 IPv6 出口（ENETUNREACH）；改经 `aws-0-ap-south-1.pooler.supabase.com:5432`（用户 `postgres.<ref>`）成功。后续 `scripts/db-apply.mjs` 在本机跑需临时注入该池 `DATABASE_URL`（纯运维，不改代码/数据）。
+6. **`wrangler deploy` 尾部 `workers/routes` 列举报 Auth 10000**：因 API Token 缺 `Zone Workers Routes / User Details Read` 权限；bundle 已 `Uploaded` 且自定义域早已挂接、新版本 100% 生效（`/api/health` 200、新 chunk 上线可证），非部署失败。彻底消除噪声需给令牌补该权限或改 `--dry-run` 外的验证。
 
 ---
 

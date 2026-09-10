@@ -123,16 +123,16 @@ try {
   r = await api(`/api/admin/360-sequences/${SEQ1}/activate`, 'POST')
   ok('W4 activate failed 序列 → 409 invalid_state', r.status === 409 && r.json?.error?.code === 'invalid_state', JSON.stringify(r.json).slice(0, 100))
 
-  // ---- W5 分批传帧（36 = 2 批：24 + 12）----
+  // ---- W5 分批传帧（36 = 2 批：20 + 16；FRAME_BATCH_MAX=20，见 0023/CF 子请求配额）----
   const mkForm = (from, to) => {
     const fd = new FormData()
     for (let i = from; i <= to; i++) fd.append(`f_${i}`, new Blob([PNG_1X1], { type: 'image/png' }), `${String(i).padStart(4, '0')}.png`)
     return fd
   }
-  r = await api(`/api/admin/360-sequences/${SEQ1}/frames`, 'POST', mkForm(1, 24))
-  ok('W5 批 1（f_1..f_24）全成功', r.status === 200 && r.json?.ok === true && r.json?.uploaded?.length === 24, JSON.stringify(r.json?.failed ?? '').slice(0, 200))
-  r = await api(`/api/admin/360-sequences/${SEQ1}/frames`, 'POST', mkForm(25, 36))
-  ok('W5 批 2（f_25..f_36）全成功', r.status === 200 && r.json?.ok === true && r.json?.uploaded?.length === 12, JSON.stringify(r.json?.failed ?? '').slice(0, 200))
+  r = await api(`/api/admin/360-sequences/${SEQ1}/frames`, 'POST', mkForm(1, 20))
+  ok('W5 批 1（f_1..f_20）全成功', r.status === 200 && r.json?.ok === true && r.json?.uploaded?.length === 20, JSON.stringify(r.json?.failed ?? '').slice(0, 200))
+  r = await api(`/api/admin/360-sequences/${SEQ1}/frames`, 'POST', mkForm(21, 36))
+  ok('W5 批 2（f_21..f_36）全成功', r.status === 200 && r.json?.ok === true && r.json?.uploaded?.length === 16, JSON.stringify(r.json?.failed ?? '').slice(0, 200))
 
   // 越界帧拒绝（批内失败计数）
   const badForm = new FormData()
