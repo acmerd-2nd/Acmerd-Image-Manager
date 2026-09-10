@@ -104,7 +104,9 @@ export function AssetDetailPage() {
   const [selectionMode, setSelectionMode] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState(false)
-  const [preview, setPreview] = useState<ImageRow | null>(null)
+  // V1.6.0-B：预览改存「当前语言图片列表的索引」，供 Lightbox 整组 ←/→ 翻页；
+  // 用索引而非图片对象，切语言时列表整体替换、天然不串图。null = 未打开。
+  const [previewIndex, setPreviewIndex] = useState<number | null>(null)
   const toast = useToast()
 
   // V1.4.2：资产所属合集面包屑链（探索 / 合集链… / 资产名）；链断裂或无合集 = 不渲染
@@ -427,7 +429,7 @@ export function AssetDetailPage() {
             </div>
           ) : (
             <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-              {activeImages.map((img) => {
+              {activeImages.map((img, idx) => {
                 const isSelected = selected.has(img.id)
                 const selectDisabled = !isSelected && selected.size >= MAX_ZIP
                 return (
@@ -444,7 +446,7 @@ export function AssetDetailPage() {
                           if (selectionMode) {
                             if (!selectDisabled) toggleSelect(img.id)
                           } else {
-                            setPreview(img)
+                            setPreviewIndex(idx)
                           }
                         }}
                         className={cn('block w-full', selectionMode ? 'cursor-pointer' : 'cursor-zoom-in')}
@@ -548,13 +550,15 @@ export function AssetDetailPage() {
         </div>
       )}
 
-      {/* 全屏预览（Phase 9 D7） */}
-      {preview && (
+      {/* 全屏预览（V1.6.0-B：整组可 ←/→ 翻页；索引绑定当前语言图片列表） */}
+      {previewIndex !== null && activeImages && activeImages.length > 0 && (
         <Lightbox
-          image={preview}
-          onClose={() => setPreview(null)}
+          images={activeImages}
+          index={previewIndex < activeImages.length ? previewIndex : 0}
+          onIndexChange={setPreviewIndex}
+          onClose={() => setPreviewIndex(null)}
           onDownload={(img) => {
-            setPreview(null)
+            setPreviewIndex(null)
             onSingleDownload(img)
           }}
         />
