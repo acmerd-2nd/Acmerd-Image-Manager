@@ -2301,6 +2301,8 @@ app.patch('/api/admin/collections/:collectionId', async (c) => {
       patch.cover_image_id = null
     } else if (typeof body.coverImageId === 'string' && UUID_RE.test(body.coverImageId)) {
       patch.cover_image_id = body.coverImageId
+      // V1.7.0：并存互斥——选中资产图作封面时，清掉本地上传封面（单一生效封面）
+      patch.cover_source_path = null
     } else {
       return c.json({ error: { code: 'bad_request', message: 'invalid coverImageId' } }, 400)
     }
@@ -2356,6 +2358,120 @@ app.patch('/api/admin/collections/:collectionId', async (c) => {
   return c.json({ ok: true, collection: mut.row })
 })
 
+// ===========================================================================
+// V1.7.0：合集封面「本地上传」（镜像站点 Logo：GitHub 独立命名空间 + collections.cover_source_path）
+//   POST   /api/admin/collections/:id/cover  —— multipart(file) → collections/{id}/cover.{ext}
+//   DELETE /api/admin/collections/:id/cover  —— 删 GitHub 对象 + 清 cover_source_path
+//   与 cover_image_id 互斥：上传写 cover_source_path 同时清 cover_image_id（单一生效封面）。
+//   零租约（每合集固定单对象、ghPutFile 幂等替换，同 Logo）；写仅 Worker service_role；requireAdmin。
+// ===========================================================================
+
+const COLLECTION_COVER_MAX_FILE_SIZE = 5 * 1024 * 1024
+
+app.post('/api/admin/collections/:collectionId/cover', async (c) => {
+  const auth = await requireAdmin(c)
+  if (!auth.ok) return c.json({ error: authErrBody(auth) }, auth.status)
+
+  const id = c.req.param('collectionId')
+  if (!UUID_RE.test(id)) return c.json({ error: { code: 'bad_request', message: 'Invalid collection id' } }, 400)
+
+  const cfg = ghConfig(c.env)
+  if (!cfg) return githubNotConfigured(c)
+
+  let form: FormData
+  try {
+    form = await c.req.formData()
+  } catch {
+    return c.json({ error: { code: 'bad_request', message: 'multipart/form-data body required' } }, 400)
+  }
+  const file = form.get('file')
+  if (!(file instanceof File)) {
+    return c.json({ error: { code: 'bad_request', message: 'file field required' } }, 400)
+  }
+  if (!GITHUB_MIME_EXT[file.type]) {
+    return c.json({ error: { code: 'bad_request', message: `Unsupported type: ${file.type} (JPEG/PNG/WebP only)` } }, 400)
+  }
+  if (file.size > COLLECTION_COVER_MAX_FILE_SIZE) {
+    return c.json({ error: { code: 'bad_request', message: 'File too large (max 5 MB)' } }, 413)
+  }
+
+  const before = await fetchCollectionRow(c.env, id)
+  if (!before) return c.json({ error: { code: 'not_found', message: 'Collection not found' } }, 404)
+
+  const ext = GITHUB_MIME_EXT[file.type]
+  const sourcePath = `collections/${id}/cover.${ext}`
+  const bytes = new Uint8Array(await file.arrayBuffer())
+  const expectedSha = await computeGitBlobSha(bytes)
+
+  // 换扩展名时删旧封面，避免 collections/{id}/ 下残留多份
+  const oldPath = typeof before.cover_source_path === 'string' ? before.cover_source_path : ''
+  if (oldPath && oldPath !== sourcePath) {
+    try {
+      await ghDeleteFile(cfg, oldPath)
+    } catch (e) {
+      console.error('Old collection cover delete failed:', e)
+    }
+  }
+
+  try {
+    await withNetworkRetry(() => ghPutFile(cfg, sourcePath, bytes, expectedSha))
+  } catch (e) {
+    console.error('Collection cover upload failed:', e)
+    return c.json({ error: { code: 'upstream_error', message: 'GitHub upload failed' } }, 502)
+  }
+
+  // 互斥：上传封面胜出，清掉选中的资产图封面
+  const mut = await patchCollectionRow(c.env, id, { cover_source_path: sourcePath, cover_image_id: null })
+  if (!mut.ok) {
+    console.error('cover_source_path write failed:', mut.status, mut.message)
+    return c.json({ error: { code: 'internal', message: 'Failed to persist collection cover' } }, 500)
+  }
+
+  await writeAudit(c.env, 'collection.updated', 'collections', id, auth.userId, {
+    fields: ['cover_source_path'],
+    cover_source_path: sourcePath,
+  })
+  return c.json({ ok: true, path: sourcePath })
+})
+
+app.delete('/api/admin/collections/:collectionId/cover', async (c) => {
+  const auth = await requireAdmin(c)
+  if (!auth.ok) return c.json({ error: authErrBody(auth) }, auth.status)
+
+  const id = c.req.param('collectionId')
+  if (!UUID_RE.test(id)) return c.json({ error: { code: 'bad_request', message: 'Invalid collection id' } }, 400)
+
+  const before = await fetchCollectionRow(c.env, id)
+  if (!before) return c.json({ error: { code: 'not_found', message: 'Collection not found' } }, 404)
+
+  const cfg = ghConfig(c.env)
+  const oldPath = typeof before.cover_source_path === 'string' ? before.cover_source_path : ''
+
+  let githubDeleted = false
+  if (cfg && oldPath) {
+    try {
+      await ghDeleteFile(cfg, oldPath)
+      githubDeleted = true
+    } catch (e) {
+      console.error('Collection cover GitHub delete failed:', e)
+    }
+  }
+
+  const mut = await patchCollectionRow(c.env, id, { cover_source_path: null })
+  if (!mut.ok) {
+    console.error('cover_source_path clear failed:', mut.status, mut.message)
+    return c.json({ error: { code: 'internal', message: 'Failed to clear collection cover' } }, 500)
+  }
+
+  await writeAudit(c.env, 'collection.updated', 'collections', id, auth.userId, {
+    fields: ['cover_source_path'],
+    cover_source_path: null,
+    github_deleted: githubDeleted,
+    previous_path: oldPath || null,
+  })
+  return c.json({ ok: true, removed: oldPath || null, github_deleted: githubDeleted })
+})
+
 app.delete('/api/admin/collections/:collectionId', async (c) => {
   const auth = await requireAdmin(c)
   if (!auth.ok) return c.json({ error: authErrBody(auth) }, auth.status)
@@ -2388,6 +2504,13 @@ app.delete('/api/admin/collections/:collectionId', async (c) => {
     const errBody = (await del.json().catch(() => null)) as { message?: string } | null
     console.error('Collection delete failed:', del.status, errBody?.message)
     return c.json({ error: { code: 'upstream_error', message: 'Collection delete failed' } }, 502)
+  }
+
+  // V1.7.0：删合集后 best-effort 清理其本地上传封面对象（避免 collections/{id}/ 孤儿；行已删，仅清远端）
+  const coverCfg = ghConfig(c.env)
+  const coverPath = typeof before.cover_source_path === 'string' ? before.cover_source_path : ''
+  if (coverCfg && coverPath) {
+    await ghDeleteFile(coverCfg, coverPath).catch((e) => console.error('Collection cover cleanup on delete failed:', e))
   }
 
   await writeAudit(c.env, 'collection.deleted', 'collections', id, auth.userId, {

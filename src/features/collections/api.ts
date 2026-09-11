@@ -220,6 +220,49 @@ export function deleteCollection(id: string) {
   return collectionRequest<{ ok: true }>(`/api/admin/collections/${id}`, undefined, 'DELETE')
 }
 
+/** 仅带 Authorization 的 multipart 请求头（Content-Type 交由浏览器带 boundary） */
+async function adminAuthOnlyHeader(): Promise<Record<string, string>> {
+  const { data } = await supabase.auth.getSession()
+  const jwt = data.session?.access_token
+  if (!jwt) throw new Error(t('admin.api.unauthorized'))
+  return { Authorization: `Bearer ${jwt}` }
+}
+
+/** V1.7.0：上传本地图片作合集封面（Worker 写 GitHub + 落 cover_source_path，互斥清 cover_image_id）。 */
+export async function uploadCollectionCover(id: string, file: File): Promise<{ ok: true; path: string }> {
+  const headers = await adminAuthOnlyHeader()
+  const form = new FormData()
+  form.append('file', file)
+  const res = await fetch(`/api/admin/collections/${id}/cover`, { method: 'POST', headers, body: form })
+  const payload = (await res.json().catch(() => null)) as
+    | { ok?: boolean; path?: string; error?: { code?: string; message?: string } }
+    | null
+  if (!res.ok || !payload?.ok) {
+    const err = new Error(
+      payload?.error?.message ?? t('admin.api.requestFailed', { status: res.status }),
+    ) as Error & { code?: string }
+    err.code = payload?.error?.code
+    throw err
+  }
+  return { ok: true, path: payload.path ?? '' }
+}
+
+/** V1.7.0：移除合集本地上传封面（删 GitHub 对象 + 清 cover_source_path）。 */
+export async function deleteCollectionCover(id: string): Promise<void> {
+  const headers = await adminAuthOnlyHeader()
+  const res = await fetch(`/api/admin/collections/${id}/cover`, { method: 'DELETE', headers })
+  const payload = (await res.json().catch(() => null)) as
+    | { ok?: boolean; error?: { code?: string; message?: string } }
+    | null
+  if (!res.ok || !payload?.ok) {
+    const err = new Error(
+      payload?.error?.message ?? t('admin.api.requestFailed', { status: res.status }),
+    ) as Error & { code?: string }
+    err.code = payload?.error?.code
+    throw err
+  }
+}
+
 /** 资产归组/移出（collectionId=null 即移出；服务端守卫 cover-in-use） */
 export function assignAssetToCollection(assetId: string, collectionId: string | null) {
   return collectionRequest<{ ok: true }>('/api/admin/collections/assign', {

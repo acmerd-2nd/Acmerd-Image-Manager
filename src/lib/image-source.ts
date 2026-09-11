@@ -66,6 +66,15 @@ export function brandLogoUrl(path: string | null | undefined): string | undefine
 }
 
 /**
+ * V1.7.0：合集本地上传封面 URL 出口（与 Logo 同源，走 githubRawUrl / CDN 切换口）。
+ * path 为空（未上传，回落选中的资产图 cover_image_id）返回 undefined。
+ */
+export function collectionCoverUrl(path: string | null | undefined): string | undefined {
+  if (!path) return undefined
+  return githubRawUrl(path)
+}
+
+/**
  * V1.5 B2：360° 序列帧 URL 唯一出口（Gate §40/§41）。
  * 帧与普通图片同仓同分支，故直接复用 makeImageUrl 的 github 分支；
  * 未来 GitHub → CDN 切换只改本文件，前后台组件零改动。

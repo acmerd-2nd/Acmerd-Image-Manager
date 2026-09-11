@@ -1,16 +1,19 @@
-import { useCallback, useEffect, useState } from 'react'
-import { ImagePlus, Plus } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { ImagePlus, Plus, Upload } from 'lucide-react'
 import type { AssetRow, CollectionRow } from '@/types/database'
 import {
   assignAssetToCollection,
   createCollection,
   deleteCollection,
+  deleteCollectionCover,
   listAllCollections,
   listAssetsInCollection,
   listUngroupedAssets,
   updateCollection,
+  uploadCollectionCover,
 } from '@/features/collections/api'
 import { getCoverUrls, slugify } from '@/features/assets/api'
+import { collectionCoverUrl } from '@/lib/image-source'
 import { useAuth } from '@/features/auth/AuthProvider'
 import { useLocale } from '@/i18n'
 import { Badge } from '@/components/ui/badge'
@@ -27,6 +30,10 @@ import { ConfirmDialog } from '@/components/ConfirmDialog'
  * 层级：新建/编辑可选父级（防环/深度≤5 由 DB 触发器终审，Worker 预检父级存在性）。
  * 归组：列表内直接加未归组资产；移出带 cover 守卫提示（DB 触发器终审）。
  */
+
+// V1.7.0：本地上传封面前端预校验（与 Worker 端 5MB / MIME 白名单一致，仅提前给本地化错误）
+const COVER_MIME = ['image/jpeg', 'image/png', 'image/webp']
+const COVER_MAX_SIZE = 5 * 1024 * 1024
 
 /** 按层级 DFS 展开（roots → 各级子级，组内按 sort_order），供树形渲染 */
 function flattenTree(rows: CollectionRow[]): Array<{ col: CollectionRow; depth: number }> {
@@ -95,6 +102,8 @@ export function AdminCollectionsPage() {
   // V1.3.1 G2：封面选图 Dialog（成员资产图片网格）
   const [coverPickerOpen, setCoverPickerOpen] = useState(false)
   const [memberCovers, setMemberCovers] = useState<Map<string, string>>(new Map())
+  // V1.7.0：本地上传封面
+  const coverInputRef = useRef<HTMLInputElement>(null)
 
   const reload = useCallback(async () => {
     try {
@@ -183,7 +192,7 @@ export function AdminCollectionsPage() {
 
   const onTransition = (col: CollectionRow, to: 'draft' | 'published' | 'archived') =>
     run(async () => {
-      if (to === 'published' && !col.cover_image_id) {
+      if (to === 'published' && !col.cover_image_id && !col.cover_source_path) {
         throw new Error(t('admin.collections.publishBlocked'))
       }
       await updateCollection(col.id, { status: to })
@@ -216,6 +225,29 @@ export function AdminCollectionsPage() {
         }
         throw e
       }
+    })
+
+  // V1.7.0：本地上传封面（前端预校验 → Worker 写 GitHub + 落 cover_source_path，互斥清选中的资产图）
+  const onCoverFileChosen = (files: FileList | null) => {
+    const file = files?.[0]
+    if (coverInputRef.current) coverInputRef.current.value = ''
+    if (!file || !selected) return
+    if (!COVER_MIME.includes(file.type)) {
+      setError(t('admin.collections.coverErrBadFormat'))
+      return
+    }
+    if (file.size > COVER_MAX_SIZE) {
+      setError(t('admin.collections.coverErrTooLarge'))
+      return
+    }
+    run(async () => {
+      await uploadCollectionCover(selected.id, file)
+    })
+  }
+
+  const onRemoveUploadedCover = () =>
+    run(async () => {
+      if (selected) await deleteCollectionCover(selected.id)
     })
 
   // V1.2-A：换父（null=升根；客户端先排除自身+子孙，环/深度由 DB 触发器终审）
@@ -425,42 +457,83 @@ export function AdminCollectionsPage() {
               </select>
             </div>
 
-            {/* V1.3.1 G2：封面管理卡（无封面明确空态 / 有封面预览+更换+移除） */}
+            {/* V1.3.1 G2 + V1.7.0：封面管理卡（本地上传优先 / 从合集内选图 / 移除） */}
             <div className="border-t pt-3">
               <div className="text-sm font-medium">{t('admin.collections.coverManageTitle')}</div>
-              {selected.cover_image_id ? (
-                <div className="mt-2 flex flex-wrap items-center gap-3">
-                  <div className="h-20 w-32 overflow-hidden rounded-md border bg-muted">
-                    {memberCovers.get(selected.cover_image_id) ? (
-                      <img
-                        src={memberCovers.get(selected.cover_image_id)}
-                        alt={selected.name}
-                        className="h-full w-full object-cover"
-                      />
+              <input
+                ref={coverInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                className="hidden"
+                onChange={(e) => onCoverFileChosen(e.target.files)}
+              />
+              {(() => {
+                const hasUploaded = !!selected.cover_source_path
+                const hasPicked = !!selected.cover_image_id
+                const previewSrc = hasUploaded
+                  ? collectionCoverUrl(selected.cover_source_path)
+                  : hasPicked
+                    ? memberCovers.get(selected.cover_image_id!)
+                    : undefined
+                const canPick = !!members && members.some((a) => a.cover_image_id)
+                return (
+                  <div className="mt-2">
+                    {hasUploaded || hasPicked ? (
+                      <div className="flex flex-wrap items-center gap-3">
+                        <div className="h-20 w-32 overflow-hidden rounded-md border bg-muted">
+                          {previewSrc ? (
+                            <img src={previewSrc} alt={selected.name} className="h-full w-full object-cover" />
+                          ) : (
+                            <div className="flex h-full items-center justify-center">
+                              <Spinner className="h-4 w-4" />
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex flex-col items-start gap-2">
+                          <Badge variant={hasUploaded ? 'default' : 'secondary'}>
+                            {hasUploaded
+                              ? t('admin.collections.coverSourceUploaded')
+                              : t('admin.collections.coverSourcePicked')}
+                          </Badge>
+                          <div className="flex flex-wrap gap-2">
+                            <Button size="sm" variant="outline" disabled={busy} onClick={() => coverInputRef.current?.click()}>
+                              <Upload className="mr-1 h-4 w-4" />
+                              {hasUploaded
+                                ? t('admin.collections.coverReplaceUpload')
+                                : t('admin.collections.coverUploadBtn')}
+                            </Button>
+                            <Button size="sm" variant="outline" disabled={busy || !canPick} onClick={() => setCoverPickerOpen(true)}>
+                              <ImagePlus className="mr-1 h-4 w-4" />
+                              {t('admin.collections.coverPickFromAssets')}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="text-destructive"
+                              disabled={busy}
+                              onClick={() => (hasUploaded ? onRemoveUploadedCover() : onSetCover(null))}
+                            >
+                              {t('admin.collections.coverRemove')}
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
                     ) : (
-                      <div className="flex h-full items-center justify-center">
-                        <Spinner className="h-4 w-4" />
+                      <div className="flex flex-wrap items-center gap-2 rounded-md border border-dashed p-4">
+                        <span className="text-sm text-muted-foreground">{t('admin.collections.coverNone')}</span>
+                        <Button size="sm" disabled={busy} onClick={() => coverInputRef.current?.click()}>
+                          <Upload className="mr-1 h-4 w-4" />
+                          {t('admin.collections.coverUploadBtn')}
+                        </Button>
+                        <Button size="sm" variant="outline" disabled={busy || !canPick} onClick={() => setCoverPickerOpen(true)}>
+                          <ImagePlus className="mr-1 h-4 w-4" />
+                          {t('admin.collections.coverSetBtn')}
+                        </Button>
                       </div>
                     )}
                   </div>
-                  <div className="flex gap-2">
-                    <Button size="sm" variant="outline" disabled={busy || !members || members.length === 0} onClick={() => setCoverPickerOpen(true)}>
-                      {t('admin.collections.coverChange')}
-                    </Button>
-                    <Button size="sm" variant="outline" disabled={busy} onClick={() => onSetCover(null)}>
-                      {t('admin.collections.coverRemove')}
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                <div className="mt-2 flex flex-wrap items-center gap-3 rounded-md border border-dashed p-4">
-                  <div className="text-sm text-muted-foreground">{t('admin.collections.coverNone')}</div>
-                  <Button size="sm" disabled={busy || !members || members.length === 0} onClick={() => setCoverPickerOpen(true)}>
-                    <ImagePlus className="mr-1 h-4 w-4" />
-                    {t('admin.collections.coverSetBtn')}
-                  </Button>
-                </div>
-              )}
+                )
+              })()}
             </div>
 
             {members === null ? (

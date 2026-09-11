@@ -3,16 +3,28 @@ import { Link } from 'react-router-dom'
 import { FolderOpen } from 'lucide-react'
 import type { PublishedCollectionRow } from '@/types/database'
 import { getCoverUrls } from '@/features/assets/api'
+import { collectionCoverUrl } from '@/lib/image-source'
 import { useLocale } from '@/i18n'
 import { Card, CardContent } from '@/components/ui/card'
 
-/** V1.1 PC-2：首页 Collection 卡片（cover = cover_image_id 经 makeImageUrl；无图占位） */
+/**
+ * V1.1 PC-2：首页 Collection 卡片。
+ * V1.7.0：封面优先本地上传（cover_source_path → collectionCoverUrl），否则回落选中的资产图（cover_image_id）。
+ */
 export function CollectionCard({ collection }: { collection: PublishedCollectionRow }) {
   const { t } = useLocale()
   const [coverUrl, setCoverUrl] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
+    // 上传封面优先：同步出 URL，无需查 images 表
+    if (collection.cover_source_path) {
+      setCoverUrl(collectionCoverUrl(collection.cover_source_path) ?? null)
+      return () => {
+        cancelled = true
+      }
+    }
+    setCoverUrl(null)
     if (collection.cover_image_id) {
       getCoverUrls([collection.cover_image_id]).then((map) => {
         if (!cancelled) setCoverUrl(map.get(collection.cover_image_id!) ?? null)
@@ -21,7 +33,7 @@ export function CollectionCard({ collection }: { collection: PublishedCollection
     return () => {
       cancelled = true
     }
-  }, [collection.cover_image_id])
+  }, [collection.cover_source_path, collection.cover_image_id])
 
   return (
     <Link to={`/collection/${collection.slug}`} className="group block">

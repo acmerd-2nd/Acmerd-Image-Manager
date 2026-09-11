@@ -80,6 +80,8 @@ export interface CollectionRow {
   slug: string
   description: string | null
   cover_image_id: string | null
+  /** V1.7.0：本地上传封面的 GitHub 路径（collections/{id}/cover.{ext}）；与 cover_image_id 互斥、优先展示 */
+  cover_source_path: string | null
   status: AssetStatus
   sort_order: number
   parent_id: string | null
@@ -97,6 +99,8 @@ export interface PublishedCollectionRow {
   cover_image_id: string | null
   asset_count: number
   parent_id: string | null
+  /** V1.7.0：本地上传封面路径（非空优先展示，否则回落 cover_image_id） */
+  cover_source_path: string | null
 }
 
 /** V1.1 D10：账号来源标记（仅标记字段，不构成特殊权限类别） */
