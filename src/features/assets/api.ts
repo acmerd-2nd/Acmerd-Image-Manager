@@ -151,6 +151,24 @@ export async function swapImageOrder(a: ImageRow, b: ImageRow): Promise<void> {
   if (e2) throw e2
 }
 
+/**
+ * 重排（V1.8.1 取代逐步 swap，统一支撑 上移/下移/移到最前/移到最后/拖拽）：
+ * 传入【目标顺序】的本语言图片数组，把每行 sort_order 设为其数组下标（0..n-1）；
+ * 仅对下标与现有 sort_order 不等的行发起 UPDATE（避免无谓写与审计）。
+ * sort_order 无唯一约束 ⇒ 并发写不同 id 安全；写走 admin JWT + RLS（同 swapImageOrder）。
+ */
+export async function reorderImages(ordered: ImageRow[]): Promise<void> {
+  const writes = ordered
+    .map((r, i) =>
+      r.sort_order === i ? null : supabase.from('images').update({ sort_order: i }).eq('id', r.id),
+    )
+    .filter((p): p is NonNullable<typeof p> => p !== null)
+  if (writes.length === 0) return
+  const results = await Promise.all(writes)
+  const failed = results.find((r) => r.error)
+  if (failed?.error) throw failed.error
+}
+
 // ---------------- 用户端（published 链路） ----------------
 
 export async function listPublishedAssets(): Promise<PublishedAssetRow[]> {

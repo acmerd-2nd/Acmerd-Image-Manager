@@ -1,6 +1,23 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { ArrowDown, ArrowUp, ImagePlus, Plus, Trash2, X } from 'lucide-react'
+import { ArrowDown, ArrowUp, ArrowDownToLine, ArrowUpToLine, GripVertical, ImagePlus, Plus, Trash2, X } from 'lucide-react'
+import {
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  arrayMove,
+  rectSortingStrategy,
+  sortableKeyboardCoordinates,
+  useSortable,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import type {
   AssetLanguageRow,
   AssetRow,
@@ -18,8 +35,8 @@ import {
   getAsset,
   listImages,
   listLanguages,
+  reorderImages,
   setLanguageStatus,
-  swapImageOrder,
   toPublicUrl,
   transitionAsset,
   updateAsset,
@@ -128,6 +145,11 @@ export function AdminAssetEditorPage() {
     }
     setBusy(false)
   }
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  )
 
   if (loadError) {
     return (
@@ -257,14 +279,46 @@ export function AdminAssetEditorPage() {
     setBusy(false)
   }
 
-  const moveImage = (img: ImageRow, dir: -1 | 1) =>
+  const bySort = (a: ImageRow, b: ImageRow) => a.sort_order - b.sort_order
+
+  const applyOrder = (ordered: ImageRow[]) =>
     run(async () => {
-      const siblings = imagesOf(img.asset_language_id).sort((a, b) => a.sort_order - b.sort_order)
-      const idx = siblings.findIndex((s) => s.id === img.id)
-      const target = siblings[idx + dir]
-      if (!target) return
-      await swapImageOrder(img, target)
+      await reorderImages(ordered)
     })
+
+  const orderedSiblings = (img: ImageRow) => imagesOf(img.asset_language_id).slice().sort(bySort)
+
+  const moveImage = (img: ImageRow, dir: -1 | 1) => {
+    const siblings = orderedSiblings(img)
+    const idx = siblings.findIndex((s) => s.id === img.id)
+    const to = idx + dir
+    if (idx < 0 || to < 0 || to >= siblings.length) return
+    applyOrder(arrayMove(siblings, idx, to))
+  }
+
+  const moveImageToFront = (img: ImageRow) => {
+    const siblings = orderedSiblings(img)
+    const idx = siblings.findIndex((s) => s.id === img.id)
+    if (idx <= 0) return
+    applyOrder(arrayMove(siblings, idx, 0))
+  }
+
+  const moveImageToBack = (img: ImageRow) => {
+    const siblings = orderedSiblings(img)
+    const idx = siblings.findIndex((s) => s.id === img.id)
+    if (idx < 0 || idx === siblings.length - 1) return
+    applyOrder(arrayMove(siblings, idx, siblings.length - 1))
+  }
+
+  const onDragEnd = (langId: string) => (e: DragEndEvent) => {
+    const { active, over } = e
+    if (!over || active.id === over.id) return
+    const siblings = imagesOf(langId).slice().sort(bySort)
+    const oldIndex = siblings.findIndex((s) => s.id === active.id)
+    const newIndex = siblings.findIndex((s) => s.id === over.id)
+    if (oldIndex < 0 || newIndex < 0) return
+    applyOrder(arrayMove(siblings, oldIndex, newIndex))
+  }
 
   const removeImage = (img: ImageRow) =>
     run(async () => {
@@ -548,40 +602,33 @@ export function AdminAssetEditorPage() {
               {imgs.length === 0 ? (
                 <p className="text-xs text-muted-foreground">{t('admin.editor.noImages')}</p>
               ) : (
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
-                  {imgs.map((img, idx) => (
-                    <div key={img.id} className="space-y-1 rounded border p-1">
-                      <div className="relative aspect-square overflow-hidden rounded bg-muted">
-                        <img src={toPublicUrl(img)} alt={img.filename} className="h-full w-full object-cover" />
-                        {asset.cover_image_id === img.id && (
-                          <span className="absolute left-1 top-1 rounded bg-primary px-1 text-[10px] text-primary-foreground">
-                            {t('admin.editor.cover')}
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex justify-center gap-0.5">
-                        <Button size="sm" variant="ghost" className="h-7 px-1.5" disabled={busy || idx === 0} onClick={() => moveImage(img, -1)} title={t('admin.editor.moveUp')}>
-                          <ArrowUp className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button size="sm" variant="ghost" className="h-7 px-1.5" disabled={busy || idx === imgs.length - 1} onClick={() => moveImage(img, 1)} title={t('admin.editor.moveDown')}>
-                          <ArrowDown className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-7 px-1.5 text-[11px]"
-                          disabled={busy || asset.cover_image_id === img.id}
-                          onClick={() => setCover(img)}
-                        >
-                          {t('admin.editor.setCover')}
-                        </Button>
-                        <Button size="sm" variant="ghost" className="h-7 px-1.5 text-destructive" disabled={busy} onClick={() => removeImage(img)} title={t('admin.editor.deleteImage')}>
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
+                <DndContext
+                  sensors={sensors}
+                  collisionDetection={closestCenter}
+                  onDragEnd={onDragEnd(lang.id)}
+                >
+                  <SortableContext items={imgs.map((i) => i.id)} strategy={rectSortingStrategy}>
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+                      {imgs.map((img, idx) => (
+                        <SortableImageCard
+                          key={img.id}
+                          img={img}
+                          idx={idx}
+                          total={imgs.length}
+                          isCover={asset.cover_image_id === img.id}
+                          busy={busy}
+                          publicUrl={toPublicUrl(img)}
+                          onUp={() => moveImage(img, -1)}
+                          onDown={() => moveImage(img, 1)}
+                          onFront={() => moveImageToFront(img)}
+                          onBack={() => moveImageToBack(img)}
+                          onSetCover={() => setCover(img)}
+                          onRemove={() => removeImage(img)}
+                        />
+                      ))}
                     </div>
-                  ))}
-                </div>
+                  </SortableContext>
+                </DndContext>
               )}
             </div>
           )
@@ -620,4 +667,106 @@ function StatusBadge({ status }: { status: AssetStatus }) {
   }
   const b = map[status]
   return <Badge variant={b.variant}>{b.label}</Badge>
+}
+
+interface SortableImageCardProps {
+  img: ImageRow
+  idx: number
+  total: number
+  isCover: boolean
+  busy: boolean
+  publicUrl: string
+  onUp: () => void
+  onDown: () => void
+  onFront: () => void
+  onBack: () => void
+  onSetCover: () => void
+  onRemove: () => void
+}
+
+/** 可拖拽排序的单张图片卡（V1.8.1）：缩略图为拖拽手柄，下方为 上/下/最前/最后/设封面/删除。 */
+function SortableImageCard({
+  img,
+  idx,
+  total,
+  isCover,
+  busy,
+  publicUrl,
+  onUp,
+  onDown,
+  onFront,
+  onBack,
+  onSetCover,
+  onRemove,
+}: SortableImageCardProps) {
+  const { t } = useLocale()
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } =
+    useSortable({ id: img.id, disabled: busy })
+
+  const style: CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    zIndex: isDragging ? 10 : undefined,
+  }
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={cn('space-y-1 rounded border p-1', isDragging && 'opacity-70')}
+    >
+      <div className="relative aspect-square overflow-hidden rounded bg-muted">
+        <button
+          type="button"
+          ref={setActivatorNodeRef}
+          {...attributes}
+          {...listeners}
+          className="block h-full w-full cursor-grab touch-none active:cursor-grabbing"
+          title={t('admin.editor.dragHandle')}
+          aria-label={t('admin.editor.dragHandle')}
+        >
+          <img
+            src={publicUrl}
+            alt={img.filename}
+            draggable={false}
+            className="pointer-events-none h-full w-full object-cover"
+          />
+        </button>
+        <span className="pointer-events-none absolute right-1 top-1 rounded bg-black/45 p-0.5 text-white/80">
+          <GripVertical className="h-3.5 w-3.5" />
+        </span>
+        {isCover && (
+          <span className="absolute left-1 top-1 rounded bg-primary px-1 text-[10px] text-primary-foreground">
+            {t('admin.editor.cover')}
+          </span>
+        )}
+      </div>
+      <div className="flex justify-center gap-0.5">
+        <Button size="sm" variant="ghost" className="h-7 px-1.5" disabled={busy || idx === 0} onClick={onUp} title={t('admin.editor.moveUp')}>
+          <ArrowUp className="h-3.5 w-3.5" />
+        </Button>
+        <Button size="sm" variant="ghost" className="h-7 px-1.5" disabled={busy || idx === total - 1} onClick={onDown} title={t('admin.editor.moveDown')}>
+          <ArrowDown className="h-3.5 w-3.5" />
+        </Button>
+        <Button size="sm" variant="ghost" className="h-7 px-1.5" disabled={busy || idx === 0} onClick={onFront} title={t('admin.editor.moveToFront')}>
+          <ArrowUpToLine className="h-3.5 w-3.5" />
+        </Button>
+        <Button size="sm" variant="ghost" className="h-7 px-1.5" disabled={busy || idx === total - 1} onClick={onBack} title={t('admin.editor.moveToBack')}>
+          <ArrowDownToLine className="h-3.5 w-3.5" />
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-7 px-1.5 text-[11px]"
+          disabled={busy || isCover}
+          onClick={onSetCover}
+        >
+          {t('admin.editor.setCover')}
+        </Button>
+        <Button size="sm" variant="ghost" className="h-7 px-1.5 text-destructive" disabled={busy} onClick={onRemove} title={t('admin.editor.deleteImage')}>
+          <Trash2 className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+    </div>
+  )
 }
