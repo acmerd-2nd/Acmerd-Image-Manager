@@ -38,7 +38,7 @@ export function CollectionCard({ collection }: { collection: PublishedCollection
   return (
     <Link to={`/collection/${collection.slug}`} className="group block">
       <Card className="overflow-hidden transition-shadow group-hover:shadow-md">
-        <div className="aspect-[4/3] bg-muted">
+        <div className="aspect-square bg-muted">
           {coverUrl ? (
             <img
               src={coverUrl}

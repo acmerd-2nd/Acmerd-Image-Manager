@@ -480,7 +480,7 @@ export function AdminCollectionsPage() {
                   <div className="mt-2">
                     {hasUploaded || hasPicked ? (
                       <div className="flex flex-wrap items-center gap-3">
-                        <div className="h-20 w-32 overflow-hidden rounded-md border bg-muted">
+                        <div className="aspect-square w-28 overflow-hidden rounded-md border bg-muted">
                           {previewSrc ? (
                             <img src={previewSrc} alt={selected.name} className="h-full w-full object-cover" />
                           ) : (
@@ -615,7 +615,7 @@ export function AdminCollectionsPage() {
                           className={'relative overflow-hidden rounded-md border-2 ' + (isCurrent ? 'border-primary' : 'border-transparent hover:border-muted-foreground/40')}
                           onClick={() => onSetCover(a.cover_image_id)}
                         >
-                          <img src={url} alt={a.name} className="aspect-[4/3] w-full object-cover" />
+                          <img src={url} alt={a.name} className="aspect-square w-full object-cover" />
                           <div className="truncate px-1 py-1 text-xs text-muted-foreground">{a.name}</div>
                           {isCurrent && (
                             <span className="absolute right-1 top-1 rounded-full bg-primary px-1.5 py-0.5 text-xs text-primary-foreground">

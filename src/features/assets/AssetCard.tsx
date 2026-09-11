@@ -25,7 +25,7 @@ export function AssetCard({ asset }: { asset: AssetCardRow }) {
   return (
     <Link to={`/asset/${asset.slug}`} className="group block">
       <Card className="overflow-hidden transition-shadow group-hover:shadow-md">
-        <div className="aspect-[4/3] bg-muted">
+        <div className="aspect-square bg-muted">
           {coverUrl ? (
             <img
               src={coverUrl}
