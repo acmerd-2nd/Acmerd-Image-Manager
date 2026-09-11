@@ -5,6 +5,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="AcmerdImage — Image Manager. Research · Discover · Create" />
     <title>AcmerdImage — Image Manager</title>
+    <script>
+      // V1.7.2 首帧防闪烁：在 React 挂载前按已存主题给 <html> 打 dark 类（默认浅色不动）。
+      try {
+        if (localStorage.getItem('acmerd.ui.theme') === 'dark') {
+          document.documentElement.classList.add('dark')
+        }
+      } catch (e) {
+        /* 隐私模式 / localStorage 不可用 → 保持浅色 */
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

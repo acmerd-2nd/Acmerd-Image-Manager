@@ -6,6 +6,7 @@ import { getSiteSettings } from '@/features/settings/api'
 import { brandLogoUrl } from '@/lib/image-source'
 import { useLocale } from '@/i18n'
 import { LocaleSwitch } from '@/components/LocaleSwitch'
+import { ThemeToggle } from '@/components/ThemeToggle'
 import { CreditsBadge } from '@/components/CreditsBadge'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/spinner'
@@ -89,6 +90,7 @@ export function AppShell() {
           </div>
 
           <div className="flex items-center gap-2">
+            <ThemeToggle className="mr-1" />
             {session ? (
               <>
                 <CreditsBadge />

@@ -47,6 +47,9 @@ export const zh = {
     en: 'EN',
     label: '切换界面语言',
   },
+  themeSwitch: {
+    label: '切换深色/浅色主题',
+  },
   home: {
     eyebrow: 'AcmerdImage',
     brand: 'AcmerdImage',

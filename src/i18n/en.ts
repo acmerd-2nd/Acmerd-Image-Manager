@@ -45,6 +45,9 @@ export const en: Dictionary = {
     en: 'EN',
     label: 'Switch interface language',
   },
+  themeSwitch: {
+    label: 'Toggle dark/light theme',
+  },
   home: {
     eyebrow: 'AcmerdImage',
     brand: 'AcmerdImage',
