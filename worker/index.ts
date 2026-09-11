@@ -13,6 +13,7 @@ import {
   releaseLease,
   withNetworkRetry,
   withTreeCommitRetry,
+  type GithubConfig,
   type TreeEntry,
 } from './github'
 
@@ -3029,6 +3030,143 @@ app.delete('/api/admin/branding/logo', async (c) => {
 
   await writeAudit(c.env, 'settings.updated', 'site_settings', 'platform', auth.userId, {
     brand_logo_path: '',
+    github_deleted: githubDeleted,
+    previous_path: oldPath || null,
+  })
+  return c.json({ ok: true, removed: oldPath || null, github_deleted: githubDeleted })
+})
+
+// ===========================================================================
+// V1.8.0 用户头像（GitHub 图仓库；复用 ghPutFile/ghDeleteFile + Logo/封面范式）
+//   POST   /api/me/avatar  —— multipart(file) → avatars/{userId}/avatar.{ext} → profiles.avatar_url(raw URL)
+//   DELETE /api/me/avatar  —— 删 GitHub 对象 + 清 profiles.avatar_url
+//   鉴权 requireUser：任何登录用户（含 admin）仅能管理【自己】的头像（userId 取自 JWT，非入参）。
+//   字节由前端 Cropper.js 裁剪为定尺寸方形后上传；零租约（每人固定单对象、ghPutFile 幂等替换）。
+//   写仅 Worker service_role；profiles.avatar_url 列 0001 既有（text/nullable），无需改表。
+// ===========================================================================
+
+const AVATAR_MAX_FILE_SIZE = 2 * 1024 * 1024
+
+/** 读取本人当前 avatar_url（供旧图换扩展名时删除 / DELETE 时清理；无行或非字符串返回 ''） */
+async function readProfileAvatarUrl(env: Env, userId: string): Promise<string> {
+  const res = await fetch(
+    `${env.SUPABASE_URL}/rest/v1/profiles?id=eq.${userId}&select=avatar_url`,
+    { headers: svc(env) },
+  )
+  if (!res.ok) return ''
+  const rows = (await res.json()) as Array<{ avatar_url: unknown }>
+  const v = rows[0]?.avatar_url
+  return typeof v === 'string' ? v : ''
+}
+
+/** PATCH 本人 profiles.avatar_url（service_role；0 行视为未找到 → 抛错由调用方转 500） */
+async function patchProfileAvatarUrl(env: Env, userId: string, url: string | null): Promise<void> {
+  const res = await fetch(`${env.SUPABASE_URL}/rest/v1/profiles?id=eq.${userId}`, {
+    method: 'PATCH',
+    headers: { ...svc(env), Prefer: 'return=representation' },
+    body: JSON.stringify({ avatar_url: url }),
+  })
+  if (!res.ok) throw new Error(`avatar_url write failed: ${res.status}`)
+  const rows = (await res.json()) as unknown[]
+  if (rows.length === 0) throw new Error('avatar_url write matched 0 rows')
+}
+
+/** 从 raw URL 反推仓库内相对路径（非本仓库前缀 → 返回 ''，视为外部/历史链接不删 GitHub 对象） */
+function avatarPathFromUrl(cfg: GithubConfig, url: string): string {
+  const base = `https://raw.githubusercontent.com/${cfg.owner}/${cfg.repo}/${cfg.branch}/`
+  return url.startsWith(base) ? url.slice(base.length) : ''
+}
+
+app.post('/api/me/avatar', async (c) => {
+  const auth = await requireUser(c)
+  if (!auth.ok) return c.json({ error: authErrBody(auth) }, auth.status)
+
+  const cfg = ghConfig(c.env)
+  if (!cfg) return githubNotConfigured(c)
+
+  let form: FormData
+  try {
+    form = await c.req.formData()
+  } catch {
+    return c.json({ error: { code: 'bad_request', message: 'multipart/form-data body required' } }, 400)
+  }
+  const file = form.get('file')
+  if (!(file instanceof File)) {
+    return c.json({ error: { code: 'bad_request', message: 'file field required' } }, 400)
+  }
+  if (!GITHUB_MIME_EXT[file.type]) {
+    return c.json({ error: { code: 'bad_request', message: `Unsupported type: ${file.type} (JPEG/PNG/WebP only)` } }, 400)
+  }
+  if (file.size > AVATAR_MAX_FILE_SIZE) {
+    return c.json({ error: { code: 'bad_request', message: 'File too large (max 2 MB)' } }, 413)
+  }
+
+  const ext = GITHUB_MIME_EXT[file.type]
+  const sourcePath = `avatars/${auth.userId}/avatar.${ext}`
+  const bytes = new Uint8Array(await file.arrayBuffer())
+  const expectedSha = await computeGitBlobSha(bytes)
+
+  // 换扩展名时删旧头像，避免 avatars/{userId}/ 下残留多份
+  const oldUrl = await readProfileAvatarUrl(c.env, auth.userId)
+  const oldPath = avatarPathFromUrl(cfg, oldUrl)
+  if (oldPath && oldPath !== sourcePath) {
+    try {
+      await ghDeleteFile(cfg, oldPath)
+    } catch (e) {
+      console.error('Old avatar delete failed:', e)
+    }
+  }
+
+  try {
+    await withNetworkRetry(() => ghPutFile(cfg, sourcePath, bytes, expectedSha))
+  } catch (e) {
+    console.error('Avatar upload failed:', e)
+    return c.json({ error: { code: 'upstream_error', message: 'GitHub upload failed' } }, 502)
+  }
+
+  const url = githubRawUrl(cfg, sourcePath)
+  try {
+    await patchProfileAvatarUrl(c.env, auth.userId, url)
+  } catch (e) {
+    console.error('avatar_url write failed:', e)
+    return c.json({ error: { code: 'internal', message: 'Failed to persist avatar' } }, 500)
+  }
+
+  await writeAudit(c.env, 'profile.updated', 'profiles', auth.userId, auth.userId, {
+    fields: ['avatar_url'],
+    avatar_path: sourcePath,
+  })
+  return c.json({ ok: true, url, path: sourcePath })
+})
+
+app.delete('/api/me/avatar', async (c) => {
+  const auth = await requireUser(c)
+  if (!auth.ok) return c.json({ error: authErrBody(auth) }, auth.status)
+
+  const cfg = ghConfig(c.env)
+  const oldUrl = await readProfileAvatarUrl(c.env, auth.userId)
+  const oldPath = cfg ? avatarPathFromUrl(cfg, oldUrl) : ''
+
+  let githubDeleted = false
+  if (cfg && oldPath) {
+    try {
+      await ghDeleteFile(cfg, oldPath)
+      githubDeleted = true
+    } catch (e) {
+      console.error('Avatar GitHub delete failed:', e)
+    }
+  }
+
+  try {
+    await patchProfileAvatarUrl(c.env, auth.userId, null)
+  } catch (e) {
+    console.error('avatar_url clear failed:', e)
+    return c.json({ error: { code: 'internal', message: 'Failed to clear avatar' } }, 500)
+  }
+
+  await writeAudit(c.env, 'profile.updated', 'profiles', auth.userId, auth.userId, {
+    fields: ['avatar_url'],
+    avatar_url: null,
     github_deleted: githubDeleted,
     previous_path: oldPath || null,
   })

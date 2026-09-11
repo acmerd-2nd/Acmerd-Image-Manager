@@ -14,7 +14,7 @@ import { cn } from '@/lib/utils'
 import { BreadcrumbProvider, Breadcrumbs } from '@/components/Breadcrumbs'
 
 export function AppShell() {
-  const { session, isAdmin, signOut } = useAuth()
+  const { session, isAdmin, signOut, avatarUrl } = useAuth()
   const navigate = useNavigate()
   const { t } = useLocale()
   const [scheduleEnabled, setScheduleEnabled] = useState(false)
@@ -96,7 +96,15 @@ export function AppShell() {
                 <CreditsBadge />
                 <Button asChild variant="ghost" size="sm">
                   <Link to="/profile" className="flex items-center gap-1.5">
-                    <User className="h-4 w-4" />
+                    {avatarUrl ? (
+                      <img
+                        src={avatarUrl}
+                        alt=""
+                        className="h-6 w-6 rounded-full object-cover ring-1 ring-border"
+                      />
+                    ) : (
+                      <User className="h-4 w-4" />
+                    )}
                     {t('nav.profile')}
                   </Link>
                 </Button>

@@ -14,6 +14,10 @@ interface AuthState {
   /** 本人 profiles.disabled（D2 对偶；仅影响身份展示与守卫，不触碰业务查询通道） */
   disabled: boolean
   isDisabled: boolean
+  /** 本人 profiles.avatar_url（V1.8.0；raw URL，可直接作 <img src>；无头像为 null） */
+  avatarUrl: string | null
+  /** 头像变更后重读本人 profile（令右上角头像即时更新，无需整页刷新） */
+  refreshProfile: () => void
   isAdmin: boolean
   signOut: () => Promise<void>
 }
@@ -24,6 +28,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
   const [role, setRole] = useState<AppRole | null>(null)
   const [disabled, setDisabled] = useState(false)
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
+  const [profileNonce, setProfileNonce] = useState(0)
   const [loading, setLoading] = useState(true)
   const [roleLoading, setRoleLoading] = useState(true)
 
@@ -60,18 +66,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!userId) {
       setRole(null)
       setDisabled(false)
+      setAvatarUrl(null)
       setRoleLoading(false)
       return
     }
     setRoleLoading(true)
     Promise.all([
       supabase.from('user_roles').select('role').eq('user_id', userId).maybeSingle(),
-      supabase.from('profiles').select('disabled').eq('id', userId).maybeSingle(),
+      supabase.from('profiles').select('disabled, avatar_url').eq('id', userId).maybeSingle(),
     ]).then(
       ([roleRes, profRes]) => {
         const dbRole = (roleRes.data?.role as AppRole) ?? 'user'
         const isDisabled = profRes.data?.disabled === true
         setDisabled(isDisabled)
+        setAvatarUrl((profRes.data?.avatar_url as string | null) ?? null)
         // disabled=true → 身份按"非 admin"处理：即使 DB 角色为 admin 也降为 user，
         // 使 RequireRole(['admin']) 等守卫直接拒绝，且不触碰任何业务查询通道。
         setRole(isDisabled ? 'user' : dbRole)
@@ -81,18 +89,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // 查询失败按安全方向兜底：当作普通 user（admin 会得到 403，不会误放行）
         setRole('user')
         setDisabled(false)
+        setAvatarUrl(null)
         setRoleLoading(false)
       },
     )
-  }, [session])
+  }, [session, profileNonce])
 
   const signOut = async () => {
     await supabase.auth.signOut()
     setSession(null)
     setRole(null)
     setDisabled(false)
+    setAvatarUrl(null)
     setRoleLoading(false)
   }
+
+  // 头像上传/移除后调用：仅重读本人 profile，令右上角头像即时更新（不整页刷新）
+  const refreshProfile = () => setProfileNonce((n) => n + 1)
 
   return (
     <AuthContext.Provider
@@ -104,6 +117,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         roleLoading,
         disabled,
         isDisabled: disabled,
+        avatarUrl,
+        refreshProfile,
         isAdmin: role === 'admin',
         signOut,
       }}
