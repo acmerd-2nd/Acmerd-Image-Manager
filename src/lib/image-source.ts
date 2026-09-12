@@ -45,17 +45,23 @@ function githubRawUrl(sourcePath: string): string {
 }
 
 /**
- * V1.9.0 P0-1：github 缩略图出口。
- * 默认走同源 Worker `/api/img/{path}?w&q`（Cloudflare Image Resizing 已绑定则按宽/质缩放，
- * 未绑定则 302 直链原图）——把「展示缩略」收敛到单一出口，兼顾大陆可达性与未来 CDN 化。
- * 逃生舱：显式配置 VITE_GITHUB_IMAGE_CDN_BASE 时，改回该 CDN 直链（不经本代理），
- * 保持既有「整体切换到 CDN」的语义不变。
+ * V1.9.x /api/img 缩略图「表示版本」：Worker 输出形态一旦变化（如 raw 透传→WebP 缩放、
+ * 换缩放算法/默认格式），就 +1，用于打散 immutable/30 天强缓存的 URL 缓存键，避免旧形态被长期命中。
+ * 当前：v2 = wsrv on-the-fly 缩放 + WebP。
+ */
+const THUMB_VERSION = 2
+
+/**
+ * V1.9.0 P0-1 / V1.9.1：github 缩略图出口，统一走同源 Worker `/api/img/{path}?w&q&v`。
+ * Worker 侧：请求 wsrv.nl 免费按宽/质缩放并转 WebP（省 ~98% 字节）；wsrv 故障时降级反代原图、
+ * 再兜底 302 直链。附带 v=THUMB_VERSION 稳定打散表示变化的强缓存。兼顾大陆可达性与未来 CDN 化。
+ * 逃生舱：显式配置 VITE_GITHUB_IMAGE_CDN_BASE 时，改回该 CDN 直链（不经本代理），语义不变。
  */
 export function githubThumbUrl(sourcePath: string, width: number, quality: number): string {
   if (GITHUB_IMAGE_CDN_BASE) {
     return `${GITHUB_IMAGE_CDN_BASE.replace(/\/$/, '')}/${sourcePath}`
   }
-  return `/api/img/${sourcePath}?w=${width}&q=${quality}`
+  return `/api/img/${sourcePath}?w=${width}&q=${quality}&v=${THUMB_VERSION}`
 }
 
 /** 计算图片来源行最终可访问 URL；非法行（provider 与路径不匹配）返回 null */

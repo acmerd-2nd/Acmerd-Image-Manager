@@ -3277,8 +3277,9 @@ app.post('/api/auth/register', async (c) => {
 //   目的：把「展示缩略图」从直链 raw.githubusercontent（原图全量字节，大陆访问不稳）
 //   收敛到本 Worker 单一出口，未来接 CDN / 缩放只改这一处。
 //   策略：
-//     · env.IMG（Cloudflare Image Resizing 绑定）存在 → 按 w/q 缩放 + format:auto 回传字节；
-//     · 否则 → 302 直链原图（当前生产账户未开通 Image Resizing 时的安全回退，零功能损失）。
+//     · 主推（V1.9.1，无需付费开通）：请求 wsrv.nl 按 w/q 缩放并转 WebP，Worker 同源回传（省 ~98% 字节）。
+//     · 可选加速器：env.IMG（Cloudflare Image Resizing 绑定）存在则优先本地缩放；本账户未开通→休眠。
+//     · 兜底：wsrv 故障/超时/无宽度 → 同源反代原图字节；再失败 → 302 直链原图（功能不因代理中断）。
 //   安全：仅放行 assets/ | collections/ | branding/ | avatars/ 前缀 + 图片扩展名，
 //   拒绝 .. 与绝对/查询注入；w∈[16,2000]、q∈[1,100] 钳制。缩放响应带 30 天强缓存。
 // ===========================================================================
@@ -3330,40 +3331,59 @@ app.get('/api/img/*', async (c) => {
   const width = clampInt(c.req.query('w'), 0, 16, 2000)
   const quality = clampInt(c.req.query('q'), 80, 1, 100)
   const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${relPath}`
+  const LONG_CACHE = 'public, max-age=2592000, immutable'
 
-  // (A) 有 Image Resizing 绑定且请求带宽度 → 缩放回传（省字节，真正的 P0-1 目标）
+  // (A) 若账户开通了 Cloudflare Image Resizing（env.IMG 绑定存在，见 wrangler.toml 注释块）→
+  //     按 w/q 缩放回传。当前账户未开通 → env.IMG 恒 undefined，本分支休眠、零副作用。
   if (c.env.IMG && width) {
     try {
       const built = c.env.IMG.from(rawUrl).transformed({ width, quality, format: 'auto' })
       const res = await built.response()
       const h = new Headers(res.headers)
-      h.set('cache-control', 'public, max-age=2592000, immutable')
+      h.set('cache-control', LONG_CACHE)
       return new Response(res.body, { status: res.status, statusText: res.statusText, headers: h })
     } catch (e) {
-      console.error('img proxy: IMG.transformed failed, fallback passthrough:', e)
+      console.error('img proxy: IMG.transformed failed, fallback free-resize:', e)
     }
   }
 
-  // (B) 无绑定 / 未指定宽度 → 同源反代原图字节（不回 302，避免多一跳）：
-  //     修大陆 raw.githubusercontent 可达性 + 30 天强缓存；首访字节不变，缩放留给 (A)。
+  // (B) 免费缩放（V1.9.1 主推路径）：请求 wsrv.nl 对原图 on-the-fly 缩放 + 转 WebP，Worker 同源回传。
+  //     · 字节：1.08MB 原图 → ~23KB WebP（w=640/q=80），无需任何付费开通。
+  //     · 可达性：大陆用户只访问 image.acmerd.com（Cloudflare 边缘去取 wsrv/GitHub），不再直连 raw。
+  //     · 兜底：wsrv 不可用/超时/无宽度 → 降级到 (C) 反代原图；再失败 → (D) 302 直链。
+  if (width) {
+    const proxy = `https://wsrv.nl/?url=${encodeURIComponent(rawUrl)}&w=${width}&q=${quality}&output=webp`
+    try {
+      const res = await fetch(proxy, { cf: { cacheTtl: 2592000 }, signal: AbortSignal.timeout(8000) })
+      if (res.ok && res.body) {
+        const h = new Headers()
+        h.set('content-type', res.headers.get('content-type') || 'image/webp')
+        h.set('cache-control', LONG_CACHE)
+        return new Response(res.body, { status: 200, headers: h })
+      }
+      console.error('img proxy: wsrv not ok, status', res.status, '→ passthrough raw')
+    } catch (e) {
+      console.error('img proxy: wsrv fetch failed → passthrough raw:', e)
+    }
+  }
+
+  // (C) 兜底一：同源反代原图字节（无缩放；wsrv 故障 / 未指定宽度时；仍同源 + 30 天强缓存）
   try {
     const upstream = await fetch(rawUrl, { cf: { cacheTtl: 2592000 } })
     if (upstream.ok) {
       const h = new Headers()
       const ct = upstream.headers.get('content-type')
       if (ct) h.set('content-type', ct)
-      const cl = upstream.headers.get('content-length')
-      if (cl) h.set('content-length', cl)
-      h.set('cache-control', 'public, max-age=2592000, immutable')
+      h.set('cache-control', LONG_CACHE)
       h.set('vary', 'Accept')
       return new Response(upstream.body, { status: 200, headers: h })
     }
     // 上游非 200（源缺失/限流）→ 透传状态码，交由浏览器/CDN 自然处理
     return new Response(upstream.body, { status: upstream.status, statusText: upstream.statusText, headers: upstream.headers })
   } catch (e) {
-    console.error('img proxy: upstream fetch failed, fallback 302:', e)
+    console.error('img proxy: upstream passthrough failed, fallback 302:', e)
   }
-  // (C) 反代也失败 → 最后兜底 302 直链原图（功能永不因代理而中断）
+  // (D) 兜底二：反代也失败 → 302 直链原图（功能永不因代理而中断）
   return c.redirect(rawUrl, 302)
 })
 
