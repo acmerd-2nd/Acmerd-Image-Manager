@@ -453,15 +453,16 @@ export function AssetDetailPage() {
                         aria-label={
                           selectionMode
                             ? isSelected
-                              ? 'Deselect'
-                              : 'Select'
-                            : `Preview ${img.filename}`
+                              ? t('asset.deselect')
+                              : t('asset.select')
+                            : t('asset.preview', { name: img.filename })
                         }
                       >
                       <img
                         src={imageSrcOf(img, THUMB_GRID)}
                         alt={img.filename}
                         loading="lazy"
+                        decoding="async"
                         className="aspect-square w-full object-cover"
                       />
                     </button>
@@ -471,7 +472,7 @@ export function AssetDetailPage() {
                         type="button"
                         onClick={() => toggleSelect(img.id)}
                         disabled={selectDisabled}
-                        aria-label={isSelected ? 'Deselect' : 'Select'}
+                        aria-label={isSelected ? t('asset.deselect') : t('asset.select')}
                         className={cn(
                           'absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full border-2 bg-background/90',
                           isSelected ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground',
@@ -492,7 +493,7 @@ export function AssetDetailPage() {
                         <button
                           type="button"
                           onClick={() => onSingleDownload(img)}
-                          aria-label="Download image"
+                          aria-label={t('asset.download')}
                           className="flex h-7 w-7 items-center justify-center rounded-full bg-background/90 shadow"
                         >
                           {busy ? <Spinner className="h-4 w-4" /> : <Download className="h-4 w-4" />}

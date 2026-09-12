@@ -98,6 +98,23 @@ export function Lightbox({
     dragX.current = null
   }
 
+  // V1.9.0：预取相邻原图（进入 Lightbox = 用户明确在浏览，预热 next/prev 让翻页瞬时）
+  const preloadRefs = useRef<HTMLImageElement[]>([])
+  useEffect(() => {
+    if (!navigable) return
+    const neighbors = [(safeIndex + 1) % n, (safeIndex - 1 + n) % n]
+    const imgs = neighbors.map((i) => {
+      const im = new Image()
+      const url = toPublicUrl(images[i])
+      if (url) im.src = url
+      return im
+    })
+    preloadRefs.current = imgs
+    return () => {
+      preloadRefs.current = []
+    }
+  }, [navigable, safeIndex, n, images])
+
   if (!image) return null
 
   return (

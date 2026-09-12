@@ -32,3 +32,14 @@ GITHUB_IMAGES_BRANCH = "main"
 # 对账 sweeper（Gate §3）：每 10 分钟收敛 uploading/failed/deleting 崩溃窗口
 [triggers]
 crons = ["*/10 * * * *"]
+
+# V1.9.0 P0-1：Cloudflare Image Resizing（wrangler 4.128 无一等键，走 unsafe.bindings，type="imaging"）。
+# 绑定名 IMG = Worker 侧 env.IMG。/api/img 检测到 env.IMG 时按 w/q 缩放回传字节（省字节）。
+# 【默认注释掉】：账户若未开通 Image Resizing，取消注释会让真实 deploy 直接失败（连带整版回滚）。
+#   注释状态下 /api/img 走「同源反代原图字节」(路径 B)：已修大陆可达性 + 30 天强缓存，仅首访字节不省。
+#   待 Owner 确认账户已开通 Image Resizing 后，取消下列三行注释并部署 → 启用路径 (A) 缩放，缩略图字节显著下降。
+# [[unsafe.bindings]]
+# name = "IMG"
+# type = "imaging"
+
+

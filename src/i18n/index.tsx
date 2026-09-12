@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { zh, type Dictionary } from './zh'
 import { en } from './en'
 
@@ -80,6 +80,15 @@ const LocaleContext = createContext<LocaleContextValue | null>(null)
 
 export function LocaleProvider({ children }: { children: ReactNode }) {
   const [locale, setLocaleState] = useState<UiLocale>(() => getUiLocale())
+
+  // 挂载即同步 <html lang>（此前仅在切换时设置，导致默认中文站首屏 lang="en"）
+  useEffect(() => {
+    try {
+      document.documentElement.lang = locale
+    } catch {
+      /* SSR/异常环境忽略 */
+    }
+  }, [locale])
 
   const setLocale = useCallback((next: UiLocale) => {
     setLocaleState(next)

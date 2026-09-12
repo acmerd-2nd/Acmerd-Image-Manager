@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
 import { CheckCircle2, Info, X, XCircle } from 'lucide-react'
+import { useLocale } from '@/i18n'
 import { cn } from '@/lib/utils'
 
 /**
@@ -58,6 +59,7 @@ function ToastRow({ item, onDismiss }: { item: ToastItem; onDismiss: () => void 
   }, [onDismiss])
 
   const Icon = item.kind === 'success' ? CheckCircle2 : item.kind === 'error' ? XCircle : Info
+  const { t } = useLocale()
   return (
     <div
       role="status"
@@ -70,7 +72,7 @@ function ToastRow({ item, onDismiss }: { item: ToastItem; onDismiss: () => void 
     >
       <Icon className="h-4 w-4 shrink-0" />
       <span className="flex-1">{item.message}</span>
-      <button type="button" aria-label="Dismiss" onClick={onDismiss} className="shrink-0 opacity-80 hover:opacity-100">
+      <button type="button" aria-label={t('common.close')} onClick={onDismiss} className="shrink-0 opacity-80 hover:opacity-100">
         <X className="h-3.5 w-3.5" />
       </button>
     </div>

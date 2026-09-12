@@ -25,7 +25,7 @@ export function AdminLayout() {
         <aside className="hidden w-56 shrink-0 border-r bg-muted/40 md:block">
         <div className="sticky top-14 flex h-[calc(100vh-3.5rem)] flex-col p-4">
           <div className="mb-4 px-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Admin Console
+            {t('admin.consoleTitle')}
           </div>
           <nav className="flex flex-col gap-1">
             {items.map(({ to, labelKey, icon: Icon }) => (

@@ -1,4 +1,6 @@
+import { useId } from 'react'
 import { useLocale } from '@/i18n'
+import { useFocusTrap } from '@/lib/useFocusTrap'
 import { Button } from '@/components/ui/button'
 
 /**
@@ -23,16 +25,23 @@ export function ConfirmDialog({
   onCancel: () => void
 }) {
   const { t } = useLocale()
+  const titleId = useId()
+  const panelRef = useFocusTrap<HTMLDivElement>(open, onCancel)
   if (!open) return null
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onCancel}>
       <div
+        ref={panelRef}
         className="w-full max-w-md rounded-lg border bg-background p-6 shadow-lg"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
       >
-        <h3 className="text-lg font-semibold">{title}</h3>
+        <h3 id={titleId} className="text-lg font-semibold">
+          {title}
+        </h3>
         {description && (
           <div className="mt-2 text-sm text-muted-foreground whitespace-pre-line">{description}</div>
         )}

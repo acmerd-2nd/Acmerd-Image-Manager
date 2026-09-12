@@ -3,13 +3,14 @@ import { Link } from 'react-router-dom'
 import { FolderOpen } from 'lucide-react'
 import type { PublishedCollectionRow } from '@/types/database'
 import { getCoverUrls } from '@/features/assets/api'
-import { collectionCoverUrl } from '@/lib/image-source'
+import { githubThumbUrl } from '@/lib/image-source'
 import { useLocale } from '@/i18n'
 import { Card, CardContent } from '@/components/ui/card'
 
 /**
  * V1.1 PC-2：首页 Collection 卡片。
- * V1.7.0：封面优先本地上传（cover_source_path → collectionCoverUrl），否则回落选中的资产图（cover_image_id）。
+ * V1.7.0：封面优先本地上传（cover_source_path → /api/img 代理），否则回落选中的资产图（cover_image_id）。
+ * V1.9.0 P0-1：上传封面经 githubThumbUrl 走 /api/img（可缩放 + 强缓存 + 大陆可达），不再直链 raw 原图。
  */
 export function CollectionCard({ collection }: { collection: PublishedCollectionRow }) {
   const { t } = useLocale()
@@ -19,7 +20,7 @@ export function CollectionCard({ collection }: { collection: PublishedCollection
     let cancelled = false
     // 上传封面优先：同步出 URL，无需查 images 表
     if (collection.cover_source_path) {
-      setCoverUrl(collectionCoverUrl(collection.cover_source_path) ?? null)
+      setCoverUrl(githubThumbUrl(collection.cover_source_path, 640, 80))
       return () => {
         cancelled = true
       }
@@ -44,6 +45,7 @@ export function CollectionCard({ collection }: { collection: PublishedCollection
               src={coverUrl}
               alt={collection.name}
               loading="lazy"
+              decoding="async"
               className="h-full w-full object-cover"
             />
           ) : (

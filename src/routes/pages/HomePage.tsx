@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Search } from 'lucide-react'
 import type { AssetCardRow, PublishedCollectionRow } from '@/types/database'
 import { AssetCard } from '@/features/assets/AssetCard'
@@ -16,6 +16,7 @@ const PAGE_SIZE = 24
 
 export function HomePage() {
   const [params, setParams] = useSearchParams()
+  const navigate = useNavigate()
   const page = Math.max(1, Number(params.get('page') ?? '1') || 1)
   const toast = useToast()
   const { t } = useLocale()
@@ -84,7 +85,7 @@ export function HomePage() {
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
                 const q = (e.target as HTMLInputElement).value.trim()
-                window.location.assign(`/search?q=${encodeURIComponent(q)}`)
+                navigate(`/search?q=${encodeURIComponent(q)}`)
               }
             }}
           />

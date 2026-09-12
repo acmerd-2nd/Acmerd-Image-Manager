@@ -305,7 +305,7 @@ export function Admin360Card({
         </div>
       )}
       {notice && (
-        <div className="rounded-md border border-green-600/40 bg-green-600/10 px-3 py-2 text-sm text-green-700">
+        <div className="rounded-md border border-success/40 bg-success/10 px-3 py-2 text-sm text-success">
           {notice}
         </div>
       )}
@@ -332,7 +332,7 @@ export function Admin360Card({
                   <span> · {t('admin.s360.uploadedFrames', { n: s.uploaded_frames })}</span>
                 )}
               </span>
-              {s.is_active && <span className="text-xs font-medium text-green-700">{t('admin.s360.activeTag')}</span>}
+              {s.is_active && <span className="text-xs font-medium text-success">{t('admin.s360.activeTag')}</span>}
               <div className="ml-auto flex gap-1">
                 {s.status !== 'ready' && s.status !== 'deleting' && s.uploaded_frames < s.frame_count && (
                   <Button size="sm" variant="outline" disabled={busy} onClick={() => pickForResume(s.id)}>

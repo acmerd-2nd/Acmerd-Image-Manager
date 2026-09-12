@@ -1,26 +1,24 @@
-import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import type { AssetCardRow } from '@/types/database'
+import type { AssetCardRow, ImageRow } from '@/types/database'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
-import { getCoverUrls } from '@/features/assets/api'
+import { imageSrcOf, THUMB_COVER } from '@/features/assets/api'
 import { useLocale } from '@/i18n'
 
 export function AssetCard({ asset }: { asset: AssetCardRow }) {
   const { t } = useLocale()
-  const [coverUrl, setCoverUrl] = useState<string | null>(null)
 
-  useEffect(() => {
-    let cancelled = false
-    if (asset.cover_image_id) {
-      getCoverUrls([asset.cover_image_id]).then((map) => {
-        if (!cancelled) setCoverUrl(map.get(asset.cover_image_id!) ?? null)
-      })
-    }
-    return () => {
-      cancelled = true
-    }
-  }, [asset.cover_image_id])
+  // V1.9.0 P0-2：封面字段已并入 published_assets 视图，直出、无每卡查询（消 N+1）
+  const coverUrl = asset.cover_provider
+    ? imageSrcOf(
+        {
+          provider: asset.cover_provider as ImageRow['provider'],
+          storage_path: asset.cover_storage_path,
+          source_path: asset.cover_source_path,
+        },
+        THUMB_COVER,
+      )
+    : null
 
   return (
     <Link to={`/asset/${asset.slug}`} className="group block">
@@ -31,6 +29,7 @@ export function AssetCard({ asset }: { asset: AssetCardRow }) {
               src={coverUrl}
               alt={asset.name}
               loading="lazy"
+              decoding="async"
               className="h-full w-full object-cover"
             />
           ) : (

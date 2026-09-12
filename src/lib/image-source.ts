@@ -44,6 +44,20 @@ function githubRawUrl(sourcePath: string): string {
   return `https://raw.githubusercontent.com/${GITHUB_REPO.owner}/${GITHUB_REPO.repo}/${GITHUB_REPO.branch}/${sourcePath}`
 }
 
+/**
+ * V1.9.0 P0-1：github 缩略图出口。
+ * 默认走同源 Worker `/api/img/{path}?w&q`（Cloudflare Image Resizing 已绑定则按宽/质缩放，
+ * 未绑定则 302 直链原图）——把「展示缩略」收敛到单一出口，兼顾大陆可达性与未来 CDN 化。
+ * 逃生舱：显式配置 VITE_GITHUB_IMAGE_CDN_BASE 时，改回该 CDN 直链（不经本代理），
+ * 保持既有「整体切换到 CDN」的语义不变。
+ */
+export function githubThumbUrl(sourcePath: string, width: number, quality: number): string {
+  if (GITHUB_IMAGE_CDN_BASE) {
+    return `${GITHUB_IMAGE_CDN_BASE.replace(/\/$/, '')}/${sourcePath}`
+  }
+  return `/api/img/${sourcePath}?w=${width}&q=${quality}`
+}
+
 /** 计算图片来源行最终可访问 URL；非法行（provider 与路径不匹配）返回 null */
 export function makeImageUrl(image: Pick<ImageSourceRow, 'provider' | 'storage_path' | 'source_path'>): string | null {
   switch (image.provider) {

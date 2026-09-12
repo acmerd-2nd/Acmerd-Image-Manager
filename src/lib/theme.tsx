@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 
 /**
  * V1.7.2 主题（暗黑模式）Provider。
@@ -49,7 +49,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const setTheme = useCallback((t: Theme) => setThemeState(t), [])
   const toggleTheme = useCallback(() => setThemeState((v) => (v === 'dark' ? 'light' : 'dark')), [])
 
-  return <ThemeContext.Provider value={{ theme, setTheme, toggleTheme }}>{children}</ThemeContext.Provider>
+  const value = useMemo<ThemeContextValue>(() => ({ theme, setTheme, toggleTheme }), [theme, setTheme, toggleTheme])
+
+  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>
 }
 
 /** 未挂 Provider 时返回只读浅色兜底，绝不抛错（与 LocaleContext 兜底风格一致）。 */

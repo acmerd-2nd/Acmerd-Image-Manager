@@ -97,7 +97,7 @@ export function CreditsLedger() {
                       {detail ? ` · ${detail}` : ''}
                     </div>
                   </div>
-                  <span className={`shrink-0 tabular-nums ${negative ? 'text-foreground' : 'text-green-600'}`}>
+                  <span className={`shrink-0 tabular-nums ${negative ? 'text-foreground' : 'text-success'}`}>
                     {fmtAmount(r.amount)}
                   </span>
                   <span className="w-16 shrink-0 text-right text-xs text-muted-foreground tabular-nums">

@@ -31,7 +31,7 @@ export function LocaleSwitch({ className }: { className?: string }) {
         aria-label={t('localeSwitch.label')}
         onClick={() => setLocale(isZh ? 'en' : 'zh-CN')}
         className={cn(
-          'relative inline-flex h-[22px] w-[40px] shrink-0 cursor-pointer items-center rounded-full border border-transparent transition-colors',
+          'relative inline-flex h-[22px] w-[40px] shrink-0 cursor-pointer items-center rounded-full border border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
           isZh ? 'bg-primary' : 'bg-muted-foreground/40',
         )}
       >

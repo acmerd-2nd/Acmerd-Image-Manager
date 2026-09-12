@@ -156,7 +156,7 @@ export function AdminAssetEditorPage() {
       <div className="space-y-3">
         <p className="text-sm text-destructive">{loadError}</p>
         <Button asChild variant="outline" size="sm">
-          <Link to="/admin/assets">Back to Assets</Link>
+          <Link to="/admin/assets">{t('admin.editor.backToAssets')}</Link>
         </Button>
       </div>
     )
@@ -392,7 +392,7 @@ export function AdminAssetEditorPage() {
             onClick={() => doTransition('draft')}
             title={t('admin.editor.publishHint')}
           >
-            Restore
+            {t('admin.editor.restore')}
           </Button>
         )}
         <Button size="sm" variant="destructive" disabled={busy} onClick={() => setConfirmDelete(true)}>
@@ -406,7 +406,7 @@ export function AdminAssetEditorPage() {
         </div>
       )}
       {notice && (
-        <div className="rounded-md border border-green-600/40 bg-green-600/10 px-3 py-2 text-sm text-green-700">
+        <div className="rounded-md border border-success/40 bg-success/10 px-3 py-2 text-sm text-success">
           {notice}
         </div>
       )}
@@ -549,7 +549,7 @@ export function AdminAssetEditorPage() {
                   className={cn(
                     'inline-flex items-center gap-1 rounded-full border px-2 py-0.5',
                     visible
-                      ? 'border-green-600/40 bg-green-600/10 text-green-700'
+                      ? 'border-success/40 bg-success/10 text-success'
                       : 'border-muted-foreground/30 text-muted-foreground',
                   )}
                   title={visible ? t('admin.editor.langVisibleTitle') : t('admin.editor.langHiddenTitle')}
@@ -648,9 +648,9 @@ export function AdminAssetEditorPage() {
 
       <ConfirmDialog
         open={confirmDelete}
-        title={`Delete「${asset.name}」？`}
+        title={t('admin.editor.deleteTitle', { name: asset.name })}
         destructive
-        confirmLabel="Delete permanently"
+        confirmLabel={t('admin.editor.deleteConfirm')}
         description={t('admin.editor.deleteBody', { langs: languages.length, images: images.length })}
         onCancel={() => setConfirmDelete(false)}
         onConfirm={doDelete}
@@ -660,13 +660,14 @@ export function AdminAssetEditorPage() {
 }
 
 function StatusBadge({ status }: { status: AssetStatus }) {
-  const map: Record<AssetStatus, { label: string; variant: 'default' | 'secondary' | 'outline' }> = {
-    draft: { label: 'Draft', variant: 'secondary' },
-    published: { label: 'Published', variant: 'default' },
-    archived: { label: 'Archived', variant: 'outline' },
+  const { t } = useLocale()
+  const map: Record<AssetStatus, { labelKey: string; variant: 'default' | 'secondary' | 'outline' }> = {
+    draft: { labelKey: 'admin.status.draft', variant: 'secondary' },
+    published: { labelKey: 'admin.status.published', variant: 'default' },
+    archived: { labelKey: 'admin.status.archived', variant: 'outline' },
   }
   const b = map[status]
-  return <Badge variant={b.variant}>{b.label}</Badge>
+  return <Badge variant={b.variant}>{t(b.labelKey)}</Badge>
 }
 
 interface SortableImageCardProps {

@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase/client'
-import { makeImageUrl } from '@/lib/image-source'
+import { makeImageUrl, githubThumbUrl } from '@/lib/image-source'
 import type {
   AssetLanguageRow,
   AssetRow,
@@ -193,16 +193,17 @@ export async function getPublishedAssetBySlug(slug: string): Promise<PublishedAs
 // ---------------- 封面公开 URL ----------------
 
 /**
- * Provider-aware 展示 URL（V1.1 PB-1；makeImageUrl 为唯一出口，Gate §12）。
+ * Provider-aware 展示缩略 URL（V1.1 PB-1；V1.9.0 P0-1 起 github 经 /api/img 代理）。
  * supabase_storage → 沿用 Supabase render 变换（V1.0 行为逐字节兼容）；
- * github → raw/CDN 直链（无服务端变换）。
+ * github → 同源 Worker /api/img/{path}?w&q（Image Resizing 已绑定则缩放回传，否则 302 直链原图）。
+ * 原图（Lightbox/下载预览）仍走 toPublicUrl 的 raw/CDN 直链，不经本代理。
  */
 export function imageSrcOf(
   image: Pick<ImageRow, 'provider' | 'storage_path' | 'source_path'>,
   variant: ImageVariant,
 ): string {
   if (image.provider === 'github') {
-    return makeImageUrl(image) ?? ''
+    return image.source_path ? githubThumbUrl(image.source_path, variant.width, variant.quality ?? 80) : ''
   }
   return makeImageSrc(image.storage_path ?? '', variant)
 }

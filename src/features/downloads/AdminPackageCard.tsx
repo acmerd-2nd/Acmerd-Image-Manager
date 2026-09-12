@@ -139,7 +139,7 @@ export function AdminPackageCard({ assetId }: { assetId: string }) {
         </div>
       )}
       {notice && (
-        <div className="rounded-md border border-green-600/40 bg-green-600/10 px-3 py-2 text-sm text-green-700">
+        <div className="rounded-md border border-success/40 bg-success/10 px-3 py-2 text-sm text-success">
           {notice}
         </div>
       )}

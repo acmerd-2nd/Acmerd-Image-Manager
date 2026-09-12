@@ -17,6 +17,26 @@ import {
   type TreeEntry,
 } from './github'
 
+// V1.9.0 P0-1：Cloudflare Image Resizing 绑定的最小结构类型。
+// 用结构化类型而非依赖特定版本 @cloudflare/workers-types 的 ImageBinding，
+// 保证 typecheck 稳定；未绑定（账户无该功能 / 未在 wrangler.toml 配置）时
+// env.IMG 为 undefined → /api/img 回退为 302 直链原图（零字节节省但功能不受损）。
+interface ImageTransformOptions {
+  width?: number
+  height?: number
+  quality?: number
+  format?: 'auto' | 'avif' | 'webp' | 'jpeg' | 'png' | 'json'
+  [key: string]: unknown
+}
+interface ImageTransformBuilder {
+  response(): Promise<Response>
+}
+interface ImageResizingBinding {
+  from(source: string | Request | Response): {
+    transformed(options: ImageTransformOptions): ImageTransformBuilder
+  }
+}
+
 export interface Env {
   SUPABASE_URL: string
   SUPABASE_PUBLISHABLE_KEY: string
@@ -30,6 +50,8 @@ export interface Env {
   GITHUB_IMAGES_OWNER?: string
   GITHUB_IMAGES_REPO?: string
   GITHUB_IMAGES_BRANCH?: string
+  /** V1.9.0 P0-1：可选的图片缩放绑定（wrangler [[unsafe.bindings]] type="imaging"） */
+  IMG?: ImageResizingBinding
 }
 
 const app = new Hono<{ Bindings: Env }>()
@@ -3250,6 +3272,101 @@ app.post('/api/auth/register', async (c) => {
   }
 })
 
+// ===========================================================================
+// GET /api/img/{repoPath}?w=&q= —— V1.9.0 P0-1 图片缩放/代理接缝（公开、只读）
+//   目的：把「展示缩略图」从直链 raw.githubusercontent（原图全量字节，大陆访问不稳）
+//   收敛到本 Worker 单一出口，未来接 CDN / 缩放只改这一处。
+//   策略：
+//     · env.IMG（Cloudflare Image Resizing 绑定）存在 → 按 w/q 缩放 + format:auto 回传字节；
+//     · 否则 → 302 直链原图（当前生产账户未开通 Image Resizing 时的安全回退，零功能损失）。
+//   安全：仅放行 assets/ | collections/ | branding/ | avatars/ 前缀 + 图片扩展名，
+//   拒绝 .. 与绝对/查询注入；w∈[16,2000]、q∈[1,100] 钳制。缩放响应带 30 天强缓存。
+// ===========================================================================
+const IMG_ALLOWED_PREFIXES = ['assets/', 'collections/', 'branding/', 'avatars/']
+const IMG_ALLOWED_EXT = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'avif']
+
+function clampInt(raw: string | undefined, def: number, min: number, max: number): number {
+  const n = Number.parseInt(raw ?? '', 10)
+  if (!Number.isFinite(n)) return def
+  return Math.min(Math.max(n, min), max)
+}
+
+app.get('/api/img/*', async (c) => {
+  const owner = c.env.GITHUB_IMAGES_OWNER
+  const repo = c.env.GITHUB_IMAGES_REPO
+  const branch = c.env.GITHUB_IMAGES_BRANCH || 'main'
+  if (!owner || !repo) {
+    return c.json({ error: { code: 'internal', message: 'GitHub source not configured' } }, 502)
+  }
+
+  // 取 /api/img/ 之后的仓库相对路径（用原始 pathname 切片，避免 param 通配语义差异）
+  const prefix = '/api/img/'
+  const pathAfter = new URL(c.req.url).pathname
+  if (!pathAfter.startsWith(prefix)) {
+    return c.json({ error: { code: 'bad_request', message: 'Invalid image path' } }, 400)
+  }
+  let relPath = pathAfter.slice(prefix.length)
+  try {
+    relPath = decodeURIComponent(relPath)
+  } catch {
+    return c.json({ error: { code: 'bad_request', message: 'Invalid image path encoding' } }, 400)
+  }
+  if (
+    !relPath ||
+    relPath.includes('..') ||
+    relPath.includes('\\') ||
+    relPath.startsWith('/')
+  ) {
+    return c.json({ error: { code: 'forbidden', message: 'Disallowed image path' } }, 403)
+  }
+  if (!IMG_ALLOWED_PREFIXES.some((p) => relPath.startsWith(p))) {
+    return c.json({ error: { code: 'forbidden', message: 'Disallowed image path' } }, 403)
+  }
+  const ext = (relPath.split('.').pop() || '').toLowerCase()
+  if (!IMG_ALLOWED_EXT.includes(ext)) {
+    return c.json({ error: { code: 'forbidden', message: 'Disallowed image type' } }, 403)
+  }
+
+  const width = clampInt(c.req.query('w'), 0, 16, 2000)
+  const quality = clampInt(c.req.query('q'), 80, 1, 100)
+  const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${relPath}`
+
+  // (A) 有 Image Resizing 绑定且请求带宽度 → 缩放回传（省字节，真正的 P0-1 目标）
+  if (c.env.IMG && width) {
+    try {
+      const built = c.env.IMG.from(rawUrl).transformed({ width, quality, format: 'auto' })
+      const res = await built.response()
+      const h = new Headers(res.headers)
+      h.set('cache-control', 'public, max-age=2592000, immutable')
+      return new Response(res.body, { status: res.status, statusText: res.statusText, headers: h })
+    } catch (e) {
+      console.error('img proxy: IMG.transformed failed, fallback passthrough:', e)
+    }
+  }
+
+  // (B) 无绑定 / 未指定宽度 → 同源反代原图字节（不回 302，避免多一跳）：
+  //     修大陆 raw.githubusercontent 可达性 + 30 天强缓存；首访字节不变，缩放留给 (A)。
+  try {
+    const upstream = await fetch(rawUrl, { cf: { cacheTtl: 2592000 } })
+    if (upstream.ok) {
+      const h = new Headers()
+      const ct = upstream.headers.get('content-type')
+      if (ct) h.set('content-type', ct)
+      const cl = upstream.headers.get('content-length')
+      if (cl) h.set('content-length', cl)
+      h.set('cache-control', 'public, max-age=2592000, immutable')
+      h.set('vary', 'Accept')
+      return new Response(upstream.body, { status: 200, headers: h })
+    }
+    // 上游非 200（源缺失/限流）→ 透传状态码，交由浏览器/CDN 自然处理
+    return new Response(upstream.body, { status: upstream.status, statusText: upstream.statusText, headers: upstream.headers })
+  } catch (e) {
+    console.error('img proxy: upstream fetch failed, fallback 302:', e)
+  }
+  // (C) 反代也失败 → 最后兜底 302 直链原图（功能永不因代理而中断）
+  return c.redirect(rawUrl, 302)
+})
+
 app.notFound((c) => c.json({ error: { code: 'not_found', message: 'Not found' } }, 404))
 
 app.onError((err, c) => {
@@ -3258,7 +3375,23 @@ app.onError((err, c) => {
 })
 
 // 非 /api 请求交给静态资源层（未命中资源时按 SPA 规则返回 index.html）
-app.all('*', (c) => c.env.ASSETS.fetch(c.req.raw))
+app.all('*', async (c) => {
+  const res = await c.env.ASSETS.fetch(c.req.raw)
+  // V1.9.0 P1-1：内容已带 hash 的静态资源 → 不可变长缓存；HTML（含 SPA 回退）→ no-cache（它引用 hash 文件名）。
+  const path = new URL(c.req.url).pathname
+  const ct = res.headers.get('content-type') || ''
+  if (path.startsWith('/assets/')) {
+    const h = new Headers(res.headers)
+    h.set('cache-control', 'public, max-age=31536000, immutable')
+    return new Response(res.body, { status: res.status, statusText: res.statusText, headers: h })
+  }
+  if (ct.includes('text/html')) {
+    const h = new Headers(res.headers)
+    h.set('cache-control', 'no-cache')
+    return new Response(res.body, { status: res.status, statusText: res.statusText, headers: h })
+  }
+  return res
+})
 
 // PB-1: fetch + scheduled（对账 sweeper + 360 sweeper，cron 见 wrangler.toml [triggers]）
 export default {

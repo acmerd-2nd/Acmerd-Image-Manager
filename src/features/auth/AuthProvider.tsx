@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { Session, User } from '@supabase/supabase-js'
 import { supabase } from '@/lib/supabase/client'
 import type { AppRole } from '@/types/database'
@@ -95,37 +95,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     )
   }, [session, profileNonce])
 
-  const signOut = async () => {
+  const signOut = useCallback(async () => {
     await supabase.auth.signOut()
     setSession(null)
     setRole(null)
     setDisabled(false)
     setAvatarUrl(null)
     setRoleLoading(false)
-  }
+  }, [])
 
   // 头像上传/移除后调用：仅重读本人 profile，令右上角头像即时更新（不整页刷新）
-  const refreshProfile = () => setProfileNonce((n) => n + 1)
+  const refreshProfile = useCallback(() => setProfileNonce((n) => n + 1), [])
 
-  return (
-    <AuthContext.Provider
-      value={{
-        session,
-        user: session?.user ?? null,
-        role,
-        loading,
-        roleLoading,
-        disabled,
-        isDisabled: disabled,
-        avatarUrl,
-        refreshProfile,
-        isAdmin: role === 'admin',
-        signOut,
-      }}
-    >
-      {children}
-    </AuthContext.Provider>
+  const value = useMemo<AuthState>(
+    () => ({
+      session,
+      user: session?.user ?? null,
+      role,
+      loading,
+      roleLoading,
+      disabled,
+      isDisabled: disabled,
+      avatarUrl,
+      refreshProfile,
+      isAdmin: role === 'admin',
+      signOut,
+    }),
+    [session, role, loading, roleLoading, disabled, avatarUrl, refreshProfile, signOut],
   )
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 
 export function useAuth(): AuthState {

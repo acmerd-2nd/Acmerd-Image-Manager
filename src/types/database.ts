@@ -184,6 +184,10 @@ export interface PublishedAssetRow {
   image_count: number
   language_count: number
   tags: string[]
+  /** V1.9.0 P0-2：封面图片直出字段（并入视图，消除每卡一次 images 查询） */
+  cover_provider: string | null
+  cover_storage_path: string | null
+  cover_source_path: string | null
 }
 
 export interface AssetCardRow {
@@ -195,6 +199,10 @@ export interface AssetCardRow {
   image_count: number
   language_count: number
   tags: string[]
+  /** V1.9.0 P0-2：封面图片直出字段 */
+  cover_provider: string | null
+  cover_storage_path: string | null
+  cover_source_path: string | null
 }
 
 /** tags 表行（Phase 6） */

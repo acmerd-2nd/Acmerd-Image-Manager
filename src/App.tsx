@@ -4,11 +4,6 @@ import { AuthProvider } from '@/features/auth/AuthProvider'
 import { AppShell } from '@/components/layout/AppShell'
 import { AdminLayout } from '@/components/layout/AdminLayout'
 import { RequireAuth, RequireRole } from '@/components/guards'
-import { LoginPage } from '@/routes/pages/LoginPage'
-import { RegisterPage } from '@/routes/pages/RegisterPage'
-import { ResetPasswordPage } from '@/routes/pages/ResetPasswordPage'
-import { ResetPasswordConfirmPage } from '@/routes/pages/ResetPasswordConfirmPage'
-import { ForbiddenPage, NotFoundPage } from '@/routes/pages/ErrorPages'
 
 // Phase 9 D3：路由级代码分割。AuthProvider / 布局 / Guard 保持 eager，
 // 保证顺序 Auth → Guard → Lazy Page（不会"先渲染页面再发现无权限"）。
@@ -21,6 +16,18 @@ const CollectionDetailPage = lazy(() =>
 )
 const SchedulePage = lazy(() => import('@/routes/pages/SchedulePage').then((m) => ({ default: m.SchedulePage })))
 const ProfilePage = lazy(() => import('@/routes/pages/ProfilePage').then((m) => ({ default: m.ProfilePage })))
+
+// V1.9.0 P0-5：auth / error 页也懒加载，从主包剥离（多数用户首访不进这些页）
+const LoginPage = lazy(() => import('@/routes/pages/LoginPage').then((m) => ({ default: m.LoginPage })))
+const RegisterPage = lazy(() => import('@/routes/pages/RegisterPage').then((m) => ({ default: m.RegisterPage })))
+const ResetPasswordPage = lazy(() =>
+  import('@/routes/pages/ResetPasswordPage').then((m) => ({ default: m.ResetPasswordPage })),
+)
+const ResetPasswordConfirmPage = lazy(() =>
+  import('@/routes/pages/ResetPasswordConfirmPage').then((m) => ({ default: m.ResetPasswordConfirmPage })),
+)
+const ForbiddenPage = lazy(() => import('@/routes/pages/ErrorPages').then((m) => ({ default: m.ForbiddenPage })))
+const NotFoundPage = lazy(() => import('@/routes/pages/ErrorPages').then((m) => ({ default: m.NotFoundPage })))
 
 const AdminDashboardPage = lazy(() => import('@/routes/pages/admin/AdminDashboardPage').then((m) => ({ default: m.AdminDashboardPage })))
 const AdminUsersPage = lazy(() => import('@/routes/pages/admin/AdminUsersPage').then((m) => ({ default: m.AdminUsersPage })))

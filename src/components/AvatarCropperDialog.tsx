@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import Cropper from 'cropperjs'
 import 'cropperjs/dist/cropper.css'
 import { Maximize2, RotateCcw, RotateCw, X, ZoomIn, ZoomOut, Check } from 'lucide-react'
 import { useLocale } from '@/i18n'
+import { useFocusTrap } from '@/lib/useFocusTrap'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/spinner'
 
@@ -61,15 +62,11 @@ export function AvatarCropperDialog({ file, onCancel, onConfirm }: AvatarCropper
     }
   }, [url])
 
-  // ESC 关闭（裁剪中不拦 busy）
-  useEffect(() => {
-    if (busy) return
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onCancel()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [busy, onCancel])
+  // 焦点陷阱 + Esc 关闭（裁剪中不关）+ 初始聚焦 + 关闭后还原焦点
+  const titleId = useId()
+  const panelRef = useFocusTrap<HTMLDivElement>(true, () => {
+    if (!busy) onCancel()
+  })
 
   const zoom = (factor: number) => cropperRef.current?.zoom(factor)
   const rotate = (deg: number) => cropperRef.current?.rotate(deg)
@@ -100,9 +97,18 @@ export function AvatarCropperDialog({ file, onCancel, onConfirm }: AvatarCropper
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="flex w-full max-w-md flex-col overflow-hidden rounded-xl bg-card text-card-foreground shadow-2xl">
+      <div
+        ref={panelRef}
+        className="flex w-full max-w-md flex-col overflow-hidden rounded-xl bg-card text-card-foreground shadow-2xl"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
+      >
         <div className="flex items-center justify-between border-b px-4 py-3">
-          <h2 className="text-sm font-semibold">{t('auth.avatar.cropTitle')}</h2>
+          <h2 id={titleId} className="text-sm font-semibold">
+            {t('auth.avatar.cropTitle')}
+          </h2>
           <Button variant="ghost" size="sm" onClick={onCancel} disabled={busy} aria-label={t('common.cancel')}>
             <X className="h-4 w-4" />
           </Button>

@@ -28,7 +28,7 @@ export function ThemeToggle({ className }: { className?: string }) {
         aria-label={t('themeSwitch.label')}
         onClick={toggleTheme}
         className={cn(
-          'relative inline-flex h-[22px] w-[40px] shrink-0 cursor-pointer items-center rounded-full border border-transparent transition-colors',
+          'relative inline-flex h-[22px] w-[40px] shrink-0 cursor-pointer items-center rounded-full border border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
           isDark ? 'bg-primary' : 'bg-muted-foreground/40',
         )}
       >

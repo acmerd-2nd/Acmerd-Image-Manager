@@ -186,7 +186,7 @@ export function ProfilePage() {
                   {t('auth.avatar.uploading')}
                 </p>
               )}
-              {avatarMessage && <p className="text-xs text-green-600">{avatarMessage}</p>}
+              {avatarMessage && <p className="text-xs text-success">{avatarMessage}</p>}
               {avatarError && <p className="text-xs text-destructive">{avatarError}</p>}
             </div>
           </div>
@@ -221,7 +221,7 @@ export function ProfilePage() {
                   {saving ? <Spinner className="h-4 w-4" /> : t('common.save')}
                 </Button>
               </div>
-              {saveMessage && <p className="text-xs text-green-600">{saveMessage}</p>}
+              {saveMessage && <p className="text-xs text-success">{saveMessage}</p>}
               {saveError && <p className="text-xs text-destructive">{saveError}</p>}
               <p className="text-xs text-muted-foreground">{t('auth.displayNameHint')}</p>
             </form>

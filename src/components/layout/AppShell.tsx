@@ -1,6 +1,6 @@
 import { Suspense, useEffect, useState } from 'react'
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { LogOut, User } from 'lucide-react'
+import { CalendarDays, Compass, LogOut, Search, User } from 'lucide-react'
 import { useAuth } from '@/features/auth/AuthProvider'
 import { getSiteSettings } from '@/features/settings/api'
 import { brandLogoUrl } from '@/lib/image-source'
@@ -133,11 +133,42 @@ export function AppShell() {
 
       <Breadcrumbs />
 
-      <main className="flex-1">
+      <main className="flex-1 pb-[calc(3.5rem+env(safe-area-inset-bottom))] sm:pb-0">
         <Suspense fallback={<div className="flex justify-center py-20"><Spinner className="h-6 w-6" /></div>}>
           <Outlet />
         </Suspense>
       </main>
+
+      {/* V1.9.0 P0-3 移动端底部导航（桌面顶栏已 hidden 的部分在手机上补齐可达性） */}
+      <nav
+        className="fixed inset-x-0 bottom-0 z-40 flex items-stretch justify-around border-t bg-background/95 backdrop-blur sm:hidden"
+        style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+        aria-label={t('nav.explore')}
+      >
+        {[
+          { to: '/', end: true, icon: Compass, label: t('nav.explore') },
+          { to: '/search', end: false, icon: Search, label: t('nav.search') },
+          ...(scheduleEnabled ? [{ to: '/schedule', end: false, icon: CalendarDays, label: t('nav.schedule') }] : []),
+          session
+            ? { to: '/profile', end: false, icon: User, label: t('nav.profile') }
+            : { to: '/login', end: false, icon: User, label: t('nav.login') },
+        ].map(({ to, end, icon: Icon, label }) => (
+          <NavLink
+            key={to}
+            to={to}
+            end={end}
+            className={({ isActive }) =>
+              cn(
+                'flex flex-1 flex-col items-center gap-0.5 py-2 text-[11px] text-muted-foreground transition-colors',
+                isActive && 'text-foreground',
+              )
+            }
+          >
+            <Icon className="h-5 w-5" />
+            {label}
+          </NavLink>
+        ))}
+      </nav>
 
       <footer className="border-t py-6">
         <div className="mx-auto w-full max-w-7xl px-4 text-center text-xs text-muted-foreground sm:px-6">
