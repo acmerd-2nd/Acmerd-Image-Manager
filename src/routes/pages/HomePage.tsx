@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input'
 import { CardGridSkeleton } from '@/components/CardSkeleton'
 import { Pagination } from '@/components/Pagination'
 import { useToast } from '@/components/ToastProvider'
+import { startViewNavigation } from '@/lib/motion'
 
 const PAGE_SIZE = 24
 
@@ -85,7 +86,7 @@ export function HomePage() {
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
                 const q = (e.target as HTMLInputElement).value.trim()
-                navigate(`/search?q=${encodeURIComponent(q)}`)
+                startViewNavigation(navigate, `/search?q=${encodeURIComponent(q)}`)
               }
             }}
           />

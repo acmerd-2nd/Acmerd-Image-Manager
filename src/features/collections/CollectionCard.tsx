@@ -37,8 +37,8 @@ export function CollectionCard({ collection }: { collection: PublishedCollection
   }, [collection.cover_source_path, collection.cover_image_id])
 
   return (
-    <Link to={`/collection/${collection.slug}`} className="group block">
-      <Card className="overflow-hidden transition-shadow group-hover:shadow-md">
+    <Link to={`/collection/${collection.slug}`} viewTransition data-reveal className="group block">
+      <Card className="overflow-hidden transition-[transform,box-shadow] duration-[var(--dur-base)] ease-[var(--ease-apple)] group-hover:-translate-y-1 group-hover:shadow-lg">
         <div className="aspect-square bg-muted">
           {coverUrl ? (
             <img
@@ -46,7 +46,7 @@ export function CollectionCard({ collection }: { collection: PublishedCollection
               alt={collection.name}
               loading="lazy"
               decoding="async"
-              className="h-full w-full object-cover"
+              className="h-full w-full object-cover transition-transform duration-[var(--dur-slow)] ease-[var(--ease-apple)] group-hover:scale-[1.04]"
             />
           ) : (
             <div className="flex h-full w-full flex-col items-center justify-center gap-1">

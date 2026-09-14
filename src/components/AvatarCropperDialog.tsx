@@ -96,10 +96,10 @@ export function AvatarCropperDialog({ file, onCancel, onConfirm }: AvatarCropper
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+    <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-[2px]">
       <div
         ref={panelRef}
-        className="flex w-full max-w-md flex-col overflow-hidden rounded-xl bg-card text-card-foreground shadow-2xl"
+        className="modal-panel flex w-full max-w-md flex-col overflow-hidden rounded-xl bg-card text-card-foreground shadow-2xl"
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}

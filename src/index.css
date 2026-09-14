@@ -59,3 +59,87 @@
     @apply bg-background text-foreground antialiased;
   }
 }
+
+/* ==========================================================================
+   V1.9.2 — 苹果风动效基座（纯 CSS + View Transitions，零运行时依赖）
+   原则：克制曲线（长尾 ease-out）、短时（140–380ms）、微位移（≤10px）、
+        无障碍优先（prefers-reduced-motion 全局降级），且仅在 JS 基座就绪后
+        才启用「入场揭示」的隐藏态，杜绝脚本失败导致的白屏/隐形内容。
+   ========================================================================== */
+@layer base {
+  :root {
+    --ease-apple: cubic-bezier(0.22, 1, 0.36, 1); /* 进场主曲线：缓出、尾部长 */
+    --ease-apple-in: cubic-bezier(0.4, 0, 1, 1);  /* 退场：缓入 */
+    --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+    --dur-tap: 140ms;
+    --dur-fast: 200ms;
+    --dur-base: 260ms;
+    --dur-slow: 380ms;
+    --reveal-shift: 10px;
+    --reveal-step: 45ms;
+    --reveal-max: 10;
+  }
+}
+
+/* View Transition：AppShell 内容区唯一命名，导航时仅此区做「软入」，页面其余兜底淡入淡出 */
+.vt-app-main {
+  view-transition-name: app-main;
+}
+
+/* 滚动/挂载入场：默认可见；仅当 html.js-motion 存在（motion.ts 成功初始化）时才应用隐藏→揭示 */
+.js-motion [data-reveal] {
+  transition:
+    opacity var(--dur-slow) var(--ease-apple),
+    transform var(--dur-slow) var(--ease-apple);
+  transition-delay: calc(min(var(--reveal-index, 0), var(--reveal-max)) * var(--reveal-step));
+}
+.js-motion [data-reveal]:not([data-revealed]) {
+  opacity: 0;
+  transform: translateY(var(--reveal-shift));
+}
+/* data-reveal="fade"：纯淡入（用于表格行/内联项，避免 transform 破坏 table/tr 布局） */
+.js-motion [data-reveal="fade"]:not([data-revealed]) {
+  transform: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes vt-root-out { to { opacity: 0; } }
+  @keyframes vt-root-in { from { opacity: 0; } }
+  @keyframes vt-main-out { to { opacity: 0; transform: translateY(-6px); } }
+  @keyframes vt-main-in { from { opacity: 0; transform: translateY(10px); } }
+
+  ::view-transition-old(root) { animation: vt-root-out var(--dur-fast) var(--ease-apple-in) both; }
+  ::view-transition-new(root) { animation: vt-root-in var(--dur-base) var(--ease-apple) both; }
+  ::view-transition-old(app-main) { animation: vt-main-out var(--dur-fast) var(--ease-apple-in) both; }
+  ::view-transition-new(app-main) { animation: vt-main-in var(--dur-base) var(--ease-apple) both; }
+
+  /* 组件层进出场（不依赖库；由 .toast-enter / .toast-leave / .modal-panel / .lightbox-panel / .modal-backdrop 等类在挂载时触发） */
+  @keyframes toast-in { from { opacity: 0; transform: translateY(8px) scale(0.98); } }
+  @keyframes toast-out { to { opacity: 0; transform: translateY(6px) scale(0.98); } }
+  @keyframes sheet-in { from { opacity: 0; transform: translateY(6px) scale(0.97); } }
+  @keyframes backdrop-in { from { opacity: 0; } }
+  .toast-enter { animation: toast-in var(--dur-base) var(--ease-apple) both; }
+  .toast-leave { animation: toast-out var(--dur-fast) var(--ease-apple-in) both; }
+  .modal-panel,
+  .lightbox-panel { animation: sheet-in var(--dur-base) var(--ease-apple) both; }
+  .modal-backdrop { animation: backdrop-in var(--dur-fast) var(--ease-standard) both; }
+}
+
+/* 全局无障碍降级：系统要求减少动效时近乎瞬时，且关闭 View Transition 位移/淡出 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    transition-delay: 0ms !important;
+    scroll-behavior: auto !important;
+  }
+  ::view-transition-old(app-main), ::view-transition-new(app-main),
+  ::view-transition-old(root), ::view-transition-new(root) {
+    animation: none !important;
+  }
+  .js-motion [data-reveal]:not([data-revealed]) {
+    opacity: 1;
+    transform: none;
+  }
+}

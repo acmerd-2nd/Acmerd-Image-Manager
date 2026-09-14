@@ -9,8 +9,8 @@ import { LocaleSwitch } from '@/components/LocaleSwitch'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { CreditsBadge } from '@/components/CreditsBadge'
 import { Button } from '@/components/ui/button'
-import { Spinner } from '@/components/spinner'
 import { cn } from '@/lib/utils'
+import { CardGridSkeleton } from '@/components/CardSkeleton'
 import { BreadcrumbProvider, Breadcrumbs } from '@/components/Breadcrumbs'
 
 export function AppShell() {
@@ -53,7 +53,7 @@ export function AppShell() {
         <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur">
         <div className="mx-auto flex h-14 w-full max-w-7xl items-center justify-between px-4 sm:px-6">
           <div className="flex items-center gap-6">
-            <Link to="/" className="flex items-center gap-2">
+            <Link to="/" viewTransition className="flex items-center gap-2">
               {brandLogoPath ? (
                 <img src={brandLogoUrl(brandLogoPath)} alt={brandText} className="h-8 w-auto" />
               ) : (
@@ -62,15 +62,16 @@ export function AppShell() {
             </Link>
             <LocaleSwitch className="hidden sm:flex" />
             <nav className="hidden items-center gap-6 text-sm font-medium text-muted-foreground sm:flex">
-              <NavLink to="/" end className={({ isActive }) => cn(isActive && 'text-foreground')}>
+              <NavLink to="/" end viewTransition className={({ isActive }) => cn(isActive && 'text-foreground')}>
                 {t('nav.explore')}
               </NavLink>
-              <NavLink to="/search" className={({ isActive }) => cn(isActive && 'text-foreground')}>
+              <NavLink to="/search" viewTransition className={({ isActive }) => cn(isActive && 'text-foreground')}>
                 {t('nav.search')}
               </NavLink>
               {scheduleEnabled && (
                 <NavLink
                   to="/schedule"
+                  viewTransition
                   className={({ isActive }) => cn(isActive && 'text-foreground')}
                 >
                   {t('nav.schedule')}
@@ -79,6 +80,7 @@ export function AppShell() {
               {isAdmin && (
                 <NavLink
                   to="/admin"
+                  viewTransition
                   className={({ isActive }) =>
                     cn('font-semibold text-foreground', isActive && 'underline')
                   }
@@ -95,7 +97,7 @@ export function AppShell() {
               <>
                 <CreditsBadge />
                 <Button asChild variant="ghost" size="sm">
-                  <Link to="/profile" className="flex items-center gap-1.5">
+                  <Link to="/profile" viewTransition className="flex items-center gap-1.5">
                     {avatarUrl ? (
                       <img
                         src={avatarUrl}
@@ -116,10 +118,10 @@ export function AppShell() {
             ) : (
               <>
                 <Button asChild variant="ghost" size="sm">
-                  <Link to="/login">{t('nav.login')}</Link>
+                  <Link to="/login" viewTransition>{t('nav.login')}</Link>
                 </Button>
                 <Button asChild size="sm">
-                  <Link to="/register">{t('nav.register')}</Link>
+                  <Link to="/register" viewTransition>{t('nav.register')}</Link>
                 </Button>
               </>
             )}
@@ -133,8 +135,8 @@ export function AppShell() {
 
       <Breadcrumbs />
 
-      <main className="flex-1 pb-[calc(3.5rem+env(safe-area-inset-bottom))] sm:pb-0">
-        <Suspense fallback={<div className="flex justify-center py-20"><Spinner className="h-6 w-6" /></div>}>
+      <main className="vt-app-main flex-1 pb-[calc(3.5rem+env(safe-area-inset-bottom))] sm:pb-0">
+        <Suspense fallback={<div className="mx-auto w-full max-w-7xl px-4 py-12 sm:px-6"><CardGridSkeleton count={8} /></div>}>
           <Outlet />
         </Suspense>
       </main>
@@ -157,6 +159,7 @@ export function AppShell() {
             key={to}
             to={to}
             end={end}
+            viewTransition
             className={({ isActive }) =>
               cn(
                 'flex flex-1 flex-col items-center gap-0.5 py-2 text-[11px] text-muted-foreground transition-colors',

@@ -21,8 +21,8 @@ export function AssetCard({ asset }: { asset: AssetCardRow }) {
     : null
 
   return (
-    <Link to={`/asset/${asset.slug}`} className="group block">
-      <Card className="overflow-hidden transition-shadow group-hover:shadow-md">
+    <Link to={`/asset/${asset.slug}`} viewTransition data-reveal className="group block">
+      <Card className="overflow-hidden transition-[transform,box-shadow] duration-[var(--dur-base)] ease-[var(--ease-apple)] group-hover:-translate-y-1 group-hover:shadow-lg">
         <div className="aspect-square bg-muted">
           {coverUrl ? (
             <img
@@ -30,7 +30,7 @@ export function AssetCard({ asset }: { asset: AssetCardRow }) {
               alt={asset.name}
               loading="lazy"
               decoding="async"
-              className="h-full w-full object-cover"
+              className="h-full w-full object-cover transition-transform duration-[var(--dur-slow)] ease-[var(--ease-apple)] group-hover:scale-[1.04]"
             />
           ) : (
             <div className="flex h-full w-full items-center justify-center">

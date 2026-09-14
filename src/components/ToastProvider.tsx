@@ -12,6 +12,7 @@ interface ToastItem {
   id: number
   kind: ToastKind
   message: string
+  leaving?: boolean
 }
 interface ToastApi {
   success: (m: string) => void
@@ -21,6 +22,7 @@ interface ToastApi {
 
 const ToastContext = createContext<ToastApi | null>(null)
 const AUTO_DISMISS_MS = 4000
+const LEAVE_MS = 180
 let seq = 0
 
 export function ToastProvider({ children }: { children: ReactNode }) {
@@ -31,7 +33,14 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     setItems((prev) => [...prev, { id, kind, message }])
   }, [])
   const dismiss = useCallback((id: number) => {
-    setItems((prev) => prev.filter((t) => t.id !== id))
+    setItems((prev) => {
+      const target = prev.find((t) => t.id === id)
+      if (!target || target.leaving) return prev
+      return prev.map((t) => (t.id === id ? { ...t, leaving: true } : t))
+    })
+    setTimeout(() => {
+      setItems((prev) => prev.filter((t) => t.id !== id))
+    }, LEAVE_MS)
   }, [])
 
   const api: ToastApi = {
@@ -64,7 +73,8 @@ function ToastRow({ item, onDismiss }: { item: ToastItem; onDismiss: () => void 
     <div
       role="status"
       className={cn(
-        'pointer-events-auto flex w-full max-w-md items-center gap-2 rounded-lg px-4 py-2.5 text-sm shadow-lg',
+        'toast-enter pointer-events-auto flex w-full max-w-md items-center gap-2 rounded-lg px-4 py-2.5 text-sm shadow-lg',
+        item.leaving && 'toast-leave',
         item.kind === 'success' && 'bg-green-600 text-white',
         item.kind === 'error' && 'bg-destructive text-destructive-foreground',
         item.kind === 'info' && 'bg-foreground text-background',

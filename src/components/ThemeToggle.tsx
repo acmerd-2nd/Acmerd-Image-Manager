@@ -20,7 +20,7 @@ export function ThemeToggle({ className }: { className?: string }) {
       role="group"
       aria-label={t('themeSwitch.label')}
     >
-      <Sun className={cn('h-3.5 w-3.5 transition-colors', !isDark ? 'text-foreground' : 'text-muted-foreground')} />
+      <Sun className={cn('h-3.5 w-3.5 transition-colors duration-[var(--dur-fast)] ease-[var(--ease-apple)]', !isDark ? 'text-foreground' : 'text-muted-foreground')} />
       <button
         type="button"
         role="switch"
@@ -28,18 +28,18 @@ export function ThemeToggle({ className }: { className?: string }) {
         aria-label={t('themeSwitch.label')}
         onClick={toggleTheme}
         className={cn(
-          'relative inline-flex h-[22px] w-[40px] shrink-0 cursor-pointer items-center rounded-full border border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+          'relative inline-flex h-[22px] w-[40px] shrink-0 cursor-pointer items-center rounded-full border border-transparent transition-colors duration-[var(--dur-fast)] ease-[var(--ease-apple)] active:scale-[0.95] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
           isDark ? 'bg-primary' : 'bg-muted-foreground/40',
         )}
       >
         <span
           className={cn(
-            'pointer-events-none block h-[18px] w-[18px] rounded-full bg-white shadow ring-0 transition-transform',
+            'pointer-events-none block h-[18px] w-[18px] rounded-full bg-white shadow ring-0 transition-transform duration-[var(--dur-base)] ease-[var(--ease-apple)]',
             isDark ? 'translate-x-[20px]' : 'translate-x-[2px]',
           )}
         />
       </button>
-      <Moon className={cn('h-3.5 w-3.5 transition-colors', isDark ? 'text-foreground' : 'text-muted-foreground')} />
+      <Moon className={cn('h-3.5 w-3.5 transition-colors duration-[var(--dur-fast)] ease-[var(--ease-apple)]', isDark ? 'text-foreground' : 'text-muted-foreground')} />
     </div>
   )
 }

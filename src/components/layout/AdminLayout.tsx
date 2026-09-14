@@ -2,7 +2,6 @@ import { Suspense } from 'react'
 import { NavLink, Link, Outlet } from 'react-router-dom'
 import { FolderOpen, FolderTree, LayoutDashboard, ScrollText, Tags, Users, Database, CalendarClock } from 'lucide-react'
 import { useLocale } from '@/i18n'
-import { Spinner } from '@/components/spinner'
 import { cn } from '@/lib/utils'
 import { BreadcrumbProvider, Breadcrumbs } from '@/components/Breadcrumbs'
 
@@ -32,6 +31,7 @@ export function AdminLayout() {
               <NavLink
                 key={to}
                 to={to}
+                viewTransition
                 className={({ isActive }) =>
                   cn(
                     'flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground',
@@ -45,7 +45,7 @@ export function AdminLayout() {
             ))}
           </nav>
           <div className="mt-auto px-2 text-xs text-muted-foreground">
-            <Link to="/" className="hover:underline">
+            <Link to="/" viewTransition className="hover:underline">
               {t('admin.backToSite')}
             </Link>
           </div>
@@ -61,6 +61,7 @@ export function AdminLayout() {
             <NavLink
               key={to}
               to={to}
+              viewTransition
               className={({ isActive }) =>
                 cn(
                   'rounded-md border px-3 py-1.5 text-xs font-medium',
@@ -72,7 +73,15 @@ export function AdminLayout() {
             </NavLink>
           ))}
         </nav>
-        <Suspense fallback={<div className="flex justify-center py-16"><Spinner className="h-6 w-6" /></div>}>
+        <Suspense
+          fallback={
+            <div className="space-y-4 py-2" aria-hidden>
+              <div className="h-7 w-40 animate-pulse rounded bg-muted" />
+              <div className="h-4 w-full animate-pulse rounded bg-muted" />
+              <div className="h-4 w-2/3 animate-pulse rounded bg-muted" />
+            </div>
+          }
+        >
           <Outlet />
         </Suspense>
       </div>

@@ -18,7 +18,7 @@ export function LocaleSwitch({ className }: { className?: string }) {
     >
       <span
         className={cn(
-          'text-xs font-medium transition-colors',
+          'text-xs font-medium transition-colors duration-[var(--dur-fast)] ease-[var(--ease-apple)]',
           isZh ? 'text-foreground' : 'text-muted-foreground',
         )}
       >
@@ -31,20 +31,20 @@ export function LocaleSwitch({ className }: { className?: string }) {
         aria-label={t('localeSwitch.label')}
         onClick={() => setLocale(isZh ? 'en' : 'zh-CN')}
         className={cn(
-          'relative inline-flex h-[22px] w-[40px] shrink-0 cursor-pointer items-center rounded-full border border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+          'relative inline-flex h-[22px] w-[40px] shrink-0 cursor-pointer items-center rounded-full border border-transparent transition-colors duration-[var(--dur-fast)] ease-[var(--ease-apple)] active:scale-[0.95] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
           isZh ? 'bg-primary' : 'bg-muted-foreground/40',
         )}
       >
         <span
           className={cn(
-            'pointer-events-none block h-[18px] w-[18px] rounded-full bg-white shadow ring-0 transition-transform',
+            'pointer-events-none block h-[18px] w-[18px] rounded-full bg-white shadow ring-0 transition-transform duration-[var(--dur-base)] ease-[var(--ease-apple)]',
             isZh ? 'translate-x-[20px]' : 'translate-x-[2px]',
           )}
         />
       </button>
       <span
         className={cn(
-          'text-xs font-medium transition-colors',
+          'text-xs font-medium transition-colors duration-[var(--dur-fast)] ease-[var(--ease-apple)]',
           !isZh ? 'text-foreground' : 'text-muted-foreground',
         )}
       >

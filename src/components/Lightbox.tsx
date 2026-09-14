@@ -119,7 +119,7 @@ export function Lightbox({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex flex-col bg-black/90"
+      className="modal-backdrop fixed inset-0 z-50 flex flex-col bg-black/90"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
@@ -170,7 +170,7 @@ export function Lightbox({
           key={image.id}
           src={toPublicUrl(image)}
           alt={image.filename}
-          className="max-h-full max-w-full object-contain select-none"
+          className="lightbox-panel max-h-full max-w-full object-contain select-none"
           draggable={false}
         />
         {navigable && (
