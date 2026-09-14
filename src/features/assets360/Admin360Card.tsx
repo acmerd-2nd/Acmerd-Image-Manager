@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { X } from 'lucide-react'
+import { FolderUp, X } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/spinner'
@@ -35,7 +35,10 @@ import { cn } from '@/lib/utils'
  * 关键约束：
  * - 客户端强校验（§12）：数量 ≠ 选定帧数、非白名单 MIME、单帧 > 5MB → 直接拒绝，不进上传；
  * - 帧序重编号（§13）：按文件名自然序（数字感知）排序后统一 1..N，DB 存 frame_index，播放不依赖文件名；
- * - 分批上传（Gate D3）：≤24 帧/请求，逐批进度；
+ * - 文件夹上传（V1.9.4）：可拖入整个文件夹 / 选择文件夹 / 多选文件；自动按文件名数字感知排序、
+ *   重编号 1..N、过滤非图片与隐藏/系统文件、自动识别帧数（须命中 36/72/144/360 规格）；
+ * - 逐帧串行上传（V1.9.4）：每帧一个独立小请求 + 逐帧进度 + 单帧最多重试 3 次 + 可中止续传
+ *   （取代旧「≤20 帧/请求」——大批量会让 Worker 单次缓冲 ~100MB、进度只在批间刷新，观感「卡死」）；
  * - 先 Preview 再 Activate（§16/§17）：激活是单语句原子切换，旧序列保留到确认后再清理；
  * - Remove（§47）：active 序列不可直删 → 走「先下线指针」的移除路径，前台即时安全退出。
  */
@@ -45,6 +48,54 @@ const FRAME_HINTS: Record<Frame360Count, string> = {
   72: 'Standard',
   144: 'High Quality',
   360: 'Ultra Smooth',
+}
+
+const IMAGE_EXT = /\.(png|jpe?g|webp)$/i
+
+/** 是否有效帧图片：MIME 命中白名单，或（文件夹场景 MIME 可能缺失）扩展名命中；排除隐藏/系统文件 */
+function isImageFile(f: File): boolean {
+  const name = f.name
+  if (name.startsWith('.') || name.startsWith('._')) return false
+  if (/(^|[\\/])(__MACOSX|[dD]s_[sS]tore)([\\/]|$)/.test((f as File & { webkitRelativePath?: string }).webkitRelativePath || '')) return false
+  if (name.toLowerCase() === '.ds_store') return false
+  const mimeOk = (FRAME_MIME as readonly string[]).includes(f.type)
+  return mimeOk || IMAGE_EXT.test(name)
+}
+
+/** 过滤 + 数字感知排序（§13）：供「选择文件夹 / 多选 / 拖入」三种入口共用 */
+function parseImageFiles(files: File[]): File[] {
+  return files
+    .filter(isImageFile)
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }))
+}
+
+/** 从 DataTransfer 递归收集文件（支持拖入整个文件夹）；无目录项时回落 dt.files */
+async function filesFromDataTransfer(dt: DataTransfer): Promise<File[]> {
+  const items = dt.items ? Array.from(dt.items) : []
+  const entries = items
+    .map((it) => (typeof (it as DataTransferItem & { webkitGetAsEntry?: () => unknown }).webkitGetAsEntry === 'function' ? (it as DataTransferItem & { webkitGetAsEntry: () => unknown }).webkitGetAsEntry() : null))
+    .filter((e): e is FileSystemEntry => !!e)
+  if (entries.length === 0) return dt.files ? Array.from(dt.files) : []
+
+  const out: File[] = []
+  const fileFromEntry = (entry: FileSystemFileEntry) =>
+    new Promise<void>((resolve) => entry.file((f) => { out.push(f); resolve() }, () => resolve()))
+  const walk = async (entry: FileSystemEntry): Promise<void> => {
+    if (entry.name.startsWith('.') || entry.name === '__MACOSX') return
+    if (entry.isFile) {
+      await fileFromEntry(entry as unknown as FileSystemFileEntry)
+    } else if (entry.isDirectory) {
+      const reader = (entry as unknown as FileSystemDirectoryEntry).createReader()
+      // readEntries 每次最多返回 100 项，需循环读到空
+      let batch: FileSystemEntry[]
+      do {
+        batch = await new Promise<FileSystemEntry[]>((resolve) => reader.readEntries(resolve, () => resolve([])))
+        for (const child of batch) await walk(child)
+      } while (batch.length > 0)
+    }
+  }
+  for (const e of entries) await walk(e)
+  return out
 }
 
 interface UploadDraft {
@@ -77,10 +128,13 @@ export function Admin360Card({
   const [confirmRemove, setConfirmRemove] = useState<Sequence360Summary | null>(null)
   /** 行级补传：草稿丢失（刷新）后仍能给「上传中/失败且帧未齐」的序列续传 */
   const [resumeRow, setResumeRow] = useState<string | null>(null)
+  const [dragOver, setDragOver] = useState(false)
 
   const resumeInputRef = useRef<HTMLInputElement>(null)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const folderInputRef = useRef<HTMLInputElement>(null)
+  const abortRef = useRef<AbortController | null>(null)
   const draftRef = useRef<UploadDraft | null>(null)
   draftRef.current = draft
 
@@ -130,6 +184,38 @@ export function Admin360Card({
     }
   }
 
+  const pickFolder = () => {
+    if (folderInputRef.current) {
+      folderInputRef.current.value = ''
+      folderInputRef.current.click()
+    }
+  }
+
+  /** 三种入口（选文件夹 / 多选 / 拖入）统一走这里：过滤排序 + 命中规格则自动定帧数 */
+  const applyFiles = (raw: File[]) => {
+    const parsed = parseImageFiles(raw)
+    setError(null)
+    setNotice(null)
+    setResume(null)
+    setProgress(null)
+    setDraft((d) => {
+      const base: UploadDraft = d ?? { frameCount: 144, files: null }
+      const auto = (FRAME_COUNTS as readonly number[]).includes(parsed.length)
+        ? (parsed.length as Frame360Count)
+        : base.frameCount
+      return { ...base, frameCount: auto, files: parsed }
+    })
+  }
+
+  const handleDropFiles = async (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setDragOver(false)
+    if (draftRef.current === null) setDraft({ frameCount: 144, files: null })
+    const files = await filesFromDataTransfer(e.dataTransfer)
+    applyFiles(files)
+  }
+
   /** 文件名自然序（数字感知）排序后统一重编号 1..N（§13） */
   const orderedFiles = (files: File[]) =>
     [...files].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }))
@@ -159,7 +245,22 @@ export function Admin360Card({
       setResume({ sequenceId, indices: [] })
       setProgress({ done: 0, total: ordered.length })
       const parts = ordered.map((file, i) => ({ frame_index: i + 1, file }))
-      const r = await uploadFrames(sequenceId, parts, (done, total) => setProgress({ done, total }))
+      const controller = new AbortController()
+      abortRef.current = controller
+      let r: Awaited<ReturnType<typeof uploadFrames>>
+      try {
+        r = await uploadFrames(sequenceId, parts, (done, total) => setProgress({ done, total }), controller.signal)
+      } finally {
+        abortRef.current = null
+      }
+      if (controller.signal.aborted) {
+        // 主动中止：序列留在 uploading（已传帧已登记），行走「续传」入口；不报错
+        setDraft(null)
+        setResume(null)
+        setProgress(null)
+        setNotice(t('admin.s360.abortedNotice', { done: r.uploaded.length, total: ordered.length }))
+        return
+      }
       if (r.failed.length > 0) {
         // 保留草稿 + 序列：面板出现「重试缺失帧」，不新建序列
         setResume({ sequenceId, indices: r.failed.map((f) => f.frame_index) })
@@ -183,7 +284,24 @@ export function Admin360Card({
       const ordered = orderedFiles(d.files)
       const parts = rs.indices.map((i) => ({ frame_index: i, file: ordered[i - 1] })).filter((p) => !!p.file)
       setProgress({ done: 0, total: parts.length })
-      const r = await uploadFrames(rs.sequenceId, parts, (done, total) => setProgress({ done, total }))
+      const controller = new AbortController()
+      abortRef.current = controller
+      let r: Awaited<ReturnType<typeof uploadFrames>>
+      try {
+        r = await uploadFrames(rs.sequenceId, parts, (done, total) => setProgress({ done, total }), controller.signal)
+      } finally {
+        abortRef.current = null
+      }
+      if (controller.signal.aborted) {
+        // 中止续传：保留「重试缺失帧」入口（仅未成功登记的帧），不报错、不收尾
+        const done = new Set(r.uploaded.map((u) => u.frame_index))
+        const stillMissing = rs.indices.filter((i) => !done.has(i))
+        setProgress(null)
+        setDraft(null)
+        setResume(stillMissing.length > 0 ? { sequenceId: rs.sequenceId, indices: stillMissing } : null)
+        setNotice(t('admin.s360.abortedNotice', { done: r.uploaded.length, total: parts.length }))
+        return
+      }
       if (r.failed.length > 0) {
         setResume({ sequenceId: rs.sequenceId, indices: r.failed.map((f) => f.frame_index) })
         throw new Error(t('admin.s360.errFrameFailed', { n: r.failed.length, msg: r.failed[0].error }))
@@ -219,7 +337,20 @@ export function Admin360Card({
         .filter((p): p is { frame_index: number; file: File } => !!p.file)
       if (parts.length !== missing.length) throw new Error(t('admin.s360.errResumeAlign'))
       setProgress({ done: 0, total: parts.length })
-      const r = await uploadFrames(seqId, parts, (done, total) => setProgress({ done, total }))
+      const controller = new AbortController()
+      abortRef.current = controller
+      let r: Awaited<ReturnType<typeof uploadFrames>>
+      try {
+        r = await uploadFrames(seqId, parts, (done, total) => setProgress({ done, total }), controller.signal)
+      } finally {
+        abortRef.current = null
+      }
+      if (controller.signal.aborted) {
+        // 中止行级补传：保留该行的「补传」入口，不报错、不收尾
+        setProgress(null)
+        setNotice(t('admin.s360.abortedNotice', { done: r.uploaded.length, total: parts.length }))
+        return
+      }
       if (r.failed.length > 0) {
         throw new Error(t('admin.s360.errFrameFailed', { n: r.failed.length, msg: r.failed[0].error }))
       }
@@ -392,22 +523,49 @@ export function Admin360Card({
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div
+            onDragOver={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              if (!busy) setDragOver(true)
+            }}
+            onDragLeave={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              setDragOver(false)
+            }}
+            onDrop={(e) => void handleDropFiles(e)}
+            className={cn(
+              'rounded-md border border-dashed px-3 py-4 text-center transition-colors',
+              dragOver ? 'border-primary bg-primary/5' : 'border-border',
+            )}
+          >
             <input
               ref={fileInputRef}
               type="file"
               accept={FRAME_MIME.join(',')}
               multiple
               className="hidden"
-              onChange={(e) => {
-                const files = e.target.files ? Array.from(e.target.files) : null
-                setDraft({ ...(draftRef.current as UploadDraft), files })
-              }}
+              onChange={(e) => applyFiles(e.target.files ? Array.from(e.target.files) : [])}
             />
-            <Button size="sm" variant="outline" disabled={busy} onClick={pickFiles}>
-              {t('admin.s360.selectFiles')}
-            </Button>
-            <span className="text-xs text-muted-foreground">
+            <input
+              ref={folderInputRef}
+              type="file"
+              className="hidden"
+              {...({ webkitdirectory: '', directory: '' } as any)}
+              onChange={(e) => applyFiles(e.target.files ? Array.from(e.target.files) : [])}
+            />
+            <FolderUp className={cn('mx-auto mb-1 h-5 w-5', dragOver ? 'text-primary' : 'text-muted-foreground')} />
+            <p className="text-xs text-muted-foreground">{t('admin.s360.dropHint')}</p>
+            <div className="mt-2 flex flex-wrap items-center justify-center gap-2">
+              <Button size="sm" variant="outline" disabled={busy} onClick={pickFolder}>
+                {t('admin.s360.selectFolder')}
+              </Button>
+              <Button size="sm" variant="ghost" disabled={busy} onClick={pickFiles}>
+                {t('admin.s360.selectFiles')}
+              </Button>
+            </div>
+            <span className="mt-1 block text-xs text-muted-foreground">
               {draft.files
                 ? t('admin.s360.chosen', { n: draft.files.length, need: draft.frameCount })
                 : t('admin.s360.selectHint')}
@@ -436,6 +594,11 @@ export function Admin360Card({
             ) : (
               <Button size="sm" disabled={busy || !draft.files} onClick={() => void startUpload()}>
                 {busy ? t('admin.s360.busy') : t('admin.s360.startUpload')}
+              </Button>
+            )}
+            {progress && (
+              <Button size="sm" variant="outline" onClick={() => abortRef.current?.abort()}>
+                {t('admin.s360.abort')}
               </Button>
             )}
             <Button

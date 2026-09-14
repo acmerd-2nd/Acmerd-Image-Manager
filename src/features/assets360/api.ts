@@ -121,46 +121,50 @@ export interface FramePart {
 }
 
 /**
- * [3] 分批传帧：自动按 FRAME_BATCH_MAX 切批、逐批上报进度。
- * 单帧网络抖动（GitHub 偶发 connection lost）→ 只重发失败帧，最多 3 轮尝试；
- * 仍失败的帧回传 failed[] 交调用方（后台提供「重试缺失帧」续传入口）。
+ * [3] 逐帧上传（V1.9.4）：每帧一个独立小请求、严格串行。
+ *  旧的分批（≤20 帧/请求）会让 Worker 单次缓冲 ~100MB、且进度只在批间刷新 → 观感「卡死」。
+ *  现在：按 frame_index 升序逐帧 POST /frames；单帧网络抖动最多重试 3 次；每帧即时回调进度。
+ *  一帧最终失败不影响其余帧（失败帧汇入 failed[]，交调用方「续传缺失帧」）。
+ *  signal 触发后在【当前帧之后】停止（剩余帧不标记为已传 → 行走 uploading，可续传）。
  */
 export async function uploadFrames(
   sequenceId: string,
   parts: FramePart[],
-  onProgress?: (done: number, total: number, batchIndex: number) => void,
+  onProgress?: (done: number, total: number, frameIndex: number) => void,
+  signal?: AbortSignal,
 ): Promise<FrameUploadResult> {
-  const byIndex = new Map<number, File>(parts.map((p) => [p.frame_index, p.file]))
+  const ordered = [...parts].sort((a, b) => a.frame_index - b.frame_index)
+  const total = ordered.length
   const uploadedMap = new Map<number, string>()
   const lastError = new Map<number, string>()
-  const total = parts.length
-  let attempted = 0
-  let batchNo = 0
-  let pending = [...byIndex.keys()]
+  let done = 0
 
-  for (let attempt = 0; attempt < 3 && pending.length > 0; attempt++) {
-    const retryNext: number[] = []
-    for (let i = 0; i < pending.length; i += FRAME_BATCH_MAX) {
-      const idxBatch = pending.slice(i, i + FRAME_BATCH_MAX)
-      const form = new FormData()
-      for (const idx of idxBatch) form.append(`f_${idx}`, byIndex.get(idx) as File, `${String(idx).padStart(4, '0')}.png`)
-      const r = await request<{ ok: boolean; uploaded: FrameUploadResult['uploaded']; failed: FrameUploadResult['failed'] }>(
-        `/api/admin/360-sequences/${sequenceId}/frames`,
-        { method: 'POST', body: form },
-      )
-      batchNo += 1
-      attempted += idxBatch.length
-      for (const u of r.uploaded) {
-        uploadedMap.set(u.frame_index, u.blob_sha)
-        lastError.delete(u.frame_index)
+  for (const { frame_index, file } of ordered) {
+    if (signal?.aborted) break
+    let ok = false
+    for (let attempt = 0; attempt < 3 && !ok; attempt++) {
+      try {
+        const form = new FormData()
+        form.append(`f_${frame_index}`, file, `${String(frame_index).padStart(4, '0')}.png`)
+        const r = await request<{ ok: boolean; uploaded: FrameUploadResult['uploaded']; failed: FrameUploadResult['failed'] }>(
+          `/api/admin/360-sequences/${sequenceId}/frames`,
+          { method: 'POST', body: form },
+        )
+        const up = r.uploaded.find((u) => u.frame_index === frame_index)
+        if (up) {
+          uploadedMap.set(frame_index, up.blob_sha)
+          lastError.delete(frame_index)
+          ok = true
+        } else {
+          const f = r.failed.find((x) => x.frame_index === frame_index)
+          lastError.set(frame_index, f?.error ?? 'upload failed')
+        }
+      } catch (e) {
+        lastError.set(frame_index, e instanceof Error ? e.message : String(e))
       }
-      for (const f of r.failed) {
-        lastError.set(f.frame_index, f.error)
-        if (attempt < 2) retryNext.push(f.frame_index)
-      }
-      onProgress?.(Math.min(attempted, total), total, batchNo)
     }
-    pending = retryNext
+    done++
+    onProgress?.(Math.min(done, total), total, frame_index)
   }
 
   return {
