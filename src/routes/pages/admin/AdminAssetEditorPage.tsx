@@ -3,12 +3,14 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ArrowDown, ArrowUp, ArrowDownToLine, ArrowUpToLine, GripVertical, ImagePlus, Plus, Trash2, X } from 'lucide-react'
 import {
   DndContext,
+  DragOverlay,
   KeyboardSensor,
   PointerSensor,
   closestCenter,
   useSensor,
   useSensors,
   type DragEndEvent,
+  type DragStartEvent,
 } from '@dnd-kit/core'
 import {
   SortableContext,
@@ -83,6 +85,8 @@ export function AdminAssetEditorPage() {
   const [busy, setBusy] = useState(false)
   const [uploading, setUploading] = useState<LanguageCode | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  // V1.9.3：拖拽中被抬起的图片 id（供 DragOverlay 渲染清晰浮层，避免拖拽发涩）
+  const [activeDragId, setActiveDragId] = useState<string | null>(null)
 
   // 基础信息草稿
   const [name, setName] = useState('')
@@ -281,10 +285,19 @@ export function AdminAssetEditorPage() {
 
   const bySort = (a: ImageRow, b: ImageRow) => a.sort_order - b.sort_order
 
-  const applyOrder = (ordered: ImageRow[]) =>
-    run(async () => {
-      await reorderImages(ordered)
+  // V1.9.3 乐观重排：先在本地即时改排序（无 busy、无整表 refetch → 落点跟手、不闪回），
+  // 再后台持久化；仅失败时回滚快照并提示。ordered = 该语言【目标顺序】的行数组（下标即新 sort_order）。
+  const applyOrder = (ordered: ImageRow[]) => {
+    const prev = images
+    const target = new Map(ordered.map((r, i) => [r.id, i]))
+    setImages((rows) =>
+      rows.map((r) => (target.has(r.id) ? { ...r, sort_order: target.get(r.id)! } : r)),
+    )
+    reorderImages(ordered).catch((e) => {
+      setImages(prev)
+      setActionError(e instanceof Error ? e.message : String(e))
     })
+  }
 
   const orderedSiblings = (img: ImageRow) => imagesOf(img.asset_language_id).slice().sort(bySort)
 
@@ -605,7 +618,12 @@ export function AdminAssetEditorPage() {
                 <DndContext
                   sensors={sensors}
                   collisionDetection={closestCenter}
-                  onDragEnd={onDragEnd(lang.id)}
+                  onDragStart={(e: DragStartEvent) => setActiveDragId(String(e.active.id))}
+                  onDragCancel={() => setActiveDragId(null)}
+                  onDragEnd={(e) => {
+                    setActiveDragId(null)
+                    onDragEnd(lang.id)(e)
+                  }}
                 >
                   <SortableContext items={imgs.map((i) => i.id)} strategy={rectSortingStrategy}>
                     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
@@ -628,6 +646,22 @@ export function AdminAssetEditorPage() {
                       ))}
                     </div>
                   </SortableContext>
+                  <DragOverlay dropAnimation={{ duration: 220, easing: 'cubic-bezier(0.22,1,0.36,1)' }}>
+                    {(() => {
+                      const activeImg = activeDragId ? images.find((i) => i.id === activeDragId) : null
+                      if (!activeImg) return null
+                      return (
+                        <div className="aspect-square w-full rotate-[1.5deg] scale-[1.04] overflow-hidden rounded border bg-card shadow-2xl ring-1 ring-black/10">
+                          <img
+                            src={toPublicUrl(activeImg)}
+                            alt=""
+                            draggable={false}
+                            className="pointer-events-none h-full w-full object-cover"
+                          />
+                        </div>
+                      )
+                    })()}
+                  </DragOverlay>
                 </DndContext>
               )}
             </div>
@@ -714,7 +748,7 @@ function SortableImageCard({
     <div
       ref={setNodeRef}
       style={style}
-      className={cn('space-y-1 rounded border p-1', isDragging && 'opacity-70')}
+      className={cn('space-y-1 rounded border p-1', isDragging && 'opacity-25')}
     >
       <div className="relative aspect-square overflow-hidden rounded bg-muted">
         <button
