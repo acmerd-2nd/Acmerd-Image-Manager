@@ -1107,6 +1107,9 @@ const FRAME_MIME_SET = new Set(Object.keys(GITHUB_MIME_EXT))
 const FRAME_MAX_SIZE = 5 * 1024 * 1024
 const FRAME_BATCH_MAX = 20 // Gate D3 + 生产实测：CF 单次调用子请求配额 50；合并登记后 20 帧/批 ≈ 25 子请求
 const SEQ_LEASE_TTL = 180
+// 逐帧上传专用较短租约：单帧 blob 写入在 ghFetch 25s 超时后有界，无需 180s；
+// 更短 TTL 让「异常/客户端中断」遗留的租约更快自愈，减少后续帧 lease_busy 的等待窗口。
+const FRAMES_LEASE_TTL = 90
 
 interface SeqRowSvc {
   id: string
@@ -1302,7 +1305,7 @@ app.post('/api/admin/360-sequences/:seqId/frames', async (c) => {
 
   const ownerId = auth.userId
   const resourceKey = `asset360:${seqId}`
-  const leased = await claimLease(c.env, headers, resourceKey, ownerId, SEQ_LEASE_TTL).catch(() => false)
+  const leased = await claimLease(c.env, headers, resourceKey, ownerId, FRAMES_LEASE_TTL).catch(() => false)
   if (!leased) return c.json({ error: { code: 'lease_busy', message: 'Another 360 operation is in progress for this sequence' } }, 409)
 
   const uploaded: Array<{ frame_index: number; blob_sha: string }> = []

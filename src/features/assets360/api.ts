@@ -23,10 +23,15 @@ export const FRAME_BATCH_MAX = 20
 export const FRAME_MAX_SIZE = 5 * 1024 * 1024
 export const FRAME_MIME = ['image/png', 'image/jpeg', 'image/webp'] as const
 
-/** 单次 admin 请求的兜底超时：任何一次挂起都不能无限阻塞（V1.9.5 卡死根因修复） */
-export const REQUEST_TIMEOUT_MS = 60_000
-/** 逐帧上传单帧超时：大帧 + 慢网络留足余量，但仍设上限避免单帧无限挂起拖垮整条串行队列 */
-export const FRAME_TIMEOUT_MS = 60_000
+/**
+ * 单次 admin 请求兜底超时（V1.9.6 上调）：仅在连接【真的死掉】时兜底。
+ * 必须【明显高于】Worker 侧有界的返回时间（ghFetch 已加 25s 超时 → 单帧 <60s、
+ * complete 提交略长）；否则客户端会在服务端仍在正常处理时就放弃并立即重试，
+ * 撞上服务端仍持有的写入租约 → lease_busy 级联（V1.9.5 回归根因）。
+ */
+export const REQUEST_TIMEOUT_MS = 120_000
+/** 逐帧上传单帧超时（V1.9.6 上调）：高于服务端单帧有界返回，避免放弃在途请求而自撞租约 */
+export const FRAME_TIMEOUT_MS = 90_000
 
 function timeoutSignal(ms: number): AbortSignal {
   if (typeof AbortSignal !== 'undefined' && 'timeout' in AbortSignal) {
@@ -50,6 +55,23 @@ function combineSignals(user: AbortSignal | undefined, timeoutMs: number): Abort
   timeout.addEventListener('abort', () => ctrl.abort(), { once: true })
   return ctrl.signal
 }
+
+/** abort 感知的 sleep：signal 触发时提前结束等待（用于 lease_busy 退避） */
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal?.aborted) return resolve()
+    const done = () => {
+      clearTimeout(t)
+      signal?.removeEventListener?.('abort', done)
+      resolve()
+    }
+    const t = setTimeout(done, ms)
+    signal?.addEventListener?.('abort', done, { once: true })
+  })
+}
+
+/** 命中 lease_busy 时的退避时长：等前一次（多为被中断的）写租约释放，而不是瞬间自撞重试 */
+const LEASE_BUSY_BACKOFF_MS = 6000
 
 export interface Sequence360Summary {
   id: string
@@ -196,6 +218,10 @@ export async function uploadFrames(
         // 调用方主动中止：立即中断，不把这一帧计为失败（序列仍可续传）
         if (signal?.aborted) break
         lastError.set(frame_index, e instanceof Error ? e.message : String(e))
+        // lease_busy = 上一次写（多为本序列被中断/仍在收尾的请求）仍持租约：退避后再试，别瞬间自撞
+        if (e instanceof Seq360ApiError && e.code === 'lease_busy' && attempt < 2 && !signal?.aborted) {
+          await sleep(LEASE_BUSY_BACKOFF_MS, signal)
+        }
       }
     }
     if (signal?.aborted) break

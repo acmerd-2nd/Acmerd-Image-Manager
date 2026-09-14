@@ -87,11 +87,29 @@ class SubrequestBudget {
   }
 }
 
+/**
+ * 单次 GitHub HTTP 调用超时（根因修复）：ghFetch 过去无任何超时，一次挂起的
+ * blob/commit 请求会让整个 Worker 调用永不返回、并持续持有写入租约（→ 前台「卡死」，
+ * 且后续/重试请求撞 lease_busy）。给每次 fetch 兜一个上限，让挂起快速失败并让 finally 释放租约。
+ */
+const GITHUB_FETCH_TIMEOUT_MS = 25_000
+
+function timeoutSignal(ms: number): AbortSignal {
+  if (typeof AbortSignal !== 'undefined' && 'timeout' in AbortSignal) {
+    return AbortSignal.timeout(ms)
+  }
+  const ctrl = new AbortController()
+  setTimeout(() => ctrl.abort(), ms)
+  return ctrl.signal
+}
+
 async function ghFetch(cfg: GithubConfig, url: string, init: RequestInit, budget: SubrequestBudget): Promise<Response> {
   budget.consume()
   const extra = (init.headers ?? {}) as Record<string, string>
   const accept = extra['Accept'] ?? 'application/vnd.github+json'
-  return fetch(url, { ...init, headers: { ...ghHeaders(cfg, accept), ...extra } })
+  // 未显式传 signal 时套默认超时；挂起会 reject（调用方按 GITHUB_NETWORK 处理）
+  const signal = init.signal ?? timeoutSignal(GITHUB_FETCH_TIMEOUT_MS)
+  return fetch(url, { ...init, signal, headers: { ...ghHeaders(cfg, accept), ...extra } })
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
