@@ -218,9 +218,11 @@ export async function uploadFrames(
         // 调用方主动中止：立即中断，不把这一帧计为失败（序列仍可续传）
         if (signal?.aborted) break
         lastError.set(frame_index, e instanceof Error ? e.message : String(e))
-        // lease_busy = 上一次写（多为本序列被中断/仍在收尾的请求）仍持租约：退避后再试，别瞬间自撞
-        if (e instanceof Seq360ApiError && e.code === 'lease_busy' && attempt < 2 && !signal?.aborted) {
-          await sleep(LEASE_BUSY_BACKOFF_MS, signal)
+        // 退避重试：lease_busy（多为上一笔被中断/仍在收尾的写持着租约，现已同 owner 可续租）
+        // 或 5xx（如 Worker 被资源限制杀掉的 503）——等一会儿再试，别瞬间自撞/硬打
+        if (e instanceof Seq360ApiError && attempt < 2 && !signal?.aborted) {
+          const backoff = e.code === 'lease_busy' ? LEASE_BUSY_BACKOFF_MS : e.status >= 500 ? 3000 : 0
+          if (backoff > 0) await sleep(backoff, signal)
         }
       }
     }
