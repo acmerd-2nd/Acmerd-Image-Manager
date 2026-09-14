@@ -23,6 +23,34 @@ export const FRAME_BATCH_MAX = 20
 export const FRAME_MAX_SIZE = 5 * 1024 * 1024
 export const FRAME_MIME = ['image/png', 'image/jpeg', 'image/webp'] as const
 
+/** 单次 admin 请求的兜底超时：任何一次挂起都不能无限阻塞（V1.9.5 卡死根因修复） */
+export const REQUEST_TIMEOUT_MS = 60_000
+/** 逐帧上传单帧超时：大帧 + 慢网络留足余量，但仍设上限避免单帧无限挂起拖垮整条串行队列 */
+export const FRAME_TIMEOUT_MS = 60_000
+
+function timeoutSignal(ms: number): AbortSignal {
+  if (typeof AbortSignal !== 'undefined' && 'timeout' in AbortSignal) {
+    return AbortSignal.timeout(ms)
+  }
+  const ctrl = new AbortController()
+  setTimeout(() => ctrl.abort(), ms)
+  return ctrl.signal
+}
+
+/** 组合「调用方 abort」与「本次尝试超时」：任一触发即中断在途 fetch（AbortSignal.any 缺失时手工回落） */
+function combineSignals(user: AbortSignal | undefined, timeoutMs: number): AbortSignal {
+  const timeout = timeoutSignal(timeoutMs)
+  if (!user) return timeout
+  if (user.aborted) return user
+  const anyFn = (AbortSignal as unknown as { any?: (s: AbortSignal[]) => AbortSignal }).any
+  if (typeof anyFn === 'function') return anyFn.call(AbortSignal, [user, timeout])
+  const ctrl = new AbortController()
+  if (timeout.aborted) return timeout
+  user.addEventListener('abort', () => ctrl.abort(), { once: true })
+  timeout.addEventListener('abort', () => ctrl.abort(), { once: true })
+  return ctrl.signal
+}
+
 export interface Sequence360Summary {
   id: string
   frame_count: number
@@ -86,7 +114,9 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const jwt = data.session?.access_token
   if (!jwt) throw new Seq360ApiError(t('admin.api.unauthorized'), 401, 'unauthorized')
 
-  const res = await fetch(path, { ...init, headers: { Authorization: `Bearer ${jwt}`, ...(init.headers ?? {}) } })
+  // V1.9.5：任何一次请求都必须带上超时/中止信号，杜绝单请求无限挂起卡死整条队列
+  const signal = init.signal ?? timeoutSignal(REQUEST_TIMEOUT_MS)
+  const res = await fetch(path, { ...init, signal, headers: { Authorization: `Bearer ${jwt}`, ...(init.headers ?? {}) } })
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as { error?: { code?: string; message?: string } } | null
     const code = body?.error?.code ?? 'error'
@@ -121,11 +151,13 @@ export interface FramePart {
 }
 
 /**
- * [3] 逐帧上传（V1.9.4）：每帧一个独立小请求、严格串行。
+ * [3] 逐帧上传（V1.9.4 串行 / V1.9.5 可中断）：每帧一个独立小请求、严格串行。
  *  旧的分批（≤20 帧/请求）会让 Worker 单次缓冲 ~100MB、且进度只在批间刷新 → 观感「卡死」。
  *  现在：按 frame_index 升序逐帧 POST /frames；单帧网络抖动最多重试 3 次；每帧即时回调进度。
  *  一帧最终失败不影响其余帧（失败帧汇入 failed[]，交调用方「续传缺失帧」）。
- *  signal 触发后在【当前帧之后】停止（剩余帧不标记为已传 → 行走 uploading，可续传）。
+ *  V1.9.5：每次请求都带 combineSignals(调用方 abort, 单帧超时) —— 因此「中止」与超时都能中断
+ *  【在途】的那一帧请求（旧代码只在帧与帧之间检查 abort，单帧一旦挂起就整条队列卡死、只能刷新）。
+ *  调用方 signal 触发后在【当前帧之后或之中】停止（剩余帧不标记为已传 → 行走 uploading，可续传）。
  */
 export async function uploadFrames(
   sequenceId: string,
@@ -143,12 +175,13 @@ export async function uploadFrames(
     if (signal?.aborted) break
     let ok = false
     for (let attempt = 0; attempt < 3 && !ok; attempt++) {
+      if (signal?.aborted) break
       try {
         const form = new FormData()
         form.append(`f_${frame_index}`, file, `${String(frame_index).padStart(4, '0')}.png`)
         const r = await request<{ ok: boolean; uploaded: FrameUploadResult['uploaded']; failed: FrameUploadResult['failed'] }>(
           `/api/admin/360-sequences/${sequenceId}/frames`,
-          { method: 'POST', body: form },
+          { method: 'POST', body: form, signal: combineSignals(signal, FRAME_TIMEOUT_MS) },
         )
         const up = r.uploaded.find((u) => u.frame_index === frame_index)
         if (up) {
@@ -160,9 +193,12 @@ export async function uploadFrames(
           lastError.set(frame_index, f?.error ?? 'upload failed')
         }
       } catch (e) {
+        // 调用方主动中止：立即中断，不把这一帧计为失败（序列仍可续传）
+        if (signal?.aborted) break
         lastError.set(frame_index, e instanceof Error ? e.message : String(e))
       }
     }
+    if (signal?.aborted) break
     done++
     onProgress?.(Math.min(done, total), total, frame_index)
   }
