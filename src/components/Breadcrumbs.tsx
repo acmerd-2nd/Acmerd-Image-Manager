@@ -1,6 +1,7 @@
 import {
   createContext,
   useContext,
+  useEffect,
   useMemo,
   useState,
   type ReactNode,
@@ -27,13 +28,20 @@ export interface Crumb {
 interface BreadcrumbContextValue {
   leafName: string | null
   setLeafName: (name: string | null) => void
+  /** 页面自定义整条面包屑（如资产/合集页的层级链）；非空时优先于路径推导，避免与内联面包屑重复渲染 */
+  pageTrail: Crumb[] | null
+  setPageTrail: (trail: Crumb[] | null) => void
 }
 
 const BreadcrumbContext = createContext<BreadcrumbContextValue | null>(null)
 
 export function BreadcrumbProvider({ children }: { children: ReactNode }) {
   const [leafName, setLeafName] = useState<string | null>(null)
-  const value = useMemo<BreadcrumbContextValue>(() => ({ leafName, setLeafName }), [leafName])
+  const [pageTrail, setPageTrail] = useState<Crumb[] | null>(null)
+  const value = useMemo<BreadcrumbContextValue>(
+    () => ({ leafName, setLeafName, pageTrail, setPageTrail }),
+    [leafName, pageTrail],
+  )
   return <BreadcrumbContext.Provider value={value}>{children}</BreadcrumbContext.Provider>
 }
 
@@ -143,11 +151,26 @@ function buildTrail(
   return [explore]
 }
 
+/**
+ * 详情/合集页调用：把本页的层级链交给站点级 Breadcrumbs 统一渲染（单一渲染源），
+ * 传 null 则回落到路径推导。组件卸载 / trail 变化时自动清理，避免串台与重复。
+ */
+export function useBreadcrumbTrail(trail: Crumb[] | null): void {
+  const { setPageTrail } = useBreadcrumb()
+  const key = trail ? JSON.stringify(trail) : ''
+  useEffect(() => {
+    setPageTrail(trail)
+    return () => setPageTrail(null)
+    // trail 内容不变时不重复 set（依赖序列化 key，避免每次渲染新数组触发死循环）
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key])
+}
+
 export function Breadcrumbs() {
   const location = useLocation()
   const { t } = useLocale()
-  const { leafName } = useBreadcrumb()
-  const trail = buildTrail(location.pathname, t, leafName)
+  const { leafName, pageTrail } = useBreadcrumb()
+  const trail = pageTrail ?? buildTrail(location.pathname, t, leafName)
 
   // 仅首页/探索根路径（trail ≤ 1）不渲染
   if (!trail || trail.length <= 1) return null

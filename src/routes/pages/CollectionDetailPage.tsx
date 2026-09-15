@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { ArrowLeft, ChevronRight } from 'lucide-react'
+import { ArrowLeft } from 'lucide-react'
 import type { AssetCardRow, PublishedCollectionRow } from '@/types/database'
 import { AssetCard } from '@/features/assets/AssetCard'
 import { CollectionCard } from '@/features/collections/CollectionCard'
@@ -13,13 +13,12 @@ import {
 import { useLocale } from '@/i18n'
 import { CardGridSkeleton } from '@/components/CardSkeleton'
 import { useToast } from '@/components/ToastProvider'
-import { useBreadcrumb } from '@/components/Breadcrumbs'
+import { useBreadcrumbTrail, type Crumb } from '@/components/Breadcrumbs'
 
 /** V1.1 PC-2 + V1.2-A：/collection/:slug —— 面包屑 + 子合集卡 + 双层 published 资产（RLS 收敛） */
 export function CollectionDetailPage() {
   const { slug = '' } = useParams()
   const { t } = useLocale()
-  const { setLeafName } = useBreadcrumb()
   const toast = useToast()
   const [collection, setCollection] = useState<Awaited<ReturnType<typeof getPublishedCollectionBySlug>>>(undefined as never)
   const [assets, setAssets] = useState<AssetCardRow[] | null>(null)
@@ -62,11 +61,24 @@ export function CollectionDetailPage() {
     }
   }, [slug, toast, t])
 
-  // 面包屑末级：合集加载后写入真实名称；路由切换/卸载时复位，避免名称串台
-  useEffect(() => {
-    setLeafName(collection?.name ?? null)
-    return () => setLeafName(null)
-  }, [collection?.name])
+  // 面包屑：把「探索 → 祖先合集链 → 当前合集」交给站点级 Breadcrumbs 统一渲染（避免与旧内联面包屑重复）
+  const breadcrumbTrail = useMemo<Crumb[] | null>(() => {
+    if (!collection) return null
+    const crumbs: Crumb[] = [{ label: t('nav.explore'), to: '/' }]
+    if (breadcrumb.length === 0) {
+      crumbs.push({ label: collection.name })
+    } else {
+      breadcrumb.forEach((b, i) => {
+        crumbs.push(
+          i === breadcrumb.length - 1
+            ? { label: b.name }
+            : { label: b.name, to: `/collection/${b.slug}` },
+        )
+      })
+    }
+    return crumbs
+  }, [collection, breadcrumb, t])
+  useBreadcrumbTrail(breadcrumbTrail)
 
   if (missing) {
     return (
@@ -86,23 +98,6 @@ export function CollectionDetailPage() {
         {t('collection.backToCollections')}
       </Link>
       <div className="mt-4 mb-8">
-        {/* V1.2-A：祖先面包屑（根 → … → 当前合集；自身可点跳转各层级） */}
-        {breadcrumb.length > 1 && (
-          <nav className="mb-2 flex flex-wrap items-center gap-1 text-sm text-muted-foreground">
-            {breadcrumb.map((b, i) => (
-              <span key={b.id} className="flex items-center gap-1">
-                {i > 0 && <ChevronRight className="h-3.5 w-3.5" />}
-                {i === breadcrumb.length - 1 ? (
-                  <span className="text-foreground">{b.name}</span>
-                ) : (
-                  <Link to={`/collection/${b.slug}`} className="hover:text-foreground hover:underline">
-                    {b.name}
-                  </Link>
-                )}
-              </span>
-            ))}
-          </nav>
-        )}
         <h1 className="text-3xl font-bold tracking-tight">
           {collection ? collection.name : t('common.loading')}
         </h1>

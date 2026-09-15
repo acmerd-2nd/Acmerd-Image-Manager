@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { Check, CheckCheck, ChevronRight, Download, DownloadCloud, Image as ImageIcon, ListChecks, Lock, Tag as TagIcon } from 'lucide-react'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { Check, CheckCheck, Download, DownloadCloud, Image as ImageIcon, ListChecks, Lock, Tag as TagIcon } from 'lucide-react'
 import {
   getPublishedAssetBySlug,
   imageSrcOf,
@@ -39,7 +39,7 @@ import { useToast } from '@/components/ToastProvider'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/spinner'
 import { cn } from '@/lib/utils'
-import { useBreadcrumb } from '@/components/Breadcrumbs'
+import { useBreadcrumbTrail, type Crumb } from '@/components/Breadcrumbs'
 
 const MAX_ZIP = 30
 
@@ -55,7 +55,6 @@ export function AssetDetailPage() {
   const navigate = useNavigate()
   const { session } = useAuth()
   const { t } = useLocale()
-  const { setLeafName } = useBreadcrumb()
 
   const [asset, setAsset] = useState<PublishedAssetRow | null>(null)
   const [languages, setLanguages] = useState<AssetLanguageRow[] | null>(null)
@@ -228,11 +227,15 @@ export function AssetDetailPage() {
     }
   }, [asset?.id])
 
-  // 面包屑末级：资产加载完成后写入真实名称；路由切换/卸载时 cleanup 复位，避免名称串台
-  useEffect(() => {
-    setLeafName(asset?.name ?? null)
-    return () => setLeafName(null)
-  }, [asset?.name])
+  // 面包屑：把「探索 → 合集祖先链 → 资产名」交给站点级 Breadcrumbs 统一渲染（避免与旧内联面包屑重复）
+  const breadcrumbTrail = useMemo<Crumb[] | null>(() => {
+    if (!asset) return null
+    const crumbs: Crumb[] = [{ label: t('nav.explore'), to: '/' }]
+    for (const b of assetBreadcrumb) crumbs.push({ label: b.name, to: `/collection/${b.slug}` })
+    crumbs.push({ label: asset.name })
+    return crumbs
+  }, [asset, assetBreadcrumb, t])
+  useBreadcrumbTrail(breadcrumbTrail)
 
   if (notFound) return <NotFoundInline />
   if (!asset || languages === null) {
@@ -326,27 +329,8 @@ export function AssetDetailPage() {
   return (
     <div className="mx-auto w-full max-w-7xl px-4 py-12 sm:px-6">
       <div className="grid gap-8 lg:grid-cols-[1fr_260px]">
-        {/* 主区：面包屑 + 标题 + 语言 Tab + 图库 */}
+        {/* 主区：标题 + 语言 Tab + 图库（面包屑由站点级 Breadcrumbs 统一渲染于顶部） */}
         <div className="min-w-0">
-          {assetBreadcrumb.length > 0 && (
-            <nav className="mb-2 flex flex-wrap items-center gap-1 text-sm text-muted-foreground" aria-label="Breadcrumb">
-              <Link to="/" className="hover:text-foreground hover:underline">
-                {t('nav.explore')}
-              </Link>
-              {assetBreadcrumb.map((b) => (
-                <span key={b.id} className="flex items-center gap-1">
-                  <ChevronRight className="h-3.5 w-3.5" />
-                  <Link to={`/collection/${b.slug}`} className="hover:text-foreground hover:underline">
-                    {b.name}
-                  </Link>
-                </span>
-              ))}
-              <span className="flex items-center gap-1">
-                <ChevronRight className="h-3.5 w-3.5" />
-                <span className="text-foreground">{asset.name}</span>
-              </span>
-            </nav>
-          )}
           <h1 className="text-3xl font-bold">{asset.name}</h1>
           {asset.description && (
             <p className="mt-2 max-w-2xl text-muted-foreground">{asset.description}</p>
