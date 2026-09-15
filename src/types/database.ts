@@ -13,6 +13,17 @@ export const LANGUAGE_LABELS: Record<LanguageCode, string> = {
   es: 'Español',
 }
 
+/** V1.10 0028：资产图片三分类（主副图 / A+ / 品牌故事），镜像 DB enum image_category */
+export type ImageCategory = 'main' | 'aplus' | 'brand'
+/** A+ 变体：桌面 1464×600 / 移动 600×450，镜像 DB enum aplus_variant */
+export type AplusVariant = 'desktop' | 'mobile'
+export const IMAGE_CATEGORIES: ImageCategory[] = ['main', 'aplus', 'brand']
+/** A+ 各变体目标尺寸（软校验用：不符仅提示，不硬拦） */
+export const APLUS_SPEC: Record<AplusVariant, { w: number; h: number }> = {
+  desktop: { w: 1464, h: 600 },
+  mobile: { w: 600, h: 450 },
+}
+
 export interface AssetRow {
   id: string
   name: string
@@ -55,6 +66,10 @@ export interface ImageRow {
   width: number | null
   height: number | null
   sort_order: number
+  /** V1.10 0028：图片分类（主副图/A+/品牌故事）；既有数据默认 'main' */
+  category: ImageCategory
+  /** 仅 category='aplus' 时非空：桌面/移动两套 */
+  aplus_variant: AplusVariant | null
   created_at: string
   updated_at: string
 }

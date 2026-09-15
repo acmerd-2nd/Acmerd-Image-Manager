@@ -1,4 +1,4 @@
-import type { LanguageCode } from '@/types/database'
+import type { AplusVariant, ImageCategory, LanguageCode } from '@/types/database'
 import { t } from '@/i18n'
 
 /**
@@ -32,6 +32,8 @@ async function authHeaders(): Promise<Record<string, string>> {
 export async function uploadImageGithub(
   assetLanguageId: string,
   file: File,
+  category: ImageCategory = 'main',
+  variant: AplusVariant | null = null,
 ): Promise<{ imageId: string; sourcePath: string }> {
   validateImageFile(file)
   const headers = await authHeaders()
@@ -39,6 +41,8 @@ export async function uploadImageGithub(
   const form = new FormData()
   form.append('file', file)
   form.append('asset_language_id', assetLanguageId)
+  form.append('category', category)
+  if (category === 'aplus' && variant) form.append('variant', variant)
 
   const res = await fetch('/api/admin/images/github-upload', {
     method: 'POST',

@@ -902,6 +902,22 @@ app.post('/api/admin/images/github-upload', async (c) => {
     return c.json({ error: { code: 'bad_request', message: 'File too large (max 15 MB)' } }, 413)
   }
 
+  // V1.10 0028：图片分类（主副图/A+/品牌故事）+ A+ 变体（桌面/移动）；缺省 main 兼容旧客户端
+  const categoryRaw = form.get('category')
+  const variantRaw = form.get('variant')
+  const category =
+    typeof categoryRaw === 'string' && ['main', 'aplus', 'brand'].includes(categoryRaw)
+      ? (categoryRaw as 'main' | 'aplus' | 'brand')
+      : 'main'
+  let variant: 'desktop' | 'mobile' | null =
+    typeof variantRaw === 'string' && ['desktop', 'mobile'].includes(variantRaw)
+      ? (variantRaw as 'desktop' | 'mobile')
+      : null
+  if (category === 'aplus' && !variant) {
+    return c.json({ error: { code: 'bad_request', message: 'A+ images require variant (desktop|mobile)' } }, 400)
+  }
+  if (category !== 'aplus') variant = null // 非 A+ 不带变体（满足 DB CHECK）
+
   // 语言行校验（含 asset 归属）
   const langRes = await fetch(
     `${c.env.SUPABASE_URL}/rest/v1/asset_languages?id=eq.${langId}&select=id,asset_id,language_code,assets(status)`,
@@ -912,9 +928,11 @@ app.post('/api/admin/images/github-upload', async (c) => {
   const lang = langRows[0]
   if (!lang) return c.json({ error: { code: 'not_found', message: 'Language not found' } }, 404)
 
-  // 同语言既有图张数 → 序号（任意状态都计入，避免覆盖/乱序）
+  // 分组内既有图张数 → 序号（按 语言+分类[+A+变体] 独立排序；任意状态都计入，避免覆盖/乱序）
+  const groupFilter =
+    category === 'aplus' ? `&aplus_variant=eq.${variant}` : '&aplus_variant=is.null'
   const seqRes = await fetch(
-    `${c.env.SUPABASE_URL}/rest/v1/images?select=sort_order&asset_language_id=eq.${langId}&order=sort_order.desc&limit=1`,
+    `${c.env.SUPABASE_URL}/rest/v1/images?select=sort_order&asset_language_id=eq.${langId}&category=eq.${category}${groupFilter}&order=sort_order.desc&limit=1`,
     { headers: svc(c.env) },
   )
   if (!seqRes.ok) return c.json({ error: { code: 'internal', message: 'Lookup failed' } }, 500)
@@ -960,6 +978,8 @@ app.post('/api/admin/images/github-upload', async (c) => {
           mime_type: file.type,
           file_size: file.size,
           sort_order: seq,
+          category,
+          aplus_variant: variant,
           status: 'uploading',
         }),
       })

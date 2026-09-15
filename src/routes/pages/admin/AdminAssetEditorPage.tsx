@@ -24,11 +24,13 @@ import type {
   AssetLanguageRow,
   AssetRow,
   AssetStatus,
+  AplusVariant,
+  ImageCategory,
   ImageRow,
   LanguageCode,
   TagRow,
 } from '@/types/database'
-import { LANGUAGE_CODES, LANGUAGE_LABELS } from '@/types/database'
+import { APLUS_SPEC, LANGUAGE_CODES, LANGUAGE_LABELS } from '@/types/database'
 import {
   createLanguage,
   deleteAsset,
@@ -64,6 +66,21 @@ import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { cn } from '@/lib/utils'
 import { useBreadcrumb } from '@/components/Breadcrumbs'
 
+/** 读取图片文件自然尺寸（A+ 软校验用）；失败回落 0×0 */
+function readImageDims(file: File): Promise<{ w: number; h: number }> {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file)
+    const im = new Image()
+    const done = (w: number, h: number) => {
+      URL.revokeObjectURL(url)
+      resolve({ w, h })
+    }
+    im.onload = () => done(im.naturalWidth, im.naturalHeight)
+    im.onerror = () => done(0, 0)
+    im.src = url
+  })
+}
+
 /**
  * Asset 编辑器（Phase 3 核心工作台）：
  * 基础信息 / 语言面板（上传·排序·删图·Set Cover·语言 Publish）/
@@ -83,7 +100,7 @@ export function AdminAssetEditorPage() {
   const [actionError, setActionError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  const [uploading, setUploading] = useState<LanguageCode | null>(null)
+  const [uploading, setUploading] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
   // V1.9.3：拖拽中被抬起的图片 id（供 DragOverlay 渲染清晰浮层，避免拖拽发涩）
   const [activeDragId, setActiveDragId] = useState<string | null>(null)
@@ -99,7 +116,7 @@ export function AdminAssetEditorPage() {
   const [tagFilter, setTagFilter] = useState('')
 
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const uploadLangRef = useRef<LanguageCode | null>(null)
+  const uploadTargetRef = useRef<{ lang: LanguageCode; category: ImageCategory; variant: AplusVariant | null } | null>(null)
 
   const reload = useCallback(async () => {
     try {
@@ -242,9 +259,22 @@ export function AdminAssetEditorPage() {
   const toggleLanguageStatus = (lang: AssetLanguageRow) =>
     run(() => setLanguageStatus(lang.id, lang.status === 'published' ? 'draft' : 'published'))
 
-  // ---------- 图片 ----------
-  const pickFiles = (lang: LanguageCode) => {
-    uploadLangRef.current = lang
+  // ---------- 图片（V1.10：按 分类[+A+变体] 分组管理）----------
+  const groupKey = (lang: LanguageCode, category: ImageCategory, variant: AplusVariant | null) =>
+    `${lang}:${category}:${variant ?? ''}`
+
+  const imagesOfGroup = (langId: string, category: ImageCategory, variant: AplusVariant | null) =>
+    images
+      .filter(
+        (i) =>
+          i.asset_language_id === langId &&
+          i.category === category &&
+          (category !== 'aplus' || i.aplus_variant === variant),
+      )
+      .sort((a, b) => a.sort_order - b.sort_order)
+
+  const pickFiles = (lang: LanguageCode, category: ImageCategory, variant: AplusVariant | null) => {
+    uploadTargetRef.current = { lang, category, variant }
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
       fileInputRef.current.click()
@@ -252,29 +282,43 @@ export function AdminAssetEditorPage() {
   }
 
   const handleFilesChosen = async (files: FileList | null) => {
-    const lang = uploadLangRef.current
-    if (!files || files.length === 0 || !lang) return
+    const target = uploadTargetRef.current
+    if (!files || files.length === 0 || !target) return
+    const { lang, category, variant } = target
+    const key = groupKey(lang, category, variant)
     setBusy(true)
     setActionError(null)
     setNotice(null)
-    setUploading(lang)
+    setUploading(key)
 
     try {
       const langRow = languages.find((l) => l.language_code === lang)
       if (!langRow) throw new Error(t('admin.editor.langMissing'))
-      const fileList = Array.from(files ?? [])
+      const fileList = Array.from(files)
       let count = 0
+      const sizeMismatch: string[] = []
 
       for (const file of fileList) {
         if (file.size > MAX_FILE_SIZE) throw new Error(t('admin.editor.fileTooLarge', { name: file.name }))
         if (!ALLOWED_MIME.includes(file.type as (typeof ALLOWED_MIME)[number])) {
           throw new Error(t('admin.editor.badFormat', { name: file.name }))
         }
-        // V1.1 PB-1: 经 Worker 上传 GitHub（租约串行 + pending 态 + sha 校验 + ready）
-        await uploadImageGithub(langRow.id, file)
+        // A+ 软校验：尺寸不符仅收集提示，不阻断上传
+        if (category === 'aplus' && variant) {
+          const { w, h } = await readImageDims(file)
+          const spec = APLUS_SPEC[variant]
+          if (w !== spec.w || h !== spec.h) sizeMismatch.push(`${file.name}(${w}×${h})`)
+        }
+        // V1.10 PB-1: 经 Worker 上传 GitHub（租约串行 + pending 态 + sha 校验 + ready）
+        await uploadImageGithub(langRow.id, file, category, variant)
         count += 1
       }
-      setNotice(t('admin.editor.uploaded', { n: count, lang: LANGUAGE_LABELS[lang] }))
+      const baseMsg = t('admin.editor.uploaded', { n: count, lang: LANGUAGE_LABELS[lang] })
+      setNotice(
+        sizeMismatch.length > 0
+          ? `${baseMsg} · ${t('admin.editor.aplusSizeWarn', { n: sizeMismatch.length })}`
+          : baseMsg,
+      )
       await reload()
     } catch (e) {
       setActionError(e instanceof Error ? e.message : String(e))
@@ -283,10 +327,7 @@ export function AdminAssetEditorPage() {
     setBusy(false)
   }
 
-  const bySort = (a: ImageRow, b: ImageRow) => a.sort_order - b.sort_order
-
-  // V1.9.3 乐观重排：先在本地即时改排序（无 busy、无整表 refetch → 落点跟手、不闪回），
-  // 再后台持久化；仅失败时回滚快照并提示。ordered = 该语言【目标顺序】的行数组（下标即新 sort_order）。
+  // V1.9.3 乐观重排（V1.10 起按分组内独立排序）：ordered = 该分组【目标顺序】的行数组（下标即新 sort_order）。
   const applyOrder = (ordered: ImageRow[]) => {
     const prev = images
     const target = new Map(ordered.map((r, i) => [r.id, i]))
@@ -299,38 +340,29 @@ export function AdminAssetEditorPage() {
     })
   }
 
-  const orderedSiblings = (img: ImageRow) => imagesOf(img.asset_language_id).slice().sort(bySort)
-
-  const moveImage = (img: ImageRow, dir: -1 | 1) => {
-    const siblings = orderedSiblings(img)
-    const idx = siblings.findIndex((s) => s.id === img.id)
+  const moveInGroup = (group: ImageRow[], img: ImageRow, dir: -1 | 1) => {
+    const idx = group.findIndex((s) => s.id === img.id)
     const to = idx + dir
-    if (idx < 0 || to < 0 || to >= siblings.length) return
-    applyOrder(arrayMove(siblings, idx, to))
+    if (idx < 0 || to < 0 || to >= group.length) return
+    applyOrder(arrayMove(group, idx, to))
   }
-
-  const moveImageToFront = (img: ImageRow) => {
-    const siblings = orderedSiblings(img)
-    const idx = siblings.findIndex((s) => s.id === img.id)
+  const frontInGroup = (group: ImageRow[], img: ImageRow) => {
+    const idx = group.findIndex((s) => s.id === img.id)
     if (idx <= 0) return
-    applyOrder(arrayMove(siblings, idx, 0))
+    applyOrder(arrayMove(group, idx, 0))
   }
-
-  const moveImageToBack = (img: ImageRow) => {
-    const siblings = orderedSiblings(img)
-    const idx = siblings.findIndex((s) => s.id === img.id)
-    if (idx < 0 || idx === siblings.length - 1) return
-    applyOrder(arrayMove(siblings, idx, siblings.length - 1))
+  const backInGroup = (group: ImageRow[], img: ImageRow) => {
+    const idx = group.findIndex((s) => s.id === img.id)
+    if (idx < 0 || idx === group.length - 1) return
+    applyOrder(arrayMove(group, idx, group.length - 1))
   }
-
-  const onDragEnd = (langId: string) => (e: DragEndEvent) => {
+  const groupDragEnd = (group: ImageRow[]) => (e: DragEndEvent) => {
     const { active, over } = e
     if (!over || active.id === over.id) return
-    const siblings = imagesOf(langId).slice().sort(bySort)
-    const oldIndex = siblings.findIndex((s) => s.id === active.id)
-    const newIndex = siblings.findIndex((s) => s.id === over.id)
+    const oldIndex = group.findIndex((s) => s.id === active.id)
+    const newIndex = group.findIndex((s) => s.id === over.id)
     if (oldIndex < 0 || newIndex < 0) return
-    applyOrder(arrayMove(siblings, oldIndex, newIndex))
+    applyOrder(arrayMove(group, oldIndex, newIndex))
   }
 
   const removeImage = (img: ImageRow) =>
@@ -361,6 +393,90 @@ export function AdminAssetEditorPage() {
     run(async () => {
       await updateAsset(asset.id, { cover_image_id: img.id })
     })
+
+  /** 渲染某语言下的一个图片分组（主副图 / A+桌面 / A+移动 / 品牌故事） */
+  const renderGroup = (
+    lang: AssetLanguageRow,
+    category: ImageCategory,
+    variant: AplusVariant | null,
+    title: string,
+    colsClass: string,
+    coverable: boolean,
+  ) => {
+    const group = imagesOfGroup(lang.id, category, variant)
+    const key = groupKey(lang.language_code, category, variant)
+    return (
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-sm font-medium">{title}</span>
+          <span className="text-xs text-muted-foreground">{group.length}</span>
+          <Button
+            size="sm"
+            variant="outline"
+            className="ml-auto"
+            disabled={busy}
+            onClick={() => pickFiles(lang.language_code, category, variant)}
+          >
+            <ImagePlus className="mr-1 h-4 w-4" />
+            {uploading === key ? t('admin.editor.uploading') : t('admin.editor.upload')}
+          </Button>
+        </div>
+        {group.length === 0 ? (
+          <p className="text-xs text-muted-foreground">{t('admin.editor.noImages')}</p>
+        ) : (
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragStart={(e: DragStartEvent) => setActiveDragId(String(e.active.id))}
+            onDragCancel={() => setActiveDragId(null)}
+            onDragEnd={(e) => {
+              setActiveDragId(null)
+              groupDragEnd(group)(e)
+            }}
+          >
+            <SortableContext items={group.map((i) => i.id)} strategy={rectSortingStrategy}>
+              <div className={colsClass}>
+                {group.map((img, idx) => (
+                  <SortableImageCard
+                    key={img.id}
+                    img={img}
+                    idx={idx}
+                    total={group.length}
+                    isCover={asset.cover_image_id === img.id}
+                    coverable={coverable}
+                    busy={busy}
+                    publicUrl={toPublicUrl(img)}
+                    onUp={() => moveInGroup(group, img, -1)}
+                    onDown={() => moveInGroup(group, img, 1)}
+                    onFront={() => frontInGroup(group, img)}
+                    onBack={() => backInGroup(group, img)}
+                    onSetCover={() => setCover(img)}
+                    onRemove={() => removeImage(img)}
+                  />
+                ))}
+              </div>
+            </SortableContext>
+            <DragOverlay dropAnimation={{ duration: 220, easing: 'cubic-bezier(0.22,1,0.36,1)' }}>
+              {(() => {
+                const activeImg = activeDragId ? images.find((i) => i.id === activeDragId) : null
+                if (!activeImg) return null
+                return (
+                  <div className="aspect-square w-full rotate-[1.5deg] scale-[1.04] overflow-hidden rounded border bg-card shadow-2xl ring-1 ring-black/10">
+                    <img
+                      src={toPublicUrl(activeImg)}
+                      alt=""
+                      draggable={false}
+                      className="pointer-events-none h-full w-full object-cover"
+                    />
+                  </div>
+                )
+              })()}
+            </DragOverlay>
+          </DndContext>
+        )}
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">
@@ -578,20 +694,16 @@ export function AdminAssetEditorPage() {
         )}
 
         {languages.map((lang) => {
-          const imgs = imagesOf(lang.id).sort((a, b) => a.sort_order - b.sort_order)
+          const total = imagesOf(lang.id).length
           return (
-            <div key={lang.id} className="space-y-3 rounded-lg border p-4">
+            <div key={lang.id} className="space-y-4 rounded-lg border p-4">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-medium">{LANGUAGE_LABELS[lang.language_code]}</span>
                 <Badge variant={lang.status === 'published' ? 'default' : 'secondary'}>
                   {lang.status}
                 </Badge>
-                <span className="text-xs text-muted-foreground">{imgs.length} images</span>
+                <span className="text-xs text-muted-foreground">{total} images</span>
                 <div className="ml-auto flex gap-1">
-                  <Button size="sm" variant="outline" disabled={busy} onClick={() => pickFiles(lang.language_code)}>
-                    <ImagePlus className="mr-1 h-4 w-4" />
-                    {uploading === lang.language_code ? t('admin.editor.uploading') : t('admin.editor.upload')}
-                  </Button>
                   <Button
                     size="sm"
                     variant="outline"
@@ -603,8 +715,8 @@ export function AdminAssetEditorPage() {
                   <Button
                     size="sm"
                     variant="ghost"
-                    disabled={busy || imgs.length > 0}
-                    title={imgs.length > 0 ? t('admin.editor.deleteLangDisabled') : t('admin.editor.deleteLang')}
+                    disabled={busy || total > 0}
+                    title={total > 0 ? t('admin.editor.deleteLangDisabled') : t('admin.editor.deleteLang')}
                     onClick={() => removeLanguage(lang)}
                   >
                     <Trash2 className="h-4 w-4" />
@@ -612,58 +724,40 @@ export function AdminAssetEditorPage() {
                 </div>
               </div>
 
-              {imgs.length === 0 ? (
-                <p className="text-xs text-muted-foreground">{t('admin.editor.noImages')}</p>
-              ) : (
-                <DndContext
-                  sensors={sensors}
-                  collisionDetection={closestCenter}
-                  onDragStart={(e: DragStartEvent) => setActiveDragId(String(e.active.id))}
-                  onDragCancel={() => setActiveDragId(null)}
-                  onDragEnd={(e) => {
-                    setActiveDragId(null)
-                    onDragEnd(lang.id)(e)
-                  }}
-                >
-                  <SortableContext items={imgs.map((i) => i.id)} strategy={rectSortingStrategy}>
-                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-                      {imgs.map((img, idx) => (
-                        <SortableImageCard
-                          key={img.id}
-                          img={img}
-                          idx={idx}
-                          total={imgs.length}
-                          isCover={asset.cover_image_id === img.id}
-                          busy={busy}
-                          publicUrl={toPublicUrl(img)}
-                          onUp={() => moveImage(img, -1)}
-                          onDown={() => moveImage(img, 1)}
-                          onFront={() => moveImageToFront(img)}
-                          onBack={() => moveImageToBack(img)}
-                          onSetCover={() => setCover(img)}
-                          onRemove={() => removeImage(img)}
-                        />
-                      ))}
-                    </div>
-                  </SortableContext>
-                  <DragOverlay dropAnimation={{ duration: 220, easing: 'cubic-bezier(0.22,1,0.36,1)' }}>
-                    {(() => {
-                      const activeImg = activeDragId ? images.find((i) => i.id === activeDragId) : null
-                      if (!activeImg) return null
-                      return (
-                        <div className="aspect-square w-full rotate-[1.5deg] scale-[1.04] overflow-hidden rounded border bg-card shadow-2xl ring-1 ring-black/10">
-                          <img
-                            src={toPublicUrl(activeImg)}
-                            alt=""
-                            draggable={false}
-                            className="pointer-events-none h-full w-full object-cover"
-                          />
-                        </div>
-                      )
-                    })()}
-                  </DragOverlay>
-                </DndContext>
-              )}
+              <div className="space-y-5 border-t pt-3">
+                {renderGroup(
+                  lang,
+                  'main',
+                  null,
+                  t('admin.editor.catMain'),
+                  'grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5',
+                  true,
+                )}
+                {renderGroup(
+                  lang,
+                  'aplus',
+                  'desktop',
+                  t('admin.editor.catAplusDesktop'),
+                  'grid grid-cols-1 gap-2',
+                  false,
+                )}
+                {renderGroup(
+                  lang,
+                  'aplus',
+                  'mobile',
+                  t('admin.editor.catAplusMobile'),
+                  'grid grid-cols-1 gap-2',
+                  false,
+                )}
+                {renderGroup(
+                  lang,
+                  'brand',
+                  null,
+                  t('admin.editor.catBrand'),
+                  'grid grid-cols-2 gap-3 sm:grid-cols-3',
+                  false,
+                )}
+              </div>
             </div>
           )
         })}
@@ -709,6 +803,7 @@ interface SortableImageCardProps {
   idx: number
   total: number
   isCover: boolean
+  coverable?: boolean
   busy: boolean
   publicUrl: string
   onUp: () => void
@@ -725,6 +820,7 @@ function SortableImageCard({
   idx,
   total,
   isCover,
+  coverable = true,
   busy,
   publicUrl,
   onUp,
@@ -789,15 +885,17 @@ function SortableImageCard({
         <Button size="sm" variant="ghost" className="h-7 px-1.5" disabled={busy || idx === total - 1} onClick={onBack} title={t('admin.editor.moveToBack')}>
           <ArrowDownToLine className="h-3.5 w-3.5" />
         </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          className="h-7 px-1.5 text-[11px]"
-          disabled={busy || isCover}
-          onClick={onSetCover}
-        >
-          {t('admin.editor.setCover')}
-        </Button>
+        {coverable && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 px-1.5 text-[11px]"
+            disabled={busy || isCover}
+            onClick={onSetCover}
+          >
+            {t('admin.editor.setCover')}
+          </Button>
+        )}
         <Button size="sm" variant="ghost" className="h-7 px-1.5 text-destructive" disabled={busy} onClick={onRemove} title={t('admin.editor.deleteImage')}>
           <Trash2 className="h-3.5 w-3.5" />
         </Button>
