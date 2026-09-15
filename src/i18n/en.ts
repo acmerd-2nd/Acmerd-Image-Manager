@@ -88,6 +88,9 @@ export const en: Dictionary = {
     assetNotFound: 'Asset not found',
     assetNotFoundHint: 'It may be unpublished or does not exist.',
     langNotAvailable: 'No content for this language',
+    catMain: 'Main images',
+    catAplus: 'A+ Content',
+    catBrand: 'Brand story',
     s360: {
       sectionTitle: '360° View',
       viewLabel: '360° product view',

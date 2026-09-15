@@ -90,6 +90,9 @@ export const zh = {
     assetNotFound: '资产不存在',
     assetNotFoundHint: '可能未发布或不存在。',
     langNotAvailable: '该语言暂无内容',
+    catMain: '主副图',
+    catAplus: 'A+ 图文详情',
+    catBrand: '品牌故事',
     s360: {
       sectionTitle: '360° View',
       viewLabel: '360° 产品视图',

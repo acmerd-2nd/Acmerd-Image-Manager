@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Check, CheckCheck, ChevronRight, Download, DownloadCloud, Image as ImageIcon, ListChecks, Lock, Tag as TagIcon } from 'lucide-react'
 import {
@@ -7,6 +7,7 @@ import {
   listImagesByLanguage,
   listPublishedLanguages,
   THUMB_GRID,
+  type ImageVariant,
 } from '@/features/assets/api'
 import { listAssetTags } from '@/features/tags/api'
 import { getPublished360 } from '@/features/assets360/api'
@@ -104,9 +105,10 @@ export function AssetDetailPage() {
   const [selectionMode, setSelectionMode] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState(false)
-  // V1.6.0-B：预览改存「当前语言图片列表的索引」，供 Lightbox 整组 ←/→ 翻页；
-  // 用索引而非图片对象，切语言时列表整体替换、天然不串图。null = 未打开。
-  const [previewIndex, setPreviewIndex] = useState<number | null>(null)
+  // V1.6.0-B：预览 → V1.10 改为存「所属分组的图片列表 + 组内索引」。
+  // 图库按 主副图 / A+ / 品牌故事 分组后，Lightbox 整组 ←/→ 只在点击所在分组内翻页；
+  // null = 未打开。切语言时整个预览重置。
+  const [preview, setPreview] = useState<{ images: ImageRow[]; index: number } | null>(null)
   const toast = useToast()
 
   // V1.4.2：资产所属合集面包屑链（探索 / 合集链… / 资产名）；链断裂或无合集 = 不渲染
@@ -184,6 +186,7 @@ export function AssetDetailPage() {
     if (activeLang !== effectiveLang) {
       setActiveLang(effectiveLang)
       setSelected(new Set())
+      setPreview(null)
     }
     if (!imagesByLang[effectiveLang]) {
       const langRow = languages?.find((l) => l.language_code === effectiveLang)
@@ -243,6 +246,14 @@ export function AssetDetailPage() {
   const activeImages = activeLang ? imagesByLang[activeLang] : undefined
   const activeLangRow = languages.find((l) => l.language_code === activeLang) ?? null
 
+  // V1.10：按分类拆分当前语言图片（既有数据默认 main；A+ 再分桌面/移动两套）
+  const allImgs = activeImages ?? []
+  const mainImgs = allImgs.filter((i) => (i.category ?? 'main') === 'main')
+  const brandImgs = allImgs.filter((i) => i.category === 'brand')
+  const aplusDesktop = allImgs.filter((i) => i.category === 'aplus' && i.aplus_variant === 'desktop')
+  const aplusMobile = allImgs.filter((i) => i.category === 'aplus' && i.aplus_variant === 'mobile')
+  const aplusCount = aplusDesktop.length + aplusMobile.length
+
   const requireLogin = (): boolean => {
     if (!session) {
       toast.error(t('download.needLogin'))
@@ -296,6 +307,20 @@ export function AssetDetailPage() {
     }
     const ids = activeImages.map((i) => i.id).slice(0, MAX_ZIP)
     setSelected(new Set(ids))
+  }
+
+  // V1.10：单图成本标签（♾ 或 N 积分；未取到 settings 则 null）
+  const singleCostLabel = costs ? (unlimited ? '♾' : t('credits.singleCost', { n: costs.single })) : null
+  // 分组图卡共享的选择/下载/预览控制（ImageFigure 子组件消费）
+  const figCtl: FigureCtl = {
+    selectionMode,
+    isSelected: (id) => selected.has(id),
+    canSelectMore: selected.size < MAX_ZIP,
+    busy,
+    costLabel: singleCostLabel,
+    onToggle: toggleSelect,
+    onPreview: (group, index) => setPreview({ images: group, index }),
+    onDownload: (img) => void onSingleDownload(img),
   }
 
   return (
@@ -418,7 +443,7 @@ export function AssetDetailPage() {
             </div>
           )}
 
-          {/* Image Grid */}
+          {/* 图库（V1.10：主副图 → A+ → 品牌故事，分段带小标题；无该类则整段不渲染） */}
           {!activeImages ? (
             <div className="flex justify-center py-20">
               <Spinner className="h-6 w-6" />
@@ -428,85 +453,81 @@ export function AssetDetailPage() {
               {t('asset.noImages')}
             </div>
           ) : (
-            <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-              {activeImages.map((img, idx) => {
-                const isSelected = selected.has(img.id)
-                const selectDisabled = !isSelected && selected.size >= MAX_ZIP
-                return (
-                  <figure
-                    key={img.id}
-                    className={cn(
-                      'group relative overflow-hidden rounded-lg border',
-                      isSelected && 'ring-2 ring-primary',
-                    )}
-                  >
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (selectionMode) {
-                            if (!selectDisabled) toggleSelect(img.id)
-                          } else {
-                            setPreviewIndex(idx)
-                          }
-                        }}
-                        className={cn('block w-full', selectionMode ? 'cursor-pointer' : 'cursor-zoom-in')}
-                        aria-label={
-                          selectionMode
-                            ? isSelected
-                              ? t('asset.deselect')
-                              : t('asset.select')
-                            : t('asset.preview', { name: img.filename })
-                        }
-                      >
-                      <img
-                        src={imageSrcOf(img, THUMB_GRID)}
-                        alt={img.filename}
-                        loading="lazy"
-                        decoding="async"
-                        className="aspect-square w-full object-cover"
+            <div className="mt-6 space-y-10">
+              {mainImgs.length > 0 && (
+                <section aria-label={t('asset.catMain')}>
+                  <SectionHeading>{t('asset.catMain')}</SectionHeading>
+                  <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+                    {mainImgs.map((img, idx) => (
+                      <ImageFigure
+                        key={img.id}
+                        img={img}
+                        index={idx}
+                        group={mainImgs}
+                        layout="grid"
+                        variant={THUMB_GRID}
+                        ctl={figCtl}
                       />
-                    </button>
-                    {/* 选择框（选择模式下） */}
-                    {selectionMode && (
-                      <button
-                        type="button"
-                        onClick={() => toggleSelect(img.id)}
-                        disabled={selectDisabled}
-                        aria-label={isSelected ? t('asset.deselect') : t('asset.select')}
-                        className={cn(
-                          'absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full border-2 bg-background/90',
-                          isSelected ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground',
-                          selectDisabled && 'cursor-not-allowed opacity-40',
-                        )}
-                      >
-                        {isSelected && <Check className="h-4 w-4" />}
-                      </button>
-                    )}
-                    {/* 单图下载（非选择模式时 hover 显示；成本透出 总纲 §59 + V1.3.1 §12：♾/N 积分） */}
-                    {!selectionMode && (
-                      <div className="absolute right-2 top-2 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                        {costs && (
-                          <span className="rounded-full bg-background/90 px-2 py-0.5 text-xs shadow">
-                            {unlimited ? '♾' : t('credits.singleCost', { n: costs.single })}
-                          </span>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => onSingleDownload(img)}
-                          aria-label={t('asset.download')}
-                          className="flex h-7 w-7 items-center justify-center rounded-full bg-background/90 shadow"
-                        >
-                          {busy ? <Spinner className="h-4 w-4" /> : <Download className="h-4 w-4" />}
-                        </button>
-                      </div>
-                    )}
-                    <figcaption className="flex items-center gap-1 truncate px-2 py-1.5 text-xs text-muted-foreground">
-                      <ImageIcon className="h-3 w-3 shrink-0" />
-                      <span className="truncate">{img.filename}</span>
-                    </figcaption>
-                  </figure>
-                )
-              })}
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {aplusCount > 0 && (
+                <section aria-label={t('asset.catAplus')}>
+                  <SectionHeading>{t('asset.catAplus')}</SectionHeading>
+                  {/* 桌面套：宽屏（≥lg）显示；移动套：窄屏显示。两套齐全时按屏切换，只有一套时常显 */}
+                  {aplusDesktop.length > 0 && (
+                    <div className={cn('flex flex-col', aplusMobile.length > 0 && 'hidden lg:flex')}>
+                      {aplusDesktop.map((img, idx) => (
+                        <ImageFigure
+                          key={img.id}
+                          img={img}
+                          index={idx}
+                          group={aplusDesktop}
+                          layout="full"
+                          variant={APLUS_DESKTOP_VARIANT}
+                          ctl={figCtl}
+                        />
+                      ))}
+                    </div>
+                  )}
+                  {aplusMobile.length > 0 && (
+                    <div className={cn('flex flex-col', aplusDesktop.length > 0 && 'lg:hidden')}>
+                      {aplusMobile.map((img, idx) => (
+                        <ImageFigure
+                          key={img.id}
+                          img={img}
+                          index={idx}
+                          group={aplusMobile}
+                          layout="full"
+                          variant={APLUS_MOBILE_VARIANT}
+                          ctl={figCtl}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </section>
+              )}
+
+              {brandImgs.length > 0 && (
+                <section aria-label={t('asset.catBrand')}>
+                  <SectionHeading>{t('asset.catBrand')}</SectionHeading>
+                  <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+                    {brandImgs.map((img, idx) => (
+                      <ImageFigure
+                        key={img.id}
+                        img={img}
+                        index={idx}
+                        group={brandImgs}
+                        layout="grid"
+                        variant={THUMB_GRID}
+                        ctl={figCtl}
+                      />
+                    ))}
+                  </div>
+                </section>
+              )}
             </div>
           )}
         </div>
@@ -551,15 +572,15 @@ export function AssetDetailPage() {
         </div>
       )}
 
-      {/* 全屏预览（V1.6.0-B：整组可 ←/→ 翻页；索引绑定当前语言图片列表） */}
-      {previewIndex !== null && activeImages && activeImages.length > 0 && (
+      {/* 全屏预览（V1.6.0-B 整组翻页；V1.10 索引绑定「点击所在分组」的图片列表） */}
+      {preview && preview.images.length > 0 && (
         <Lightbox
-          images={activeImages}
-          index={previewIndex < activeImages.length ? previewIndex : 0}
-          onIndexChange={setPreviewIndex}
-          onClose={() => setPreviewIndex(null)}
+          images={preview.images}
+          index={preview.index < preview.images.length ? preview.index : 0}
+          onIndexChange={(index) => setPreview((p) => (p ? { ...p, index } : p))}
+          onClose={() => setPreview(null)}
           onDownload={(img) => {
-            setPreviewIndex(null)
+            setPreview(null)
             onSingleDownload(img)
           }}
         />
@@ -575,5 +596,129 @@ function NotFoundInline() {
       <h1 className="text-2xl font-semibold">{t('errors.assetNotFound')}</h1>
       <p className="mt-2 text-muted-foreground">{t('errors.assetNotFoundHint')}</p>
     </div>
+  )
+}
+
+/** A+ 两套目标尺寸的原生宽缩略（github 分支按宽缩放、保比例；quality 85 偏清晰） */
+const APLUS_DESKTOP_VARIANT: ImageVariant = { width: 1464, height: 600, quality: 85 }
+const APLUS_MOBILE_VARIANT: ImageVariant = { width: 600, height: 450, quality: 85 }
+
+/** 分段小标题：与 360° 区同款弱化的次要色，做到「有分隔但不突兀」 */
+function SectionHeading({ children }: { children: ReactNode }) {
+  return <h2 className="mb-3 text-sm font-medium text-muted-foreground">{children}</h2>
+}
+
+/** 分组图卡共享的选择/下载/预览控制（由页面注入，避免逐卡 prop 爆炸） */
+interface FigureCtl {
+  selectionMode: boolean
+  isSelected: (id: string) => boolean
+  canSelectMore: boolean
+  busy: boolean
+  costLabel: string | null
+  onToggle: (id: string) => void
+  onPreview: (group: ImageRow[], index: number) => void
+  onDownload: (img: ImageRow) => void
+}
+
+/**
+ * 单张图卡（V1.10）。
+ *  - layout='grid'：主副图 / 品牌故事，方形裁剪缩略 + 圆角描边 + 文件名，视觉与原网格逐字节一致。
+ *  - layout='full'：A+，整宽、按原比例、上下无缝堆叠（去描边/圆角/文件名）。
+ */
+function ImageFigure({
+  img,
+  index,
+  group,
+  layout,
+  variant,
+  ctl,
+}: {
+  img: ImageRow
+  index: number
+  group: ImageRow[]
+  layout: 'grid' | 'full'
+  variant: ImageVariant
+  ctl: FigureCtl
+}) {
+  const { t } = useLocale()
+  const isSelected = ctl.isSelected(img.id)
+  const selectDisabled = !isSelected && !ctl.canSelectMore
+  return (
+    <figure
+      className={cn(
+        'group relative',
+        layout === 'grid' && 'overflow-hidden rounded-lg border',
+        isSelected && 'ring-2 ring-primary',
+      )}
+    >
+      <button
+        type="button"
+        onClick={() => {
+          if (ctl.selectionMode) {
+            if (!selectDisabled) ctl.onToggle(img.id)
+          } else {
+            ctl.onPreview(group, index)
+          }
+        }}
+        className={cn('block w-full', ctl.selectionMode ? 'cursor-pointer' : 'cursor-zoom-in')}
+        aria-label={
+          ctl.selectionMode
+            ? isSelected
+              ? t('asset.deselect')
+              : t('asset.select')
+            : t('asset.preview', { name: img.filename })
+        }
+      >
+        <img
+          src={imageSrcOf(img, variant)}
+          alt={img.filename}
+          loading="lazy"
+          decoding="async"
+          className={
+            layout === 'grid'
+              ? 'aspect-square w-full object-cover'
+              : 'block h-auto w-full object-cover'
+          }
+        />
+      </button>
+      {/* 选择框（选择模式下） */}
+      {ctl.selectionMode && (
+        <button
+          type="button"
+          onClick={() => ctl.onToggle(img.id)}
+          disabled={selectDisabled}
+          aria-label={isSelected ? t('asset.deselect') : t('asset.select')}
+          className={cn(
+            'absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full border-2 bg-background/90',
+            isSelected ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground',
+            selectDisabled && 'cursor-not-allowed opacity-40',
+          )}
+        >
+          {isSelected && <Check className="h-4 w-4" />}
+        </button>
+      )}
+      {/* 单图下载（非选择模式时 hover 显示；成本透出 ♾/N 积分） */}
+      {!ctl.selectionMode && (
+        <div className="absolute right-2 top-2 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+          {ctl.costLabel && (
+            <span className="rounded-full bg-background/90 px-2 py-0.5 text-xs shadow">{ctl.costLabel}</span>
+          )}
+          <button
+            type="button"
+            onClick={() => ctl.onDownload(img)}
+            aria-label={t('asset.download')}
+            className="flex h-7 w-7 items-center justify-center rounded-full bg-background/90 shadow"
+          >
+            {ctl.busy ? <Spinner className="h-4 w-4" /> : <Download className="h-4 w-4" />}
+          </button>
+        </div>
+      )}
+      {layout === 'grid' && (
+        <figcaption className="flex items-center gap-1 truncate px-2 py-1.5 text-xs text-muted-foreground">
+          <ImageIcon className="h-3 w-3 shrink-0" />
+          <span className="truncate">{img.filename}</span>
+        </figcaption>
+      )}
+    </figure>
   )
 }
