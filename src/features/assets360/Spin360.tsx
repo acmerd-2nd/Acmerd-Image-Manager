@@ -31,11 +31,11 @@ const AUTO_ROTATE_FPS = 12
 export interface Spin360Props {
   frames: Frame360Source[]
   className?: string
-  /** 容器最大高度（前台默认 60vh，后台 Preview 用更大值） */
-  maxHeightClass?: string
+  /** 展示舞台（正方形）的最大边长（px）；前台默认 1000，实际再受父容器宽度与视口高度约束 */
+  maxStage?: number
 }
 
-export function Spin360({ frames, className, maxHeightClass = 'max-h-[60vh]' }: Spin360Props) {
+export function Spin360({ frames, className, maxStage = 1000 }: Spin360Props) {
   const { t } = useLocale()
   const n = frames.length
   const urls = useMemo(() => frames.map((f) => make360FrameUrl(f) ?? ''), [frames])
@@ -45,7 +45,6 @@ export function Spin360({ frames, className, maxHeightClass = 'max-h-[60vh]' }: 
   const [loadedCount, setLoadedCount] = useState(0)
   const [autoplay, setAutoplay] = useState(false)
   const [isFs, setIsFs] = useState(false)
-  const [aspect, setAspect] = useState<number | null>(null)
   const [touched, setTouched] = useState(false)
 
   const cache = useRef(new Map<number, HTMLImageElement>())
@@ -112,9 +111,8 @@ export function Spin360({ frames, className, maxHeightClass = 'max-h-[60vh]' }: 
     let cancelled = false
     setPhase('loading')
     ensure(0)
-      .then((img) => {
+      .then(() => {
         if (cancelled) return
-        if (img.naturalWidth && img.naturalHeight) setAspect(img.naturalWidth / img.naturalHeight)
         setPhase('ready')
       })
       .catch(() => {
@@ -216,12 +214,13 @@ export function Spin360({ frames, className, maxHeightClass = 'max-h-[60vh]' }: 
     <div
       ref={containerRef}
       className={cn(
-        'group relative select-none overflow-hidden rounded-lg border bg-muted/30',
+        'group relative mx-auto select-none overflow-hidden rounded-lg border bg-muted/30',
         isFs && 'flex h-screen w-screen items-center justify-center rounded-none bg-black',
         className,
       )}
+      style={isFs ? undefined : { width: `min(100%, ${maxStage}px, 85vh)`, aspectRatio: '1 / 1' }}
     >
-      {/* 画面层：单一 <img>，帧切换只改 src（缓存命中即时） */}
+      {/* 画面层：单一 <img>，帧切换只改 src（缓存命中即时）；铺满正方形舞台 */}
       <div
         role="img"
         aria-label={t('asset.s360.viewLabel')}
@@ -232,10 +231,9 @@ export function Spin360({ frames, className, maxHeightClass = 'max-h-[60vh]' }: 
         onPointerCancel={endDrag}
         onKeyDown={onKeyDown}
         className={cn(
-          'relative w-full touch-pan-y outline-none',
+          'relative h-full w-full touch-pan-y outline-none',
           phase === 'ready' ? 'cursor-grab active:cursor-grabbing' : 'cursor-default',
         )}
-        style={aspect ? { aspectRatio: String(aspect), maxHeight: isFs ? '100vh' : undefined } : undefined}
       >
         {phase !== 'error' && (
           <img
@@ -243,9 +241,8 @@ export function Spin360({ frames, className, maxHeightClass = 'max-h-[60vh]' }: 
             alt=""
             draggable={false}
             className={cn(
-              'mx-auto block w-full object-contain transition-opacity',
+              'block h-full w-full object-contain transition-opacity',
               phase === 'ready' ? 'opacity-100' : 'opacity-0',
-              !isFs && maxHeightClass,
             )}
           />
         )}

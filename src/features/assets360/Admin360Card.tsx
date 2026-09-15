@@ -641,7 +641,7 @@ export function Admin360Card({
           </div>
           <div className="flex flex-1 items-center justify-center overflow-auto p-4" onClick={(e) => e.stopPropagation()}>
             <div className="w-full max-w-4xl">
-              <Spin360 frames={preview.frames} maxHeightClass="max-h-[78vh]" />
+              <Spin360 frames={preview.frames} maxStage={1000} />
               <p className="mt-2 text-center text-xs text-white/70">{t('admin.s360.previewBodyHint')}</p>
             </div>
           </div>
