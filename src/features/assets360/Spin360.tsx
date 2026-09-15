@@ -31,11 +31,9 @@ const AUTO_ROTATE_FPS = 12
 export interface Spin360Props {
   frames: Frame360Source[]
   className?: string
-  /** 展示舞台（正方形）的最大边长（px）；前台默认 1000，实际再受父容器宽度与视口高度约束 */
-  maxStage?: number
 }
 
-export function Spin360({ frames, className, maxStage = 1000 }: Spin360Props) {
+export function Spin360({ frames, className }: Spin360Props) {
   const { t } = useLocale()
   const n = frames.length
   const urls = useMemo(() => frames.map((f) => make360FrameUrl(f) ?? ''), [frames])
@@ -45,6 +43,7 @@ export function Spin360({ frames, className, maxStage = 1000 }: Spin360Props) {
   const [loadedCount, setLoadedCount] = useState(0)
   const [autoplay, setAutoplay] = useState(false)
   const [isFs, setIsFs] = useState(false)
+  const [aspect, setAspect] = useState<number | null>(null)
   const [touched, setTouched] = useState(false)
 
   const cache = useRef(new Map<number, HTMLImageElement>())
@@ -111,8 +110,9 @@ export function Spin360({ frames, className, maxStage = 1000 }: Spin360Props) {
     let cancelled = false
     setPhase('loading')
     ensure(0)
-      .then(() => {
+      .then((img) => {
         if (cancelled) return
+        if (img.naturalWidth && img.naturalHeight) setAspect(img.naturalWidth / img.naturalHeight)
         setPhase('ready')
       })
       .catch(() => {
@@ -214,13 +214,13 @@ export function Spin360({ frames, className, maxStage = 1000 }: Spin360Props) {
     <div
       ref={containerRef}
       className={cn(
-        'group relative mx-auto select-none overflow-hidden rounded-lg border bg-muted/30',
+        'group relative w-full select-none overflow-hidden rounded-lg border bg-muted/30',
         isFs && 'flex h-screen w-screen items-center justify-center rounded-none bg-black',
         className,
       )}
-      style={isFs ? undefined : { width: `min(100%, ${maxStage}px, 85vh)`, aspectRatio: '1 / 1' }}
+      style={isFs ? undefined : { aspectRatio: aspect ? String(aspect) : '1 / 1' }}
     >
-      {/* 画面层：单一 <img>，帧切换只改 src（缓存命中即时）；铺满正方形舞台 */}
+      {/* 画面层：单一 <img>，帧切换只改 src（缓存命中即时）；宽度铺满、高度随图片比例 */}
       <div
         role="img"
         aria-label={t('asset.s360.viewLabel')}
